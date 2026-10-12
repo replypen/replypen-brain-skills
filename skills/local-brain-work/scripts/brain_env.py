@@ -27,7 +27,7 @@ from pathlib import Path
 # ── version line ────────────────────────────────────────────────────────────────────────────────
 # The single version line: plugin tag == rootcause-runtime pin == workspace image tag == prod
 # Dockerfile pin. Bump all together (see RELEASING.md) so local and prod cannot diverge.
-VERSION = "0.11.8"
+VERSION = "0.11.9"
 REPO_URL = "https://github.com/rootcause-org/rootcause-brain-skills"
 
 # The interpreter prod runs (docker/Dockerfile `FROM python:3.12-slim`). uv mode pins to it with
