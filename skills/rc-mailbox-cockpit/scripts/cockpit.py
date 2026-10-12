@@ -390,6 +390,8 @@ def findings(bundle, path, require_fresh=True):
 
 
 def safe_url(url):
+    if re.search(r'\s', str(url)):
+        return ''
     try:
         parsed = urlsplit(str(url))
         if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:

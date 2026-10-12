@@ -4,6 +4,8 @@ Give each Opus 5.5 high reviewer its single refreshed detail file, relevant loca
 
 Read the latest unanswered inbound and current draft first. Establish what the customer wants, what would make the answer correct, and what changed since ReplyPen's run. Then read run notes/trace only where they help explain the claim. Independently verify consequential claims through the current product code/brain and public, read-only `rc` grounding or authoritative external sources. A prior run's assertion is not an independent source. Use progressive disclosure: inspect relevant steps/files/records, not the entire trace/database. Never use `rc ask`, run retry or process-thread.
 
+Resolve action owners from explicit team/operator context, never an email display name or signature: a configured persona is not evidence of an employee. If the owner is unknown, address the mailbox reviewer.
+
 Prioritize action needed today (deadlines, customer impact, false material claims), soon (unanswered investigation/decision), or waiting (external dependency). Leave confident simple, genuinely answered and correct draft cases alone. Fact-check hard claims rather than rewriting style. For no-run/out-of-scope mail, establish the human next action; absence of ReplyPen coverage does not imply a product bug.
 
 Emit one final finding per selected thread, as a JSON array:

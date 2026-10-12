@@ -196,6 +196,8 @@ class Tests(unittest.TestCase):
             c.save(bundle / 'index.json', {'threads': []})
             with self.assertRaises(c.Refused):
                 c.findings(bundle, bundle / 'findings.json', require_fresh=False)
+        self.assertEqual(c.safe_url('https://example.test/reviews (fetch blocked); another source'), '')
+        self.assertEqual(c.safe_url('https://example.test/reviews'), 'https://example.test/reviews')
         self.assertEqual(c.safe_url('javascript:alert(1)'), '')
         self.assertEqual(c.safe_url('https://example.test:bad/'), '')
 
