@@ -1,6 +1,6 @@
 {
   "name": "brain-dev",
-  "version": "0.11.9",
+  "version": "0.11.10",
   "description": "Rootcause Brain Dev skills for local checks, safe cross-computer Git sync, rc ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows. Brain-dir-relative; no private RootCause source needed.",
   "author": { "name": "rootcause" }
 }
