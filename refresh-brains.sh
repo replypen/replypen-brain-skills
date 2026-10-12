@@ -110,7 +110,9 @@ if [ -n "$RELEASE" ]; then
     say "Notice: uncommitted work in $SHARED is NOT part of this release"
     printf '%s\n' "$DIRTY" | sed 's/^/    /'
   fi
-  RELEASE_WT="/tmp/rc-kit-release-$$"
+  # An owned mktemp dir, never a predictable path: cleanup only ever removes what THIS invocation created
+  # (a pre-existing /tmp/rc-kit-release-<pid> would otherwise be rm -rf'd after a failed worktree add).
+  RELEASE_WT="$(mktemp -d "${TMPDIR:-/tmp}/rc-kit-release.XXXXXX")"
   cleanup_release_wt() {
     [ -n "${RELEASE_WT:-}" ] || return 0
     git -C "$SHARED" worktree remove --force "$RELEASE_WT" 2>/dev/null || rm -rf "$RELEASE_WT"
@@ -120,6 +122,7 @@ if [ -n "$RELEASE" ]; then
   trap cleanup_release_wt EXIT
   trap 'exit 130' INT TERM
   say "Release from throwaway worktree $RELEASE_WT (removed on exit; --dry-run reads from it too)"
+  rmdir "$RELEASE_WT"   # worktree add wants a fresh path; the mktemp name stays ours
   git -C "$SHARED" worktree add -q --detach "$RELEASE_WT" HEAD
   ROOT="$RELEASE_WT"
 
