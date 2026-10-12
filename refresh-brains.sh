@@ -11,6 +11,7 @@
 #   ./refresh-brains.sh                         # refresh-only: re-point shared clone to the newest
 #                                               #   existing tag + re-symlink every local brain
 #   ./refresh-brains.sh --release patch         # cut vX.Y.(Z+1) from committed main, then refresh
+#                                               #   (uncommitted work in this checkout never rides along)
 #   ./refresh-brains.sh --release minor|major   # bump that field instead
 #   ./refresh-brains.sh --release 0.2.0         # explicit version
 #   ./refresh-brains.sh --release patch --relock  # ALSO regen requirements.lock + REBUILD the image
@@ -27,6 +28,9 @@
 #   --dry-run     show every step without running it
 #   --classify    print whether the two newest tags differ in runtime content, then exit
 #   [BRAIN_DIR...]  explicit brains to refresh (default: auto-discover siblings)
+#
+# The release phase runs in a throwaway detached worktree at this checkout's committed main, so a shared
+# checkout holding colleagues' WIP is never touched; it is pulled afterwards only when its tree is clean.
 #
 # Prod (rootcause): step 3 bumps + commits the sibling checkout's pin itself. Promoting it stays the
 # operator's call, but a released-yet-unpinned kit now fails this script instead of being a reminder.
@@ -50,7 +54,7 @@ while [ $# -gt 0 ]; do
     --no-prod-bump) NO_PROD_BUMP=1; shift;;
     --dry-run)  DRY=1; shift;;
     --classify) CLASSIFY=1; shift;;
-    -h|--help)  sed -n '2,32p' "$0"; exit 0;;
+    -h|--help)  sed -n '2,36p' "$0"; exit 0;;
     -*) echo "unknown flag: $1" >&2; exit 1;;
     *)  BRAINS+=("$1"); shift;;
   esac
@@ -97,16 +101,32 @@ if [ -n "$RELEASE" ]; then
     exit 1
   fi
 
-  if [ -n "$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)" ]; then
-    echo "error: working tree not clean — commit your work first (releases only carry committed changes; a colleague's WIP would be swept in)" >&2
-    git -C "$ROOT" status --short --untracked-files=all >&2
-    exit 1
+  # Releases carry committed work only, so the whole release phase (bump → commit → sync → tag → image)
+  # runs in a throwaway detached worktree at this checkout's committed main: parallel agents' WIP in the
+  # shared checkout is never swept in, rolled back or blocking. Removed on every exit path.
+  SHARED="$ROOT"
+  DIRTY="$(git -C "$SHARED" status --porcelain=v1 --untracked-files=all)"
+  if [ -n "$DIRTY" ]; then
+    say "Notice: uncommitted work in $SHARED is NOT part of this release"
+    printf '%s\n' "$DIRTY" | sed 's/^/    /'
   fi
+  RELEASE_WT="/tmp/rc-kit-release-$$"
+  cleanup_release_wt() {
+    [ -n "${RELEASE_WT:-}" ] || return 0
+    git -C "$SHARED" worktree remove --force "$RELEASE_WT" 2>/dev/null || rm -rf "$RELEASE_WT"
+    git -C "$SHARED" worktree prune 2>/dev/null || true
+    RELEASE_WT=""
+  }
+  trap cleanup_release_wt EXIT
+  trap 'exit 130' INT TERM
+  say "Release from throwaway worktree $RELEASE_WT (removed on exit; --dry-run reads from it too)"
+  git -C "$SHARED" worktree add -q --detach "$RELEASE_WT" HEAD
+  ROOT="$RELEASE_WT"
 
   # A stale computer must observe an already-cut release before choosing the next version.
   say "Reconcile main before choosing the release version"
   run uv run --no-project python "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
-    --repo "$ROOT" --max-push-attempts 4 \
+    --repo "$ROOT" --detached-head --max-push-attempts 4 \
     --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
   CUR="$(grep -E '^VERSION = ' "$ROOT/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
 
@@ -136,19 +156,6 @@ if [ -n "$RELEASE" ]; then
     runtime/pyproject.toml install.sh
     README.md docs/onboarding.md docs/migration-rootcause.md
   )
-  # Anything failing between the bump and the release commit (digest guard, coherence check) must not
-  # strand a half-bumped shared checkout. Restore only the files this step writes — parallel agents
-  # work in the same tree.
-  BUMPED=0
-  rollback_bump() {
-    [ "$BUMPED" = 1 ] || return 0
-    BUMPED=0
-    echo "  ↩ release aborted before the commit — restoring version-bumped files" >&2
-    git -C "$ROOT" reset -q -- "${FILES[@]}" RUNTIME_DIGEST runtime/requirements.lock 2>/dev/null || true
-    git -C "$ROOT" checkout -- "${FILES[@]}" RUNTIME_DIGEST runtime/requirements.lock 2>/dev/null || true
-  }
-  trap rollback_bump EXIT
-  [ "$DRY" = 1 ] || BUMPED=1
   for f in "${FILES[@]}"; do
     [ -f "$ROOT/$f" ] || continue
     # Digit-bounded and never after '==': a bare 0.11.1 → 0.11.2 would also rewrite a dependency pin like
@@ -184,10 +191,9 @@ if [ -n "$RELEASE" ]; then
   fi
 
   # 1d. One release commit carrying ONLY the files this bump wrote (version literals, RUNTIME_DIGEST,
-  #     the lock on --relock). Feature work must already be committed (clean-tree gate above); naming
-  #     the paths keeps an edit a parallel agent makes mid-release out of it. Do not create even a
-  #     local release tag until brain-git-sync has reconciled and verified this commit at origin/main.
-  say "Commit release on main"
+  #     the lock on --relock). Do not create even a local release tag until brain-git-sync has
+  #     reconciled and verified this commit at origin/main.
+  say "Commit release (worktree)"
   RELEASE_PATHS=(RUNTIME_DIGEST)
   for f in "${FILES[@]}"; do [ -f "$ROOT/$f" ] && RELEASE_PATHS+=("$f"); done
   [ "$RELOCK" = 1 ] && RELEASE_PATHS+=(runtime/requirements.lock)
@@ -196,7 +202,6 @@ if [ -n "$RELEASE" ]; then
     git -C "$ROOT" commit -q -m "release: v$NEW" \
       -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>" -- "${RELEASE_PATHS[@]}"
   fi
-  BUMPED=0   # the bump is committed; later failures keep the commit (see RELEASING.md)
 
   # Classify rebuild-vs-retag ONCE (reused by the image + prod-reminder steps). --relock forces a
   # rebuild; else compare the recorded digest to the prior release's. DIGEST equals HEAD's committed
@@ -209,11 +214,11 @@ if [ -n "$RELEASE" ]; then
   fi
 
   if [ "$NO_PUSH" = 1 ]; then
-    echo "  (--no-push: release commit remains local; no tag created; origin/main is unchanged)"
+    echo "  (--no-push: no sync, no tag; origin/main is unchanged)"
   else
     say "Reconcile and publish release commit through brain-git-sync"
     run uv run --no-project python "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
-      --repo "$ROOT" --max-push-attempts 4 \
+      --repo "$ROOT" --detached-head --max-push-attempts 4 \
       --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
     run verify_origin_main
 
@@ -248,6 +253,36 @@ if [ -n "$RELEASE" ]; then
   fi
 
   TARGET="v$NEW"
+  if [ "$NO_PUSH" = 1 ] && [ "$DRY" != 1 ]; then
+    # The worktree goes away on exit; a local branch keeps the unpublished release commit reachable.
+    git -C "$SHARED" branch -f "release-$TARGET" "$(git -C "$ROOT" rev-parse HEAD)"
+    say "Skip fan-out because --no-push leaves $TARGET unfetchable by the shared clone"
+    echo; echo "done — release commit $(git -C "$ROOT" rev-parse --short HEAD) kept as local branch release-$TARGET;"
+    echo "       publish it with RELEASING.md's manual sync/verify/tag steps"
+    exit 0
+  fi
+
+  # Verify the single version line after the release image/tag exists, before local brains fan out.
+  say "Check release image coherence"
+  if [ "$NO_IMAGE" = 1 ]; then
+    run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
+  else
+    run env SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
+  fi
+
+  # Release phase done: drop the worktree, return to the shared checkout for the brain fan-out.
+  RELEASE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+  cleanup_release_wt
+  ROOT="$SHARED"
+  if [ "$DRY" != 1 ]; then
+    say "Sync the shared checkout"
+    if [ -z "$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)" ]; then
+      run git -C "$ROOT" pull -q --no-rebase origin main
+    else
+      echo "  uncommitted work here — NOT pulled. $TARGET = $RELEASE_SHA on origin/main;"
+      echo "  run 'git pull --no-rebase' once the tree is clean"
+    fi
+  fi
 else
   # refresh-only: target the newest existing tag.
   TARGET="$(git -C "$ROOT" tag -l 'v*' | sort -V | tail -1)"
@@ -255,21 +290,6 @@ else
 fi
 
 # ── 2. fan out to every local brain (install.sh is the per-brain primitive) ──
-if [ -n "$RELEASE" ] && [ "$NO_PUSH" = 1 ] && [ "$DRY" != 1 ]; then
-  say "Skip fan-out because --no-push leaves $TARGET unfetchable by the shared clone"
-  echo; echo "done — release commit created locally for $TARGET; follow RELEASING.md's manual sync/verify/tag steps"
-  exit 0
-fi
-
-# Verify the single version line after the release image/tag exists, before local brains fan out.
-if [ -n "$RELEASE" ]; then
-  say "Check release image coherence"
-  if [ "$NO_IMAGE" = 1 ]; then
-    run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
-  else
-    run env SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
-  fi
-fi
 if [ "${#BRAINS[@]}" -eq 0 ]; then
   while IFS= read -r d; do BRAINS+=("$d"); done < <(
     find "$BRAINS_ROOT" -maxdepth 1 -type d -name 'rootcause-brain-*' ! -name '*-skills' | sort

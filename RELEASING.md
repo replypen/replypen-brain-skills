@@ -11,16 +11,17 @@
 > ./refresh-brains.sh                            # no release: just re-point every brain at the newest tag
 > ```
 >
-> **Committed work only.** The release refuses a dirty working tree (tracked edits or non-ignored
-> untracked files) before touching anything, and its commit names exactly the files the bump writes —
-> a colleague's WIP in a shared checkout can never ride along. Commit first; from a shared checkout
-> land your own files with [`git_land.py`](skills/brain-git-sync/SKILL.md#landing-from-a-shared-checkout).
+> **Committed work only, shared checkout untouched.** The whole release phase (bump, digest, coherence,
+> commit, brain-git-sync, tag) runs in a throwaway detached worktree at this checkout's committed
+> `main` (`/tmp/rc-kit-release-<pid>`, removed on every exit), so uncommitted work is only listed as a
+> notice, never swept in or blocking. Afterwards the checkout is `git pull --no-rebase`ed only if
+> clean. Land your own WIP first with [`git_land.py`](skills/brain-git-sync/SKILL.md#landing-from-a-shared-checkout).
 >
 > The skill ships **strictly tag-pinned** (every skill change is a release), so brains only pick up a
 > change once it's a pushed tag. Remote publication is deliberately **reconciled main first, tag
 > second**: `brain_git_sync.py` merges cross-computer work, retests, pushes, and verifies
-> `origin/main` before the release creates any tag. `--no-push` leaves the release commit local,
-> creates no tag, and keeps remote refs unchanged. The image bakes `runtime/` only, so a skill/doc
+> `origin/main` before the release creates any tag. `--no-push` keeps the release commit as local branch
+> `release-vX.Y.Z`, creates no tag, and keeps remote refs unchanged. The image bakes `runtime/` only, so a skill/doc
 > release **re-tags** the prior image instead of rebuilding — `--relock` forces a real rebuild for dep
 > changes. "Did runtime change" is decided by a **normalized content digest** (version literals
 > canonicalized out) recorded in the committed repo-root `RUNTIME_DIGEST`; the same file lets the host

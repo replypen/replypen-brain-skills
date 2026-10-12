@@ -245,13 +245,13 @@ def _refuse_if_read_only_alias(repo: Path, project: str, reporter: Reporter) -> 
     )
 
 
-def validate_repository(git: Git) -> None:
+def validate_repository(git: Git, *, allow_detached: bool = False) -> None:
     inside = git.run("rev-parse", "--is-inside-work-tree", check=False)
     if inside.returncode or _output(inside.stdout).strip() != "true":
         raise SyncError(f"not a Git worktree: {git.repo}")
     branch_result = git.run("symbolic-ref", "--quiet", "--short", "HEAD", check=False)
     branch = _output(branch_result.stdout).strip()
-    if branch != "main":
+    if branch != "main" and not (allow_detached and not branch):
         raise SyncError(f"current branch must be main (found {branch or 'detached HEAD'})")
     if "origin" not in git.out("remote").splitlines():
         raise SyncError("Git remote 'origin' is required")
@@ -536,6 +536,7 @@ def _synchronize(
     verify_commands: Sequence[str] = (),
     project: str = "",
     reporter: Reporter | None = None,
+    allow_detached: bool = False,
     error_context: dict[str, object],
 ) -> SyncResult:
     reporter = reporter or Reporter(False)
@@ -545,7 +546,7 @@ def _synchronize(
     if not resolved_repo.is_dir():
         raise SyncError(f"repository path is not a directory: {resolved_repo}")
     git = Git(resolved_repo)
-    validate_repository(git)
+    validate_repository(git, allow_detached=allow_detached)
     _refuse_if_read_only_alias(resolved_repo, _selected_project(resolved_repo, project), reporter)
 
     current_inventory = inventory(git)
@@ -892,6 +893,7 @@ def synchronize(
     verify_commands: Sequence[str] = (),
     project: str = "",
     reporter: Reporter | None = None,
+    allow_detached: bool = False,
 ) -> SyncResult:
     """Run a sync and retain all available pre-mutation evidence on failure."""
     error_context: dict[str, object] = {}
@@ -903,6 +905,7 @@ def synchronize(
             verify_commands=verify_commands,
             project=project,
             reporter=reporter,
+            allow_detached=allow_detached,
             error_context=error_context,
         )
     except SyncError as error:
@@ -950,6 +953,14 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--detached-head",
+        action="store_true",
+        help=(
+            "accept a detached HEAD (a throwaway worktree, e.g. the kit release); "
+            "HEAD still publishes to origin/main"
+        ),
+    )
+    parser.add_argument(
         "--json", action="store_true", help="emit one machine-readable result object"
     )
     return parser
@@ -974,6 +985,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             verify_commands=args.verify_command,
             project=args.project,
             reporter=Reporter(args.json),
+            allow_detached=args.detached_head,
         )
     except SyncError as error:
         _fail(error, json_output=args.json)
