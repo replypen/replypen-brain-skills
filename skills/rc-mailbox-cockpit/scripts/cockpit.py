@@ -361,6 +361,16 @@ def check_finding(item, detail_data, require_fresh=True):
             and all(isinstance(fact, str) and fact.strip() and len(fact) <= 220
                     for fact in item['owner_evidence'])):
         raise Refused('Owner evidence needs one to three nonempty facts, at most 220 characters each')
+    if 'technical_evidence' in item and not (
+            isinstance(item['technical_evidence'], list) and 1 <= len(item['technical_evidence']) <= 4
+            and all(isinstance(block, dict) and type(block.get('source')) is int
+                    and 0 <= block['source'] < len(item['sources'])
+                    and isinstance(block.get('title'), str) and block['title'].strip()
+                    and len(block['title']) <= 60 and isinstance(block.get('points'), list)
+                    and 1 <= len(block['points']) <= 4
+                    and all(isinstance(point, str) and point.strip() and len(point) <= 160
+                            for point in block['points']) for block in item['technical_evidence'])):
+        raise Refused('Technical evidence needs one to four titled source blocks with short result points')
     if item['draft_id'] is not None and item['draft_id'] not in [
             d['id'] for d in detail_data.get('drafts', [])]:
         raise Refused('Finding references an unknown Gmail draft')
@@ -431,27 +441,33 @@ def render(args):
                      + html.escape(correction.get('at', '')) + '</small>'
                      if correction.get('status') == 'corrected' else '')
         sources = []
-        for source in item['sources']:
+        blocks = item.get('technical_evidence', [
+            {'source': n, 'title': source['kind'].capitalize(), 'points': [source['fact']]}
+            for n, source in enumerate(item['sources'])])
+        for block in blocks:
+            source = item['sources'][block['source']]
             url = safe_url(source['location'])
-            location = f'<a href="{html.escape(url, quote=True)}">source</a>' if url else (
-                html.escape(safe_text(source['location'], None)))
-            sources.append(f'<li>{html.escape(safe_text(source["fact"], None))} ({location})</li>')
-        owner_evidence = ''.join(f'<li>{html.escape(safe_text(fact, 220))}</li>'
-                                 for fact in item.get('owner_evidence', [item['why']]))
-        rows.append(f'<tr><td><a href="{html.escape(gmail_url(index["account"], tid), quote=True)}">'
+            location = (f'<a href="{html.escape(url, quote=True)}">{html.escape(url)}</a>' if url else
+                        '<pre><code>' + html.escape(safe_text(source['location'], None)) + '</code></pre>')
+            points = ''.join(f'<li>{html.escape(safe_text(point, None))}</li>' for point in block['points'])
+            sources.append('<section class="source-block"><h3>' + html.escape(safe_text(block['title'], 60))
+                           + '</h3>' + location + '<ul>' + points + '</ul></section>')
+        if 'technical_evidence' not in item:
+            sources.append('<p>Since run: ' + html.escape(safe_text(item['changed_since_run'], None)) + '</p>')
+        owner_points = item.get('owner_evidence', [item['why']])
+        owner_evidence = ''.join(f'<li>{html.escape(safe_text(fact, 420))}</li>' for fact in owner_points)
+        rows.append(f'<article><header class="action-header"><div><a href="{html.escape(gmail_url(index["account"], tid), quote=True)}">'
                     f'{html.escape(entry["subject"])}</a><small>{html.escape(item["priority"])}</small>'
-                    f'</td><td>{corrected}<strong>{html.escape(safe_text(item["action"], 280))}</strong><br>'
-                    f'{html.escape(safe_text(item["why"], 420))}'
+                    f'</div><div>{corrected}<strong>{html.escape(safe_text(item["action"], 280))}</strong></div></header>'
                     '<details><summary>Product owner evidence</summary><ul>'
                     + owner_evidence + '</ul></details>'
-                    '<details><summary>Technical evidence</summary><ul>'
-                    + ''.join(sources) + '</ul><p>Since run: '
-                    + html.escape(safe_text(item['changed_since_run'], None)) + '</p></details></td></tr>')
+                    '<details><summary>Technical evidence</summary>'
+                    + ''.join(sources) + '</details></article>')
     primary_rows = rows[:PRIMARY_ACTION_ROWS]
     remaining_rows = rows[PRIMARY_ACTION_ROWS:]
     remaining = ('<details class="more-actions"><summary>'
                  + f'{len(remaining_rows)} more action' + ('s' if len(remaining_rows) != 1 else '')
-                 + '</summary><table>' + ''.join(remaining_rows) + '</table></details>'
+                 + '</summary>' + ''.join(remaining_rows) + '</details>'
                  if remaining_rows else '')
     reviewed = {i['thread_id'] for i in items}
     unresolved = sum(t['state'] not in ('answered', 'no_unanswered_inbound') and
@@ -460,15 +476,19 @@ def render(args):
     report = ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" '
               'content="width=device-width,initial-scale=1"><title>Mailbox today</title><style>'
               'body{font:16px/1.45 system-ui;color:#18232c;max-width:1000px;margin:40px auto;padding:0 20px}'
-              'h1{font-size:28px;margin-bottom:4px}p,small{color:#56616a}table{width:100%;border-collapse:collapse}'
-              'td{vertical-align:top;border-top:1px solid #dce2e7;padding:14px 0}td:first-child{width:34%;'
-              'padding-right:24px}a{color:#155c9b}small{display:block}details{font-size:14px;margin-top:8px}'
-              'details{overflow-wrap:anywhere}'
+              'h1{font-size:28px;margin-bottom:4px}p,small{color:#56616a}'
+              'article{border-top:1px solid #dce2e7;padding:14px 0}.action-header{display:grid;'
+              'grid-template-columns:32% 1fr;gap:24px}a{color:#155c9b}small{display:block}'
+              'details{font-size:14px;margin-top:8px;overflow-wrap:anywhere}'
+              '.source-block{background:#f6f8fa;border-left:3px solid #dce2e7;padding:10px 14px;margin:12px 0}'
+              '.source-block h3{font-size:14px;margin:0 0 4px}.source-block>a,pre{font:12px/1.5 monospace}'
+              'pre{white-space:pre-wrap;margin:4px 0}'
+              '@media(max-width:600px){.action-header{grid-template-columns:1fr;gap:4px}}'
               '@media print{body{font-size:11px;margin:12px}details{display:none}}</style><h1>Mailbox today</h1><p>'
               + html.escape(index['account']) + ' · ' + html.escape(index['collected_at'][:10]) + '</p>'
-              + freshness_note + '<table>'
-              + (''.join(primary_rows) or '<tr><td>No reviewed actions to surface.</td></tr>')
-              + '</table>' + remaining + '<p>'
+              + freshness_note
+              + (''.join(primary_rows) or '<p>No reviewed actions to surface.</p>')
+              + remaining + '<p>'
               + (f'Recent inbox {c["recent_inbox_checked"]}/{c["recent_inbox_discovered"]} checked · '
                  f'older draft threads {c["older_draft_threads_checked"]}/{c["older_draft_threads_discovered"]} checked · '
                  if 'recent_inbox_checked' in c else f'{c["checked_threads"]} threads checked · ')

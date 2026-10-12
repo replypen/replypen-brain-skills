@@ -19,11 +19,12 @@ Emit one final finding per selected thread, as a JSON array:
   "priority": "today",
   "verdict": "uncertain",
   "actionable": true,
-  "action": "Concrete next step for the mailbox owner",
+  "action": "Check the promised refund before tomorrow's renewal",
   "why": "Single material reason",
   "owner_evidence": ["The customer is still waiting for the promised refund", "The refund has not been issued"],
   "changed_since_run": "Verified delta, or no change observed",
-  "sources": [{"kind": "code", "location": "path:line", "fact": "Independently verified fact"}]
+  "sources": [{"kind": "code", "location": "path:line", "fact": "Independently verified fact"}],
+  "technical_evidence": [{"source": 0, "title": "Billing", "points": ["Refund requires an explicit action; cancellation alone creates no credit."]}]
 }]
 ```
 
@@ -31,8 +32,10 @@ Quality and mailbox action are separate: a `confirmed` draft may still need the 
 
 Use actual JSON `null` for absent IDs. `verdict`: `confirmed`, `incorrect`, `uncertain`, `needs_human`. Sources use `code`, `production`, `public`, or `mail`; provide exact file/command/URL and verified fact. Provide exact Gmail draft ID (not rc's draft UUID) when the finding concerns a draft. If evidence is unavailable, say what is missing in the finding; do not manufacture certainty.
 
-Emit `owner_evidence`: one to three independently supported, plain-language facts or caveats, at most 220 characters each. Explain what matters to the product owner; do not repeat the action or reason, retell the thread, or include commands, UUIDs, code paths or schema jargon. Keep exact provenance in `sources`: precise file paths and lines (including Go files), read-only commands, record IDs and URLs. The report separates these into two closed accordions. Older findings without `owner_evidence` fall back to the reason alone, never their technical sources.
+Keep the header action to one short statement, normally 8–14 words; retain essential owner/deadline even when longer. Put rationale in evidence, not a second header sentence. Emit `owner_evidence`: one to three independently supported plain-language fragments, usually 8–14 words, at most 220 characters each. Do not repeat action/reason, retell the thread, or include commands, UUIDs, code paths or schema jargon. These facts alone appear inside the full-width Product owner evidence accordion below the subject/action header; `why` stays private. Legacy findings without owner facts show the reason once.
+
+Keep exact provenance in `sources`: file paths and lines (including Go files), read-only commands, record IDs and URLs. New findings must emit `technical_evidence`: select 2–4 relevant source/result blocks (one if only one source matters), each with a zero-based `source` index, short `title` (≤60 characters), and 1–4 supported `points` (≤160 characters each). Prefer 8–14-word fragments; include material changes and caveats, omit chronology dumps and repeated facts. Source locations appear separately, so do not repeat them in points. The full-width Technical evidence accordion shows these selected blocks instead of the raw source prose. Raw sources and `changed_since_run` stay in the private finding. Legacy findings render their original source/result blocks without invented paraphrases.
 
 Only for a demonstrably incorrect **unmodified unsent AI draft**, include `replacement_body` with the complete plain-text body. Match the latest run's `draft_markdown` byte-for-byte to exactly one Gmail draft. Preserve existing quotes verbatim; keep the correction narrow. If the draft was human-edited, another reply exists, authorship is uncertain, or the thread/run changed, recommend the owner's next action instead. The coordinator validates and performs any authorized correction separately.
 
-A concise cockpit row needs subject + next action + why. Do not make a card for every successful/simple email, retell the thread, or reproduce sensitive content. Evidence can expand; URLs in the published page must not carry bearer tokens.
+A concise cockpit header needs subject + one short action. Do not make a card for every successful/simple email or reproduce sensitive content. Both evidence accordions start closed; URLs in the published page must not carry bearer tokens.

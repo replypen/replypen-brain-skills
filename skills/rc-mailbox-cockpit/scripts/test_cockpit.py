@@ -139,6 +139,22 @@ class Tests(unittest.TestCase):
                 with self.assertRaises(c.Refused):
                     c.check_finding(finding, detail)
 
+    def test_technical_evidence_requires_valid_source_and_bounded_results(self):
+        detail, finding = fixture()
+        block = {'source': 0, 'title': 'Billing', 'points': ['Refund pending.']}
+        finding['technical_evidence'] = [block]
+        c.check_finding(finding, detail)
+        invalid = [None, [], [block] * 5, ['not a block']]
+        invalid += [[dict(block, **change)] for change in (
+            {'source': True}, {'source': -1}, {'source': 1}, {'source': '0'},
+            {'title': ''}, {'title': ' '}, {'title': 'x' * 61},
+            {'points': []}, {'points': ['a'] * 5}, {'points': ['']},
+            {'points': [1]}, {'points': ['x' * 161]})]
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(c.Refused):
+                finding['technical_evidence'] = value
+                c.check_finding(finding, detail)
+
     def test_pagination_and_raw_cli(self):
         client = c.Client({'gws_script': 'core.py', 'gws_config': 'config.json', 'project': 'test'})
         with patch.object(client, 'api', side_effect=[{'drafts': [{'id': '1'}], 'nextPageToken': 'next'},
@@ -208,16 +224,38 @@ class Tests(unittest.TestCase):
             self.assertNotIn('token=secret', report)
             self.assertNotIn('owner-secret', report)
             self.assertIn('unlisted threads unknown', report)
+            self.assertNotIn('<table', report)
+            self.assertIn('<article><header class="action-header">', report)
+            self.assertIn('</header><details><summary>Product owner evidence', report)
+            header = re.search(r'<header.*?</header>', report, re.S).group(0)
+            self.assertIn('Send the verified reply', header)
+            self.assertNotIn('onerror', header)  # Reason belongs below the header.
             sections = dict(re.findall(r'<details><summary>(.*?)</summary>(.*?)</details>', report, re.S))
             self.assertEqual(set(sections), {'Product owner evidence', 'Technical evidence'})
             self.assertNotRegex(report, r'<details\b[^>]*\bopen\b')
             self.assertIn('Refund pending &lt;script&gt;evil&lt;/script&gt;', sections['Product owner evidence'])
+            self.assertNotIn('onerror', sections['Product owner evidence'])
             self.assertNotIn('Independent fact', sections['Product owner evidence'])
             self.assertNotIn(long_location, sections['Product owner evidence'])
             self.assertNotIn('Refund pending', sections['Technical evidence'])
             self.assertIn(long_location, sections['Technical evidence'])
             self.assertIn(long_fact, sections['Technical evidence'])
             self.assertIn(long_delta, sections['Technical evidence'])
+            self.assertIn('<pre><code>' + long_location + '</code></pre>', sections['Technical evidence'])
+            finding['technical_evidence'] = [
+                {'source': 1, 'title': 'Billing <script>evil</script>', 'points': ['Refund pending.']},
+                {'source': 0, 'title': 'Run', 'points': ['See https://example.test/check?token=point-secret']}]
+            c.save(bundle / 'findings.json', [finding])
+            c.render(argparse.Namespace(bundle=temp, findings=str(bundle / 'findings.json'),
+                                        out=str(bundle / 'report.html')))
+            selected = (bundle / 'report.html').read_text()
+            self.assertIn('Billing &lt;script&gt;evil&lt;/script&gt;', selected)
+            self.assertIn(long_location, selected)
+            self.assertIn('Refund pending.', selected)
+            self.assertIn('href="https://example.test/check"', selected)
+            for omitted in (long_fact, long_delta, 'Independent fact', 'point-secret', 'token=secret'):
+                self.assertNotIn(omitted, selected)
+            del finding['technical_evidence']
             del finding['owner_evidence']
             c.save(bundle / 'findings.json', [finding])
             c.render(argparse.Namespace(bundle=temp, findings=str(bundle / 'findings.json'),
@@ -228,6 +266,7 @@ class Tests(unittest.TestCase):
             self.assertIn('&lt;img src=x onerror=evil()&gt;', owner_section)
             self.assertNotIn('Independent fact', owner_section)
             self.assertNotIn(long_location, owner_section)
+            self.assertEqual(owner_section.count('&lt;img src=x onerror=evil()&gt;'), 1)
             detail['collected_at'] = '2020-01-01T00:00:00+00:00'
             c.save(bundle / 'details/abc.json', detail)
             c.render(argparse.Namespace(bundle=temp, findings=str(bundle / 'findings.json'),
