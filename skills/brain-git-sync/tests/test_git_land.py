@@ -157,3 +157,73 @@ def test_refresh_mirror_per_project(world, capsys, monkeypatch, tmp_path):
     assert [v['ok'] for v in result['mirrors']] == [True, False]
     lines = log.read_text().splitlines()
     assert lines[0] == f"--project p1 dev mirror refresh --repo common --expect-sha {result['sha']} --accept-descendant"
+
+
+def test_noop_still_promotes_requested_stable_and_refreshes(world, capsys, monkeypatch, tmp_path):
+    bin_dir, log = tmp_path / 'bin', tmp_path / 'rc.log'
+    bin_dir.mkdir()
+    (bin_dir / 'rc').write_text(f'#!/bin/sh\ncase "$*" in *--help*) exit 0;; esac\necho "$*" >> {log}\n')
+    (bin_dir / 'rc').chmod(0o755)
+    monkeypatch.setenv('PATH', f"{bin_dir}:{__import__('os').environ['PATH']}")
+    shared = world['shared']
+    (shared / 'mine.txt').write_text('new\n')
+    sh(shared, 'commit', '-qam', 'mine')
+    sh(shared, 'push', '-q', 'origin', 'HEAD:main')
+    code, result = run(capsys, '--repo', str(shared), '--commit', 'HEAD', '--also', 'stable',
+                       '--refresh-mirror', 'common', '--project', 'p1')
+    assert code == 0 and result['status'] == 'noop' and result['pushed'] == ['stable'], result
+    assert remote(world, 'stable') == remote(world) == result['sha']
+    assert log.read_text().split() == f"--project p1 dev mirror refresh --repo common --expect-sha {result['sha']}".split()
+    code, result = run(capsys, '--repo', str(shared), '--commit', 'HEAD', '--also', 'stable')
+    assert code == 0 and result['status'] == 'noop' and result['pushed'] == []
+
+
+def test_identical_add_already_landed_is_noop(world, capsys):
+    shared, other = world['shared'], world['other']
+    for repo, subject in ((shared, 'mine add'), (other, 'their add')):
+        (repo / 'added.txt').write_text('identical\n')
+        sh(repo, 'add', 'added.txt')
+        sh(repo, 'commit', '-qm', subject)
+    sh(other, 'push', '-q', 'origin', 'HEAD:main')
+    code, result = run(capsys, '--repo', str(shared), '--commit', 'HEAD')
+    assert code == 0 and result['status'] == 'noop', result
+
+
+def test_paths_replace_directory_with_file_and_back(world, capsys):
+    shared = world['shared']
+    (shared / 'slot').mkdir()
+    (shared / 'slot' / 'old.txt').write_text('old\n')
+    sh(shared, 'add', 'slot')
+    sh(shared, 'commit', '-qm', 'directory')
+    sh(shared, 'push', '-q', 'origin', 'HEAD:main')
+    (shared / 'slot' / 'old.txt').unlink()
+    (shared / 'slot').rmdir()
+    (shared / 'slot').write_text('replacement\n')
+    code, result = run(capsys, '--repo', str(shared), '--paths', 'slot', '--message', 'to file')
+    assert code == 0, result
+    assert sh(world['origin'], 'ls-tree', '-r', '--name-only', remote(world), 'slot') == 'slot'
+    assert sh(world['origin'], 'show', f"{remote(world)}:slot") == 'replacement'
+    (shared / 'slot').unlink()
+    (shared / 'slot').mkdir()
+    (shared / 'slot' / 'new.txt').write_text('new\n')
+    code, result = run(capsys, '--repo', str(shared), '--paths', 'slot', '--message', 'to dir')
+    assert code == 0, result
+    assert sh(world['origin'], 'ls-tree', '-r', '--name-only', remote(world), 'slot') == 'slot/new.txt'
+
+
+def test_landing_survives_descendant_pushed_before_verification(world, capsys, monkeypatch):
+    shared = world['shared']
+    (shared / 'mine.txt').write_text('my change\n')
+    real_git = git_land.git
+
+    def racing_git(cwd, *args, check=True):
+        done = real_git(cwd, *args, check=check)
+        if 'push' in args and not done.returncode:  # a colleague builds on our commit before we verify
+            foreign_push(world)
+        return done
+    monkeypatch.setattr(git_land, 'git', racing_git)
+    code, result = run(capsys, '--repo', str(shared), '--paths', 'mine.txt', '--message', 'mine')
+    assert code == 0 and result['status'] == 'landed', result
+    assert remote(world) != result['sha']
+    sh(world['origin'], 'merge-base', '--is-ancestor', result['sha'], remote(world))
+    assert sh(world['origin'], 'show', f'{remote(world)}:mine.txt') == 'my change'

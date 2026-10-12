@@ -251,11 +251,28 @@ def tokens(line: str) -> list[str]:
         return re.sub(r"([;|&()])", r" \1 ", line).split()
 
 
-def segments(command: str):
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][\w.-]*)\2")
+ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
+
+
+def without_heredocs(command: str) -> list[str]:
+    """Command lines minus heredoc bodies: `cat <<'EOF'` prints its body, it never runs it."""
+    lines, pending = [], []
     for line in command.splitlines():
+        if pending:
+            if line.lstrip("\t" if pending[0][0] else "") == pending[0][1]:
+                pending.pop(0)
+            continue
+        lines.append(line)
+        pending = [(bool(m.group(1)), m.group(3)) for m in HEREDOC.finditer(line)]
+    return lines
+
+
+def segments(command: str):
+    for line in without_heredocs(command):
         seg: list[str] = []
         for tok in tokens(line):
-            if tok in SEPARATORS or set(tok) <= set(";|&()$`"):
+            if tok in SEPARATORS or (tok and set(tok) <= set(";|&()$`")):
                 if seg:
                     yield seg
                 seg = []
@@ -270,15 +287,15 @@ def helper_calls(command: str, helper: str) -> list[list[str]]:
     calls = []
     for seg in segments(command):
         for i, tok in enumerate(seg):
-            if helper not in tok:
-                continue
             before = seg[:i]
+            if helper not in tok or (ASSIGNMENT.match(tok) and all(ASSIGNMENT.match(t) for t in before)):
+                continue  # `HELPER=/path/x.py` only assigns a variable
             launched = all(t in LAUNCHERS or t.startswith("python3.") or "=" in t or t.isdigit()
                            or (t.startswith("-") and t != "-c") for t in before)
             if launched and (not before or before[-1] != "-c"):
                 argv = []
                 for t in seg[i + 1:]:
-                    if t[0] in "<>":
+                    if t[:1] in ("<", ">"):
                         break
                     argv.append(t)
                 calls.append(argv)

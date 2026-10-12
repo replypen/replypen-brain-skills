@@ -68,7 +68,8 @@ uv run --no-project python "<skills>/brain-git-sync/scripts/git_land.py" --repo 
   --also stable --refresh-mirror <mirror-name> --project p1 --project p2   # mirrors only
 ```
 
-`--dry-run` builds the commit and pushes nothing. Exit 2 = blocked (hook, secret/ignored path,
+Reruns are safe: when `main` already has the bytes the status is `noop`, yet `--also` branches still
+fast-forward and mirrors still refresh. `--dry-run` builds the commit and pushes nothing. Exit 2 = blocked (hook, secret/ignored path,
 `stable` not behind `main`), 3 = cherry-pick conflict (nothing landed), 4 = a mirror refresh failed.
 
 ## Hard rules (data loss if violated)

@@ -8,10 +8,10 @@ Parallel agents share one checkout: committing, amending or stashing there sweep
 someone else's work. This tool never touches the source checkout's index, HEAD or stash. It builds a
 throwaway detached worktree at a freshly fetched origin/<branch>, brings in ONLY your change (listed
 paths' working-tree bytes, or one cherry-picked commit), commits with the repo's hooks, pushes
-non-force (optionally the same commit to more branches, e.g. a mirror's `stable`), verifies the remote
-ref, and removes the worktree on every exit. A push lost to a concurrent publisher is retried from the
-new tip; nothing is ever force-pushed or rewritten. Optionally refreshes the mirror per project with
-`rc dev mirror refresh --expect-sha`.
+non-force (optionally the same commit to more branches, e.g. a mirror's `stable`, also when main already
+has it), verifies each remote ref contains it, and removes the worktree on every exit. A push lost to a
+concurrent publisher is retried from the new tip; nothing is ever force-pushed or rewritten. Optionally
+refreshes the mirror per project with `rc dev mirror refresh --expect-sha`.
 
     uv run --no-project python git_land.py --repo ~/code/x/mirror --paths a.py docs/b.md \
       --message 'fix: …' --also stable --refresh-mirror mirror --project p1 --project p2
@@ -85,10 +85,16 @@ def copy_paths(repo: Path, wt: Path, files: list[str]) -> None:
     touched = []
     for name in files:
         src, dst = repo / name, wt / name
-        existed = dst.is_symlink() or dst.is_file()
-        if existed:
+        existed = dst.is_symlink() or dst.exists()
+        if dst.is_dir() and not dst.is_symlink():  # a directory at origin replaced by a file (or deleted)
+            shutil.rmtree(dst)
+        elif existed:
             dst.unlink()
         if src.is_symlink() or src.is_file():
+            for parent in reversed(PurePosixPath(name).parents[:-1]):  # a file at origin replaced by a directory
+                if (wt / parent).is_symlink() or (wt / parent).is_file():
+                    (wt / parent).unlink()
+                    touched.append(str(parent))
             dst.parent.mkdir(parents=True, exist_ok=True)
             if src.is_symlink():
                 dst.symlink_to(os.readlink(src))
@@ -127,31 +133,39 @@ def attempt(repo: Path, args: argparse.Namespace, branches: list[str]) -> dict:
         else:
             cherry_pick(wt, args.commit)
         if git(wt, 'diff', '--cached', '--quiet', check=False).returncode == 0:
-            return dict(status='noop', sha=base, base=base, files=files, pushed=[])
-        message = ['-m', args.message] if args.message else ['-C', args.commit]
-        done = git(wt, 'commit', '-q', *message, check=False)  # hooks run: never --no-verify
-        if done.returncode:
-            raise LandError('commit refused (pre-commit hook?): ' + (done.stderr or done.stdout).strip(),
-                            EXIT_BLOCKED)
-        sha = out(wt, 'rev-parse', 'HEAD')
+            sha, stat = base, ''  # origin already has these bytes; still promote any --also branch
+        else:
+            message = ['-m', args.message] if args.message else ['-C', args.commit]
+            done = git(wt, 'commit', '-q', *message, check=False)  # hooks run: never --no-verify
+            if done.returncode:
+                raise LandError('commit refused (pre-commit hook?): ' + (done.stderr or done.stdout).strip(),
+                                EXIT_BLOCKED)
+            sha = out(wt, 'rev-parse', 'HEAD')
+            stat = out(wt, 'show', '--stat', '--format=%h %s', 'HEAD')
+        tips = {target: base}
         for extra in branches[1:]:
-            tip = git(repo, 'rev-parse', '-q', '--verify', f'refs/remotes/origin/{extra}', check=False).stdout.strip()
-            if tip and git(wt, 'merge-base', '--is-ancestor', tip, sha, check=False).returncode:
+            tips[extra] = git(repo, 'rev-parse', '-q', '--verify', f'refs/remotes/origin/{extra}',
+                              check=False).stdout.strip()
+            if tips[extra] and git(wt, 'merge-base', '--is-ancestor', tips[extra], sha, check=False).returncode:
                 raise LandError(f'origin/{extra} is not an ancestor of origin/{target}; promote it '
                                 f'separately (refusing to force it)', EXIT_BLOCKED)
-        stat = out(wt, 'show', '--stat', '--format=%h %s', 'HEAD')
-        if args.dry_run:
-            return dict(status='dry-run', sha=sha, base=base, files=files, pushed=[], stat=stat)
+        pushing = [b for b in branches if tips[b] != sha]
+        status = 'landed' if sha != base else 'noop'
+        if not pushing or args.dry_run:
+            return dict(status='dry-run' if args.dry_run and pushing else status, sha=sha, base=base,
+                        files=files, pushed=[], stat=stat)
         push = git(wt, '-c', 'push.followTags=false', 'push', '--atomic', '--porcelain', 'origin',
-                   *[f'HEAD:refs/heads/{b}' for b in branches], check=False)
+                   *[f'HEAD:refs/heads/{b}' for b in pushing], check=False)
         if push.returncode:
-            return dict(status='rejected', sha=sha, base=base, detail=(push.stderr or push.stdout).strip())
-        landed = {b: remote_sha(repo, b) for b in branches}
-        wrong = {b: s for b, s in landed.items() if s != sha}
-        if wrong:
-            raise LandError(f'pushed {sha} but origin now reports {wrong}')
-        fetch(repo, branches)  # keep the source checkout's remote-tracking refs honest
-        return dict(status='landed', sha=sha, base=base, files=files, pushed=branches, stat=stat)
+            return dict(status='rejected', sha=sha, base=base, tips={b: tips[b] for b in pushing},
+                        detail=(push.stderr or push.stdout).strip())
+        # Verify by ancestry, not equality: a colleague may already have built on top of our push.
+        fetch(repo, pushing)  # also keeps the source checkout's remote-tracking refs honest
+        lost = [b for b in pushing if git(repo, 'merge-base', '--is-ancestor', sha, f'refs/remotes/origin/{b}',
+                                          check=False).returncode]
+        if lost:
+            raise LandError(f'pushed {sha} but origin/{", origin/".join(lost)} no longer contains it')
+        return dict(status=status, sha=sha, base=base, files=files, pushed=pushing, stat=stat)
     finally:
         git(repo, 'worktree', 'remove', '--force', str(wt), check=False)
         git(repo, 'worktree', 'prune', check=False)
@@ -165,11 +179,11 @@ def land(repo: Path, args: argparse.Namespace) -> dict:
         result['attempts'] = n
         if result['status'] != 'rejected':
             return result
-        if remote_sha(repo, args.push_to) == result['base']:
+        if all(remote_sha(repo, b) == tip for b, tip in result['tips'].items()):
             raise LandError('push rejected, and not by a concurrent publish: ' + result['detail'])
-        print(f'git-land: origin/{args.push_to} moved during attempt {n}; retrying from the new tip',
+        print(f'git-land: origin moved during attempt {n}; retrying from the new tip',
               file=sys.stderr)
-    raise LandError(f'origin/{args.push_to} kept moving; gave up after {args.max_attempts} attempts')
+    raise LandError(f'origin kept moving; gave up after {args.max_attempts} attempts')
 
 
 def refresh(repo: Path, name: str, projects: list[str], sha: str, dry_run: bool) -> list[dict]:

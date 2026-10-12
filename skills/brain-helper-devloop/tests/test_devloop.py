@@ -135,3 +135,46 @@ def test_roster_resolution(tmp_path):
     assert resolve_principal("boss=acme_admin:a-3", brain, "acme-support") == ("acme_admin", "a-3")
     with pytest.raises(RosterError, match="known labels: regular-admin"):
         resolve_principal("super-admin", brain, "acme-support")
+
+
+@pytest.mark.parametrize("command", [
+    f"cat <<'EXAMPLE'\npython {HELPER_PATH} --id 42\nEXAMPLE",
+    f"cat <<EOF > notes.md\npython {HELPER_PATH} --id 42\nEOF",
+    f"cat <<-EOF\n\tpython {HELPER_PATH} --id 42\n\tEOF",
+    f"HELPER={HELPER_PATH}",
+])
+def test_heredoc_body_and_assignment_are_not_calls(command):
+    assert devloop.helper_calls(command, HELPER) == []
+
+
+def test_calls_around_heredocs_and_assignments_still_count():
+    command = (f"cat <<'EOF'\npython {HELPER_PATH} --id 1\nEOF\npython {HELPER_PATH} --id 2\n"
+               f"FOO=1 python {HELPER_PATH} --id 3\npython {HELPER_PATH} a=b")
+    assert devloop.helper_calls(command, HELPER) == [["--id", "2"], ["--id", "3"], ["a=b"]]
+
+
+def test_empty_quoted_argument_is_kept():
+    assert devloop.helper_calls(f'python {HELPER} --name "" --json', HELPER) == [["--name", "", "--json"]]
+
+
+def test_ask_resumes_submission_after_poll_failure(tmp_path, monkeypatch):
+    args = devloop.build_parser().parse_args(["ask", "--tag", "t", "--questions", "x", "--poll", "0"])
+    row = {"id": "q1", "tenant": "", "question": "A question", "as": ""}
+    runs, calls = tmp_path / "runs", []
+
+    def failing_poll(command, root, timeout=180):
+        calls.append(command)
+        if command[0] == "ask":
+            return {"run_id": "r1"}
+        raise devloop.DevloopError("temporary poll failure")
+    monkeypatch.setattr(devloop, "rc_json", failing_poll)
+    with pytest.raises(devloop.DevloopError):
+        devloop.run_one(row, args, tmp_path, runs, None)
+    assert (runs / "q1.submit.json").exists()
+
+    def resumed(command, root, timeout=180):
+        calls.append(command)
+        return {"run_id": "r1", "status": "done"}
+    monkeypatch.setattr(devloop, "rc_json", resumed)
+    assert devloop.run_one(row, args, tmp_path, runs, None)["status"] == "done"
+    assert sum(command[0] == "ask" for command in calls) == 1
