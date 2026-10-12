@@ -129,6 +129,8 @@ Only these are first-class:
   and reviewed prefer/avoid imports for large document sources.
 - `brain-ask` — last-mile prod/test run validation with `rc ask`.
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
+- `rc-mailbox-cockpit` — local Google inbox/draft triage, independent Opus checks, concise cockpit,
+  and explicitly authorized guarded draft-body corrections.
 - `rc-health` — stale mirrors and dead-lettered runs.
 - `rc-fleet` — recent fleet and recurring failure patterns.
 - `brain-fleet-report` — the daily two-audience fleet report: Python collects a day of evidence;

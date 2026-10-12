@@ -60,6 +60,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | [`brain-kb-mirror`](skills/brain-kb-mirror/SKILL.md) | Re-pull a public help center (Zendesk) into a committed Markdown + image snapshot under `knowledge/` from a per-brain source profile, describe new screenshots and summarize video transcripts with cheap sub-agents, check, publish. |
 | `brain-ask` | Last-mile production-loop `rc ask` validation, usually against a pushed `dev/*` ref. |
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
+| [`rc-mailbox-cockpit`](skills/rc-mailbox-cockpit/SKILL.md) | Independently check complex Google-mailbox drafts and surface neglected work in a concise daily cockpit; optional guarded draft corrections. |
 | `rc-health` | Stale mirrors plus dead-lettered runs. |
 | `rc-fleet` | Recent fleet digest plus recurring failure patterns. |
 | [`brain-helper-devloop`](skills/brain-helper-devloop/SKILL.md) | The loop for adding or changing a brain/mirror helper: design from real tickets, build read-only and verdict-first, prove on real data (`mirror-try`, `scope-check`), push a dev ref, ask synthetic admin questions with `rc ask`, read each trace for unprompted pickup, fix developer experience instead of adding prompt rules, publish, re-ask live. |
