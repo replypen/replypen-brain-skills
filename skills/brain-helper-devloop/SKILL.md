@@ -74,9 +74,10 @@ Each step links the skill that owns the mechanics; this file owns the order and 
 | ONE mirror-try as the regular admin principal | which sections must degrade, before any `rc ask` | [scope-check](../scope-check/SKILL.md) |
 
 Shared mirror checkout: `--diff --only <your paths>` keeps other agents' uncommitted edits out; or
-commit and use `--ref <branch> --base <sha>` (pin the base once `origin/main` moved). Principal ids:
-the mirror's `_internal/scopecheck-<project>.toml` roster (KampAdmin `admins` is readable via the
-tenant query plane: `is_super_admin=false AND active`). The privacy reducer shortens capitalised
+commit and use `--ref <branch> --base <sha>` (pin the base once `origin/main` moved). The narrow
+principal is a roster label: `mirror_try.py … --as regular-admin` resolves it through the mirror's
+`_internal/scopecheck-<project>.toml` (add a new audience there, ids from the tenant query plane:
+KampAdmin `admins` with `is_super_admin=false AND active`). The privacy reducer shortens capitalised
 words (`Meerdere` → `M.`): never "fix" a label you only saw through it. Severity (✓/⚠/✗) is a
 product call: run on 3+ live records first; working sites/records must not get ✗.
 
@@ -85,24 +86,45 @@ pickup of a wrong answer.
 
 ## 4. Ask the brain like the admin would
 
-- Push the brain change to `dev/<branch>`. `--brain-ref` covers the brain repo only: the mirror
-  serves its tracked branch (`rc project repo ls` → `default_branch`; KampAdmin: `stable`, not
-  `main`), so land it through the mirror's own publish path (its README) first, then `rc dev mirror
-  refresh --expect-sha` ([prod-console § Workflow](../prod-console/SKILL.md#workflow)); the response's
-  `branch` names what it verified. The worker's fetch can lag 15–20 min and the tip moves under you
-  while siblings push: plan the wait; `--accept-descendant` accepts a newer tip containing your SHA.
-- Derive 5–8 **synthetic admin questions** from the tickets: the admin's words, chat style, anonymised,
-  with the real record ids a ticket needs. Never invent ids. Keep the question path-free — do not
-  name your helper or SKILL file; that is the thing under test.
-- `rc ask "<question>" --brain-ref dev/<branch> [--tenant <slug>]` ([brain-ask](../brain-ask/SKILL.md)).
-  Capture every `run_id`. For the narrow-admin pickup test add `--principal-kind <kind>
-  --principal-id <id>`. Raw scenario may answer in another language: judge pickup, not prose.
+- Push the brain change to `dev/<branch>` and the mirror change to a `dev/<branch>` of the mirror
+  repo (`git push origin HEAD:refs/heads/dev/<branch>` from your worktree; `main`/`stable` stay
+  untouched). Both ride one test run: `--brain-ref dev/<branch>` for the brain,
+  `--mirror-ref <repo>=dev/<branch>` (or `=<40-char sha>`) per changed mirror (rc ≥ 1.38). No mirror
+  publish, no `rc dev mirror refresh`, no moving tip: the run mounts exactly that commit and
+  `rc run debug` shows `Mirror <repo>: dev/<branch> @ <sha> · override`.
+- Derive 5–8 **synthetic admin questions** from the tickets into `questions.tsv` (`id`, `tenant`,
+  `question`, optional `as` = roster label): the admin's words, chat style, anonymised, with the real
+  record ids a ticket needs. Never invent ids. Keep the question path-free — do not name your helper
+  or SKILL file; that is the thing under test.
+- One command asks them all (3 in flight, run ids persisted before waiting, re-entrant):
+
+  ```bash
+  DL="$PWD/.agents/skills/brain-helper-devloop/scripts/devloop.py"
+  uv run --no-project python "$DL" ask --tag <topic> --questions questions.tsv \
+    --brain-ref dev/<branch> --mirror-ref kampadmin-rootcause-common=dev/<branch>
+  ```
+
+  Results land in `.rootcause/devloop/<topic>/runs/<id>.json`. A single question stays
+  `rc ask … --brain-ref … --mirror-ref …` ([brain-ask](../brain-ask/SKILL.md)); the narrow-admin
+  pickup test is the `as` column (or `--principal-kind/--principal-id`). Raw scenario may answer in
+  another language: judge pickup, not prose.
 - Tickets drift (half are usually fixed in prod by now): derive each question and expected answer
   from **today's** record state; naming the historical cause as a likely explanation is not a miss.
 
 ## 5. Read the trace for pickup, not only for correctness
 
-`rc run debug <run_id>` ([rc-debug](../rc-debug/SKILL.md)); per run record four things:
+`devloop.py report` reads every run's trace and tables the mechanical part; `rc run debug <run_id>`
+([rc-debug](../rc-debug/SKILL.md)) is the drill-down for one run:
+
+```bash
+uv run --no-project python "$DL" report --tag <topic> --helper <helper>.py \
+  --case skills/cases/<slug>.md --expect-mirror kampadmin-rootcause-common=<sha>
+```
+
+Columns: surfaced (grounding pre-step saw the case/helper) · opened (main loop read the case file) ·
+called (helper argv, call count, exit, Traceback) · brain/mirror SHA ✓/✗ against the expectation ·
+answer head · an empty `right` column. Those are command-text matches (a read attempt, not a proven
+read); the four judgements per run are still yours:
 
 1. **Opened** — did the main loop read your SKILL/case file? (files-read section; grounding
    pre-step selections are hints, not proof).
@@ -112,7 +134,7 @@ pickup of a wrong answer.
 4. **Cause of a miss** — grounding (file never surfaced), routing (surfaced but not opened),
    helper output (called, verdict buried or misread), or model (everything right, wrong prose).
 
-Table it: question → opened/called → ✓/✗ → cause. That table is the deliverable of the loop.
+Fill `right` and `cause` into that table: it is the deliverable of the loop.
 When the draft contradicts your runbook, check the source method before calling it a miss: the model
 reading `/mirrors` code is often right and the runbook paraphrase wrong — fix the runbook.
 Knowledge-only questions (no record id) legitimately skip the helper; count them separately.
@@ -128,16 +150,25 @@ or when the remaining misses are clearly not yours (model prose, emphasis, a gro
 
 ## 7. Ship and re-ask live
 
-[brain-publish](../brain-publish/SKILL.md) for the brain (exact SHA, channel proof); the mirror's
-own publish path for the mirror. Then one `rc ask` **without** `--brain-ref` and confirm in its trace
-`brain_resolved` is the published SHA and the helper still gets called. Done means live, not
-"ready to publish". Before publishing: every `skills/**` description ≤ 1024 chars with a first
-sentence that fits the 150-char tree gloss (publish lint, also for other threads' files on `main`;
-the pre-commit hygiene gate catches yours).
+[brain-publish](../brain-publish/SKILL.md) for the brain (exact SHA, channel proof). The mirror
+lands with one command from any checkout, also a shared one holding siblings' uncommitted files
+([brain-git-sync § git_land](../brain-git-sync/SKILL.md)): a throwaway worktree at `origin/main`,
+only your files or commit, push `main` + `stable`, then the mirror refresh per consuming project:
 
-Shared checkouts with parallel agents: code in a `git worktree add` copy; land through a detached
-`/tmp` worktree at `origin/main` + cherry-pick, never amend/rebase in the shared checkout. Shared
-files commit whole: a sibling may already have landed your hunk (`git grep origin/main` first), and a
-routing-line conflict in `AGENTS.md` is normal — keep both lines.
+```bash
+uv run --no-project python "$PWD/.agents/skills/brain-git-sync/scripts/git_land.py" \
+  --repo <mirror checkout> --paths <your files…> --message "<subject>" --also stable \
+  --refresh-mirror kampadmin-rootcause-common --project kampadmin --project kampadmin-support --project kampadmin-staff
+```
+
+(`--commit <sha>` lands a commit you already made in a worktree.) Then one `rc ask` **without**
+`--brain-ref`/`--mirror-ref` and confirm in its trace `brain_resolved` is the published SHA, the
+mirror line shows the landed SHA and the helper still gets called. Done means live, not "ready to
+publish". Before publishing: every `skills/**` description ≤ 1024 chars with a first sentence that
+fits the 150-char tree gloss (`brain_lint.py`; the pre-commit hygiene gate catches yours).
+
+Shared checkouts with parallel agents: code in a `git worktree add` copy, never amend/rebase/stash in
+the shared checkout. Shared files commit whole: a sibling may already have landed your hunk
+(`git grep origin/main` first), and a routing-line conflict in `AGENTS.md` is normal — keep both lines.
 
 Per-topic lessons and open gaps live in the brain's `_internal/devloop-lessons.md` (backlog).
