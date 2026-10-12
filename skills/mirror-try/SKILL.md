@@ -18,7 +18,8 @@ Fetch the mirror first. `--ref` compares against local `origin/main`; `--base CO
 add new files to the index first. On a shared checkout add `--only PATH` (repeatable): only those
 paths use working-tree bytes, their imports come from HEAD, other agents' edits stay out. `--json` emits reduced stdout/stderr, exit codes, exact revisions,
 staged paths and console run IDs. A working-tree result uses a content hash, not a commit claim.
-For principal scope, supply `--principal-kind KIND --principal-id ID` (`--principal ID` is an alias).
+For principal scope, `--as LABEL` resolves an audience from `_internal/scopecheck-<project>.toml` (this brain
+or its `.rootcause.toml` `[mirrors]`; a miss lists known labels), or supply `--principal-kind KIND --principal-id ID`.
 Omitting `--tenant` explicitly selects project scope.
 
 Changed non-test grounding files (excluding hidden/action paths), the command's Python script and recursively resolved static sibling/root

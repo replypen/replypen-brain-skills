@@ -231,8 +231,10 @@ Use `./refresh-brains.sh --release patch` for docs/skill changes too; local brai
 floating `main`. Releases must run on `main`; the publisher pushes `HEAD:main`, verifies
 `origin/main == HEAD`, and only then pushes the version tag. `--no-push` changes neither remote ref.
 
-Hold instead only for concrete blockers: failing checks, unrelated dirty files that would be swept in,
-missing image/runtime access, secrets/irreversible effects, or explicit user instruction.
+The release refuses a dirty working tree and its commit carries only the files the bump writes:
+commit (or, from a shared checkout, land with `skills/brain-git-sync/scripts/git_land.py`) your work
+first. Hold instead only for concrete blockers: failing checks, someone else's uncommitted work in the
+tree, missing image/runtime access, secrets/irreversible effects, or explicit user instruction.
 
 ## Verification
 

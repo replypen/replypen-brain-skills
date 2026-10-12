@@ -11,6 +11,11 @@
 > ./refresh-brains.sh                            # no release: just re-point every brain at the newest tag
 > ```
 >
+> **Committed work only.** The release refuses a dirty working tree (tracked edits or non-ignored
+> untracked files) before touching anything, and its commit names exactly the files the bump writes —
+> a colleague's WIP in a shared checkout can never ride along. Commit first; from a shared checkout
+> land your own files with [`git_land.py`](skills/brain-git-sync/SKILL.md#landing-from-a-shared-checkout).
+>
 > The skill ships **strictly tag-pinned** (every skill change is a release), so brains only pick up a
 > change once it's a pushed tag. Remote publication is deliberately **reconciled main first, tag
 > second**: `brain_git_sync.py` merges cross-computer work, retests, pushes, and verifies
@@ -55,7 +60,7 @@ manual release that skips it looks like a pre-migration tag and fails closed:
 
 ```bash
 test "$(git branch --show-current)" = main
-uv run --no-project python scripts/runtime_digest.py --worktree > RUNTIME_DIGEST  # then git add -A + commit
+uv run --no-project python scripts/runtime_digest.py --worktree > RUNTIME_DIGEST  # then git add the bumped files + RUNTIME_DIGEST, commit
 uv run --no-project python skills/brain-git-sync/scripts/brain_git_sync.py \
   --repo "$PWD" --max-push-attempts 4 \
   --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'

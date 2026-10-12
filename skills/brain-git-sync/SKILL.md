@@ -56,6 +56,21 @@ never overwrite it.
    committed, and anything intentionally left unpublished. `--json` gives machine evidence; require
    `ancestry_verified: true` — `brain-publish` takes its publish SHA from exactly that receipt.
 
+## Landing from a shared checkout
+
+Parallel agents share one checkout (a mirror like `kampadmin-rootcause-common`, this kit): never
+commit, amend or stash there. `scripts/git_land.py` lands only your change via a throwaway detached
+worktree at `origin/main` (hooks run, push retried on a race, never forced, worktree always removed):
+
+```bash
+uv run --no-project python "<skills>/brain-git-sync/scripts/git_land.py" --repo "$CHECKOUT" \
+  --paths skills/a.py docs/b.md --message 'fix: …' \   # or --commit <sha> (reuses its message)
+  --also stable --refresh-mirror <mirror-name> --project p1 --project p2   # mirrors only
+```
+
+`--dry-run` builds the commit and pushes nothing. Exit 2 = blocked (hook, secret/ignored path,
+`stable` not behind `main`), 3 = cherry-pick conflict (nothing landed), 4 = a mirror refresh failed.
+
 ## Hard rules (data loss if violated)
 
 - Branch `main`, an `origin`, and a freshly fetched `origin/main`.

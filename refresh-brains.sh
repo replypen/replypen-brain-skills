@@ -10,7 +10,7 @@
 # Usage:
 #   ./refresh-brains.sh                         # refresh-only: re-point shared clone to the newest
 #                                               #   existing tag + re-symlink every local brain
-#   ./refresh-brains.sh --release patch         # cut vX.Y.(Z+1) from pending changes, then refresh
+#   ./refresh-brains.sh --release patch         # cut vX.Y.(Z+1) from committed main, then refresh
 #   ./refresh-brains.sh --release minor|major   # bump that field instead
 #   ./refresh-brains.sh --release 0.2.0         # explicit version
 #   ./refresh-brains.sh --release patch --relock  # ALSO regen requirements.lock + REBUILD the image
@@ -98,7 +98,8 @@ if [ -n "$RELEASE" ]; then
   fi
 
   if [ -n "$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)" ]; then
-    echo "error: release requires a clean main; commit intended work first and leave unrelated WIP out" >&2
+    echo "error: working tree not clean — commit your work first (releases only carry committed changes; a colleague's WIP would be swept in)" >&2
+    git -C "$ROOT" status --short --untracked-files=all >&2
     exit 1
   fi
 
@@ -181,13 +182,18 @@ if [ -n "$RELEASE" ]; then
     run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
   fi
 
-  # 1d. One release commit (includes pending skill/doc edits). Do not create even a local release tag
-  #     until brain-git-sync has reconciled and verified this commit at origin/main.
+  # 1d. One release commit carrying ONLY the files this bump wrote (version literals, RUNTIME_DIGEST,
+  #     the lock on --relock). Feature work must already be committed (clean-tree gate above); naming
+  #     the paths keeps an edit a parallel agent makes mid-release out of it. Do not create even a
+  #     local release tag until brain-git-sync has reconciled and verified this commit at origin/main.
   say "Commit release on main"
-  run git -C "$ROOT" add -A
-  if [ "$DRY" = 1 ]; then git -C "$ROOT" status --short; else
+  RELEASE_PATHS=(RUNTIME_DIGEST)
+  for f in "${FILES[@]}"; do [ -f "$ROOT/$f" ] && RELEASE_PATHS+=("$f"); done
+  [ "$RELOCK" = 1 ] && RELEASE_PATHS+=(runtime/requirements.lock)
+  run git -C "$ROOT" add -- "${RELEASE_PATHS[@]}"
+  if [ "$DRY" = 1 ]; then git -C "$ROOT" status --short -- "${RELEASE_PATHS[@]}"; else
     git -C "$ROOT" commit -q -m "release: v$NEW" \
-      -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+      -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>" -- "${RELEASE_PATHS[@]}"
   fi
   BUMPED=0   # the bump is committed; later failures keep the commit (see RELEASING.md)
 
@@ -269,7 +275,7 @@ if [ "${#BRAINS[@]}" -eq 0 ]; then
   )
 fi
 say "Refresh ${#BRAINS[@]} brain(s) to $TARGET (shared clone: $KIT)"
-for b in "${BRAINS[@]}"; do
+for b in ${BRAINS[@]+"${BRAINS[@]}"}; do  # bash 3.2 + set -u: an empty array is "unbound"
   # accept all brain layouts: project (skills/ | playbooks/ | projection.yaml) + nested tenant
   # (.rootcause.toml — its committed project∪tenant binding; a tenant brain holds only a free-form NL
   # delta + sealed .env now, no tenant.json, so .rootcause.toml is its marker).

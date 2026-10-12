@@ -162,3 +162,29 @@ def test_cli_error_is_one_line_naming_the_only_path(tmp_path):
                           capture_output=True, text=True)
     assert done.returncode == 2 and 'Traceback' not in done.stderr
     assert done.stderr.startswith('mirror-try: No changed files to compare under --only helper.py')
+
+
+def test_as_label_resolves_through_the_mirror_roster(tmp_path, monkeypatch):
+    mirror_dir = tmp_path / 'mirror'
+    (mirror_dir / '_internal').mkdir(parents=True)
+    (mirror_dir / '_internal' / 'scopecheck-proj.toml').write_text(
+        '[[audience]]\nlabel = "regular-admin"\nkind = "ka_admin"\nid = "u-1"\n')
+    brain = tmp_path / 'brain'
+    brain.mkdir()
+    (brain / '.rootcause.toml').write_text('project = "proj"\n[mirrors]\n"m" = "../mirror"\n')
+    monkeypatch.chdir(brain)
+    seen = {}
+
+    def fake_compare(*args):
+        seen['principal'] = args[7:9]
+        raise ValueError('stop')
+    monkeypatch.setattr(mirror, 'compare', fake_compare)
+    base = ['mirror_try.py', '--repo', str(mirror_dir), '--diff', '--project', 'proj',
+            '--read-only-reviewed', '--cmd', 'python h.py']
+    monkeypatch.setattr(sys, 'argv', [*base, '--as', 'regular-admin'])
+    assert mirror.main() == 2 and seen['principal'] == ('ka_admin', 'u-1')
+    monkeypatch.setattr(sys, 'argv', [*base, '--as', 'nobody'])
+    assert mirror.main() == 2  # unknown label: one message listing known labels, no traceback
+    monkeypatch.setattr(sys, 'argv', [*base, '--as', 'regular-admin', '--principal-id', 'x'])
+    with pytest.raises(SystemExit):
+        mirror.main()

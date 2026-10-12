@@ -282,6 +282,8 @@ def main():
     p.add_argument('--tenant')
     p.add_argument('--principal-kind')
     p.add_argument('--principal-id', '--principal', dest='principal_id')
+    p.add_argument('--as', dest='as_label', metavar='LABEL',
+                   help='Principal by roster label (_internal/scopecheck-<project>.toml in this brain or its mirrors)')
     p.add_argument('--path', action='append', default=[], help='Additional data/import file')
     p.add_argument('--only', action='append', default=[],
                    help='With --diff: stage working-tree changes only under PATH (repeatable)')
@@ -293,7 +295,13 @@ def main():
     p.add_argument('--read-only-reviewed', action='store_true', required=True,
                    help='Helper/imports inspected: no sends, actions, or customer writes')
     args = p.parse_args()
+    if args.as_label and (args.principal_kind or args.principal_id):
+        p.error('--as and --principal-kind/--principal-id are mutually exclusive')
     try:
+        if args.as_label:  # brain_root = the brain checkout mirror-try runs from
+            sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scope-check/scripts'))
+            from roster import resolve_principal
+            args.principal_kind, args.principal_id = resolve_principal(args.as_label, Path.cwd(), args.project)
         result = compare(args.repo, args.ref, args.diff, args.base, shlex.split(args.cmd),
                          args.project, args.tenant, args.principal_kind, args.principal_id, args.path, args.only,
                          args.mirror, args.stage_all, args.no_base)
