@@ -166,7 +166,7 @@ def latest_run(evidence):
 def safe_text(value, limit=240):
     # Summary/report must not reproduce bearer URLs from mail/run notes.
     value = re.sub(r'https?://\S+', '[link]', str(value))
-    return value[:limit]
+    return value if limit is None else value[:limit]
 
 
 def summary(thread, evidence, account, draft_stubs):
@@ -356,6 +356,11 @@ def check_finding(item, detail_data, require_fresh=True):
             'production', 'code', 'public', 'mail') and s.get('location') and s.get('fact')
             for s in item['sources']):
         raise Refused('Supply independent sources with kind, location and verified fact')
+    if 'owner_evidence' in item and not (
+            isinstance(item['owner_evidence'], list) and 1 <= len(item['owner_evidence']) <= 3
+            and all(isinstance(fact, str) and fact.strip() and len(fact) <= 220
+                    for fact in item['owner_evidence'])):
+        raise Refused('Owner evidence needs one to three nonempty facts, at most 220 characters each')
     if item['draft_id'] is not None and item['draft_id'] not in [
             d['id'] for d in detail_data.get('drafts', [])]:
         raise Refused('Finding references an unknown Gmail draft')
@@ -429,14 +434,19 @@ def render(args):
         for source in item['sources']:
             url = safe_url(source['location'])
             location = f'<a href="{html.escape(url, quote=True)}">source</a>' if url else (
-                html.escape(safe_text(source['location'], 180)))
-            sources.append(f'<li>{html.escape(safe_text(source["fact"], 360))} ({location})</li>')
+                html.escape(safe_text(source['location'], None)))
+            sources.append(f'<li>{html.escape(safe_text(source["fact"], None))} ({location})</li>')
+        owner_evidence = ''.join(f'<li>{html.escape(safe_text(fact, 220))}</li>'
+                                 for fact in item.get('owner_evidence', [item['why']]))
         rows.append(f'<tr><td><a href="{html.escape(gmail_url(index["account"], tid), quote=True)}">'
                     f'{html.escape(entry["subject"])}</a><small>{html.escape(item["priority"])}</small>'
                     f'</td><td>{corrected}<strong>{html.escape(safe_text(item["action"], 280))}</strong><br>'
-                    f'{html.escape(safe_text(item["why"], 420))}<details><summary>Evidence</summary><ul>'
+                    f'{html.escape(safe_text(item["why"], 420))}'
+                    '<details><summary>Product owner evidence</summary><ul>'
+                    + owner_evidence + '</ul></details>'
+                    '<details><summary>Technical evidence</summary><ul>'
                     + ''.join(sources) + '</ul><p>Since run: '
-                    + html.escape(safe_text(item['changed_since_run'], 360)) + '</p></details></td></tr>')
+                    + html.escape(safe_text(item['changed_since_run'], None)) + '</p></details></td></tr>')
     primary_rows = rows[:PRIMARY_ACTION_ROWS]
     remaining_rows = rows[PRIMARY_ACTION_ROWS:]
     remaining = ('<details class="more-actions"><summary>'
@@ -453,6 +463,7 @@ def render(args):
               'h1{font-size:28px;margin-bottom:4px}p,small{color:#56616a}table{width:100%;border-collapse:collapse}'
               'td{vertical-align:top;border-top:1px solid #dce2e7;padding:14px 0}td:first-child{width:34%;'
               'padding-right:24px}a{color:#155c9b}small{display:block}details{font-size:14px;margin-top:8px}'
+              'details{overflow-wrap:anywhere}'
               '@media print{body{font-size:11px;margin:12px}details{display:none}}</style><h1>Mailbox today</h1><p>'
               + html.escape(index['account']) + ' · ' + html.escape(index['collected_at'][:10]) + '</p>'
               + freshness_note + '<table>'

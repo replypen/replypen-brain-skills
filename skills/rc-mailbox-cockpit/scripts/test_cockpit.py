@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -126,6 +127,18 @@ class Tests(unittest.TestCase):
         with self.assertRaises(c.Refused):
             c.check_finding(finding, detail)
 
+    def test_owner_evidence_validates_optional_bounded_facts(self):
+        detail, finding = fixture()
+        c.check_finding(finding, detail)  # Existing findings remain valid.
+        for valid in [['A verified fact'], ['a', 'b', 'x' * 220]]:
+            finding['owner_evidence'] = valid
+            c.check_finding(finding, detail)
+        for invalid in [None, 'fact', [], ['a'] * 4, [''], ['   '], [1], ['x' * 221]]:
+            with self.subTest(invalid=invalid):
+                finding['owner_evidence'] = invalid
+                with self.assertRaises(c.Refused):
+                    c.check_finding(finding, detail)
+
     def test_pagination_and_raw_cli(self):
         client = c.Client({'gws_script': 'core.py', 'gws_config': 'config.json', 'project': 'test'})
         with patch.object(client, 'api', side_effect=[{'drafts': [{'id': '1'}], 'nextPageToken': 'next'},
@@ -170,6 +183,14 @@ class Tests(unittest.TestCase):
         detail, finding = fixture()
         del finding['replacement_body']
         finding['verdict'] = 'confirmed'
+        finding['owner_evidence'] = ['Refund pending <script>evil</script>',
+                                     'See https://example.test/private?token=owner-secret']
+        long_location = 'internal/' + 'deep-path/' * 22 + 'billing/refund.go:187'
+        long_fact = 'Verified detail. ' * 30 + 'Caveat: no refund has been issued.'
+        long_delta = 'No changes observed. ' * 30 + 'Caveat: customer confirmation is still missing.'
+        finding['changed_since_run'] = long_delta
+        finding['sources'].append({'kind': 'code', 'location': long_location,
+                                   'fact': long_fact})
         with tempfile.TemporaryDirectory() as temp:
             bundle = Path(temp)
             c.save(bundle / 'details/abc.json', detail)
@@ -185,7 +206,28 @@ class Tests(unittest.TestCase):
             self.assertIn('&lt;script&gt;', report)
             self.assertNotIn('<script>', report)
             self.assertNotIn('token=secret', report)
+            self.assertNotIn('owner-secret', report)
             self.assertIn('unlisted threads unknown', report)
+            sections = dict(re.findall(r'<details><summary>(.*?)</summary>(.*?)</details>', report, re.S))
+            self.assertEqual(set(sections), {'Product owner evidence', 'Technical evidence'})
+            self.assertNotRegex(report, r'<details\b[^>]*\bopen\b')
+            self.assertIn('Refund pending &lt;script&gt;evil&lt;/script&gt;', sections['Product owner evidence'])
+            self.assertNotIn('Independent fact', sections['Product owner evidence'])
+            self.assertNotIn(long_location, sections['Product owner evidence'])
+            self.assertNotIn('Refund pending', sections['Technical evidence'])
+            self.assertIn(long_location, sections['Technical evidence'])
+            self.assertIn(long_fact, sections['Technical evidence'])
+            self.assertIn(long_delta, sections['Technical evidence'])
+            del finding['owner_evidence']
+            c.save(bundle / 'findings.json', [finding])
+            c.render(argparse.Namespace(bundle=temp, findings=str(bundle / 'findings.json'),
+                                        out=str(bundle / 'report.html')))
+            legacy = (bundle / 'report.html').read_text()
+            owner_section = re.search(r'<summary>Product owner evidence</summary>(.*?)</details>',
+                                      legacy, re.S).group(1)
+            self.assertIn('&lt;img src=x onerror=evil()&gt;', owner_section)
+            self.assertNotIn('Independent fact', owner_section)
+            self.assertNotIn(long_location, owner_section)
             detail['collected_at'] = '2020-01-01T00:00:00+00:00'
             c.save(bundle / 'details/abc.json', detail)
             c.render(argparse.Namespace(bundle=temp, findings=str(bundle / 'findings.json'),
