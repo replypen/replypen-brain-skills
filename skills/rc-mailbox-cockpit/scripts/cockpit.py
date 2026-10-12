@@ -14,6 +14,7 @@ from email.utils import getaddresses
 from urllib.parse import quote, urlsplit, urlunsplit
 
 GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me'
+PRIMARY_ACTION_ROWS = 7
 
 
 class Refused(Exception):
@@ -434,6 +435,12 @@ def render(args):
                     f'{html.escape(safe_text(item["why"], 420))}<details><summary>Evidence</summary><ul>'
                     + ''.join(sources) + '</ul><p>Since run: '
                     + html.escape(safe_text(item['changed_since_run'], 360)) + '</p></details></td></tr>')
+    primary_rows = rows[:PRIMARY_ACTION_ROWS]
+    remaining_rows = rows[PRIMARY_ACTION_ROWS:]
+    remaining = ('<details class="more-actions"><summary>'
+                 + f'{len(remaining_rows)} more action' + ('s' if len(remaining_rows) != 1 else '')
+                 + '</summary><table>' + ''.join(remaining_rows) + '</table></details>'
+                 if remaining_rows else '')
     reviewed = {i['thread_id'] for i in items}
     unresolved = sum(t['state'] not in ('answered', 'no_unanswered_inbound') and
                      t['thread_id'] not in reviewed for t in index['threads'])
@@ -447,7 +454,8 @@ def render(args):
               '@media print{body{font-size:11px;margin:12px}details{display:none}}</style><h1>Mailbox today</h1><p>'
               + html.escape(index['account']) + ' · ' + html.escape(index['collected_at'][:10]) + '</p>'
               + freshness_note + '<table>'
-              + (''.join(rows) or '<tr><td>No reviewed actions to surface.</td></tr>') + '</table><p>'
+              + (''.join(primary_rows) or '<tr><td>No reviewed actions to surface.</td></tr>')
+              + '</table>' + remaining + '<p>'
               + (f'Recent inbox {c["recent_inbox_checked"]}/{c["recent_inbox_discovered"]} checked · '
                  f'older draft threads {c["older_draft_threads_checked"]}/{c["older_draft_threads_discovered"]} checked · '
                  if 'recent_inbox_checked' in c else f'{c["checked_threads"]} threads checked · ')

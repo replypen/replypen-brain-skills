@@ -29,4 +29,6 @@ These files contain private mail; output directories should be outside source co
 
 Immediately before a write, the audit records `write_attempted`. If the update/readback raises, that status means outcome unknown: read Gmail before any retry.
 
+Missing original run bodies (including after raw-data retention expires) refuse correction; the current Gmail body cannot prove untouched AI origin, and no trace fallback is used.
+
 `apply` does not run automatically during rendering. It revalidates findings and current provider/run, lists current drafts to prove uniqueness, fetches the draft and thread again, and uses GWS `gmail-draft-update --expect-message`. GWS preserves headers/thread/files and verifies them on readback. Plain text must match `draft_markdown` exactly: no whitespace/line-ending normalization that could conceal human editing. HTML-only, multiple plain parts, unsupported encodings, edited drafts and changed threads are refused. A write failure may have happened after Gmail accepted the write; inspect the audit and read Gmail before retrying. Never blind-retry mutations.
