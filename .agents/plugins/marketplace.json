@@ -7,7 +7,7 @@
       "source": {
         "source": "local",
         "path": ".",
-        "ref": "v0.11.12"
+        "ref": "v0.11.13"
       },
       "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
       "category": "Productivity"
