@@ -17,7 +17,9 @@ rc dev mirror refresh --repo <name> --expect-sha "$(git rev-parse HEAD)"
 ```
 
   The command waits for the existing refresh worker, verifies the mirror worktree reached that full
-  SHA, and expires warm console workspaces. It does not restart RootCause or Docker images.
+  SHA, and expires warm console workspaces. It does not restart RootCause or Docker images. Others
+  pushing meanwhile → add `--accept-descendant` (accepts a newer tip that contains your SHA, ancestry
+  checked in your checkout) instead of retrying a 409.
 - Declare each required local checkout once in committed `.rootcause.toml`; values are relative to
   the brain root and ignored by `rc`:
 

@@ -89,8 +89,8 @@ pickup of a wrong answer.
   serves its tracked branch (`rc project repo ls` → `default_branch`; KampAdmin: `stable`, not
   `main`), so land it through the mirror's own publish path (its README) first, then `rc dev mirror
   refresh --expect-sha` ([prod-console § Workflow](../prod-console/SKILL.md#workflow)); the response's
-  `branch` names what it verified. The worker's fetch can
-  lag 15–20 min and the tip moves under you while siblings push: plan the wait, refresh at the tip.
+  `branch` names what it verified. The worker's fetch can lag 15–20 min and the tip moves under you
+  while siblings push: plan the wait; `--accept-descendant` accepts a newer tip containing your SHA.
 - Derive 5–8 **synthetic admin questions** from the tickets: the admin's words, chat style, anonymised,
   with the real record ids a ticket needs. Never invent ids. Keep the question path-free — do not
   name your helper or SKILL file; that is the thing under test.
