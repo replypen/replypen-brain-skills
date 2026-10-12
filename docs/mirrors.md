@@ -8,8 +8,9 @@ A source mirror is a read-only snapshot of an external source repo or knowledge 
 
 - Brain freshness and mirror freshness are independent. `rc ask --brain-ref dev/x` changes which brain
   ref production mounts, but it does not refresh mirrors or knowledge-base sync state.
-- In production, mirrors refresh periodically. After pushing a source change, a project admin can
-  request immediate exact-commit feedback:
+- In production, mirrors refresh periodically from the repo's tracked branch (`rc project repo ls` →
+  `default_branch`; may be a promoted `stable`, not `main`). After pushing to that branch, a project
+  admin can request immediate exact-commit feedback:
 
 ```bash
 rc dev mirror refresh --repo <name> --expect-sha "$(git rev-parse HEAD)"

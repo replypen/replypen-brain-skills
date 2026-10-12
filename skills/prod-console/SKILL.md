@@ -27,9 +27,9 @@ investigations, and customer-style simulations.
    scripts, actions, and which console planes this login actually has. `rc project connection ls`
    adds OAuth/API grants.
 2. **Freshness.** A missing pushed script or stale `/brain` → `rc dev brain status` / `rc dev brain
-   sync` (sync expires warm bash workspaces, so the next run remounts). A pushed mirror commit that
-   must be visible now → `rc dev mirror refresh --repo <name> --expect-sha $(git rev-parse HEAD)`,
-   once per affected project; success proves that exact commit is mounted. Never restart Docker.
+   sync` (sync expires warm bash workspaces, so the next run remounts). A mirror commit pushed to its
+   tracked branch (`rc project repo ls` → `default_branch`) that must be visible now → `rc dev
+   mirror refresh --repo <name> --expect-sha $(git rev-parse HEAD)`, once per affected project; success proves that exact commit is mounted. Never restart Docker.
 3. **Database.** `rc dev console database list` is the authoritative view of which DSNs exist and
    connect; `rc project database ls` only shows the annotated ones. A database missing from `list`
    is not registered — seal `<PROJECT>_<DBKEY>_DSN`, then annotate

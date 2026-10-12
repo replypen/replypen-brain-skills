@@ -149,3 +149,16 @@ def test_unchanged_import_only_the_base_helper_reaches_is_borrowed(tmp_path, mon
     result = mirror.compare(tmp_path, after, False, before, ['python', 'helper.py'], 'p')
     assert result['staged_before'] == result['staged_after'] == ['helper.py']
     assert result['borrowed'] == ['new.py', 'old.py']
+
+
+def test_cli_error_is_one_line_naming_the_only_path(tmp_path):
+    mirror.git(tmp_path, 'init', '-q')
+    (tmp_path / 'helper.py').write_text('print(1)\n')
+    (tmp_path / 'other.py').write_text('x = 1\n')
+    commit(tmp_path)
+    (tmp_path / 'other.py').write_text('x = 2\n')  # a sibling's edit; ours is unchanged
+    done = subprocess.run([sys.executable, mirror.__file__, '--repo', str(tmp_path), '--diff', '--only', 'helper.py',
+                           '--project', 'p', '--read-only-reviewed', '--cmd', 'python helper.py'],
+                          capture_output=True, text=True)
+    assert done.returncode == 2 and 'Traceback' not in done.stderr
+    assert done.stderr.startswith('mirror-try: No changed files to compare under --only helper.py')

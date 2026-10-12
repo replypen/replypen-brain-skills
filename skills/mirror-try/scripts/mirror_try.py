@@ -202,7 +202,8 @@ def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=No
     if only:
         changed = [p for p in changed if under(p, only)]
     if not changed:
-        raise ValueError('No changed files to compare')
+        raise ValueError('No changed files to compare' + (' under --only ' + ', '.join(only) if only else '')
+                         + ': save your edit (new files: git add), or compare a commit with --ref')
     grounding_changes = [p for p in changed if not any(
         part.startswith('.') or part == 'actions' for part in PurePosixPath(p).parts)]
     changed_seeds = [p for p in grounding_changes if '/tests/' not in '/' + p and not p.startswith('tests/')]
@@ -292,9 +293,13 @@ def main():
     p.add_argument('--read-only-reviewed', action='store_true', required=True,
                    help='Helper/imports inspected: no sends, actions, or customer writes')
     args = p.parse_args()
-    result = compare(args.repo, args.ref, args.diff, args.base, shlex.split(args.cmd),
-                     args.project, args.tenant, args.principal_kind, args.principal_id, args.path, args.only,
-                     args.mirror, args.stage_all, args.no_base)
+    try:
+        result = compare(args.repo, args.ref, args.diff, args.base, shlex.split(args.cmd),
+                         args.project, args.tenant, args.principal_kind, args.principal_id, args.path, args.only,
+                         args.mirror, args.stage_all, args.no_base)
+    except ValueError as exc:  # usage/budget/transport: one actionable message, no traceback
+        print('mirror-try: ' + str(exc), file=sys.stderr)
+        return 2
     print('payload ' + ' · '.join(f'{k} {v // 1000} KB' for k, v in result['payload'].items())
           + f' of 120 KB; staged {len(result["staged_after"])}, borrowed {len(result["borrowed"])} from the live mirror',
           file=sys.stderr)
