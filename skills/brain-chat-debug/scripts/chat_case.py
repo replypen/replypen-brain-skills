@@ -44,7 +44,7 @@ import subprocess
 import sys
 import tomllib
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -363,17 +363,22 @@ def turns_from_messages(messages: list[dict[str, Any]]) -> tuple[list[str], list
     return seeds, turns
 
 
-def find_session_row(ctx: Ctx, session_id: str, created_at: str | None, project: str | None,
+SESSION_PAGES = 10  # x 100 rows, newest first, from the first question's day backwards
+
+
+def find_session_row(ctx: Ctx, session_id: str, first_turn_at: str | None, project: str | None,
                      tenant: str | None) -> dict[str, Any] | None:
-    """Principal kind/surface/tenant: the session row from `rc run sessions search` around its date."""
+    """Principal kind/surface/tenant: the session row from `rc run sessions search` (no by-id lookup).
+
+    Search dates filter SESSION CREATION, which can precede the first question by days, so only an
+    upper bound is safe: the session existed by its first turn (`--until` a date is inclusive)."""
+    args = [*ctx.scope(project, tenant), "run", "sessions", "search", "--limit", "100"]
     try:
-        day = datetime.fromisoformat((created_at or "").replace("Z", "+00:00")).date()
+        args += ["--until", datetime.fromisoformat((first_turn_at or "").replace("Z", "+00:00")).date().isoformat()]
     except ValueError:
-        day = datetime.now(timezone.utc).date()
-    args = [*ctx.scope(project, tenant), "run", "sessions", "search", "--limit", "100",
-            "--since", (day - timedelta(days=1)).isoformat(), "--until", (day + timedelta(days=1)).isoformat()]
+        pass
     before = None
-    for _ in range(5):
+    for _ in range(SESSION_PAGES):
         payload = ctx.json([*args, *(["--before", before] if before else [])], 180)
         for row in payload.get("sessions") or []:
             if row.get("session_id") == session_id:
@@ -813,8 +818,15 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
     principal = None
     scope = ctx.scope(case.get("project"))
     if mode == "chat":
+        # The host resolves the source run inside the request's tenant: forward the case tenant, or an
+        # ambient one (.rootcause/local.toml, login) turns the replay into a 404.
+        if args.tenant and case.get("tenant") and args.tenant != case["tenant"]:
+            raise ChatCaseError(f"--tenant {args.tenant} conflicts with the case tenant {case['tenant']}: a chat "
+                                "replay runs in its source run's tenant; drop --tenant or use --mode raw")
         question = args.prompt_override
         cmd = [*scope, "ask", *([question] if question else []), "--replay-chat-run", turn["run_id"]]
+        if tenant:
+            cmd += ["--tenant", tenant]
     else:
         p = case.get("principal") or {}
         kind, pid = args.principal_kind or p.get("kind"), args.principal_id or p.get("id")
@@ -970,7 +982,7 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--effort", choices=("default", "pro", "max"))
     rp.add_argument("--principal-kind", help="raw/email mode: override the case principal kind")
     rp.add_argument("--principal-id", help="raw/email mode: override the case principal id")
-    rp.add_argument("--tenant", help="raw/email mode: override the case tenant")
+    rp.add_argument("--tenant", help="raw/email: override the case tenant; chat: must match it (default: case tenant)")
     rp.add_argument("--timeout", default="10m", help="rc ask --timeout (default 10m)")
     rp.add_argument("--no-simulation", action="store_true", help="raw/email mode: a real (non-simulation) run")
     rp.add_argument("--dry-scope", action="store_true", help="preview the raw path's principal scope, no LLM spend")

@@ -173,7 +173,11 @@ if "ask" in argv:
     if "--dry-scope" in argv: out({"dry_scope": True, "resolved": True, "scope": {"kind": "acme_admin", "resolution": "tenant_wide", "table_grants": {"all": True}}})
     out({"run_id": data["new_run"], "status": "done", "answer_markdown": "New answer.", "run_url": "https://app.example.test/runs/x?t=y"})
 if "session" in argv and "run" in argv and "sessions" not in argv: out(data["session"])
-if "search" in argv: out(data["search"])
+if "search" in argv:  # dates filter SESSION creation, date-only bounds inclusive (like rc)
+    opt = lambda name: argv[argv.index(name) + 1][:10] if name in argv else None
+    since, until = opt("--since"), opt("--until")
+    out({"sessions": [r for r in data["search"]["sessions"] if (not since or r["created_at"][:10] >= since)
+                      and (not until or r["created_at"][:10] <= until)]})
 if "thread" in argv:
     out(data["transcript"] if "--transcript" in argv else data["thread"])
 if "debug" in argv:
@@ -188,7 +192,8 @@ print("unhandled " + " ".join(argv), file=sys.stderr); sys.exit(1)
 '''
 
 
-def fake_env(tmp_path, monkeypatch, *, logged_in=True, chat=False, zero=False):
+def fake_env(tmp_path, monkeypatch, *, logged_in=True, chat=False, zero=False,
+             session_created="2026-01-01T09:59:00Z"):
     brain = tmp_path / "brain"
     brain.mkdir(exist_ok=True)
     (brain / ".rootcause.toml").write_text('project = "acme"\nbase_url = "https://app.example.test"\n')
@@ -214,7 +219,8 @@ def fake_env(tmp_path, monkeypatch, *, logged_in=True, chat=False, zero=False):
              "principal_id": ADMIN},
             {"seq": 2, "run_id": RUN2, "question": "Give me 3 links", "answer": "Link ⟦pii:firstname:00⟧",
              "outcome": "replied", "created_at": "2026-01-01T10:01:00Z", "principal_id": ADMIN}]},
-        "search": {"sessions": [{"session_id": SESSION, "tenant_slug": "tenant-a", "surface": "embed",
+        "search": {"sessions": [{"session_id": SESSION, "created_at": session_created,
+                                 "tenant_slug": "tenant-a", "surface": "embed",
                                  "principal": {"kind": "acme_admin", "id": ADMIN}, "title": "Alex count"}]},
         "traces": {rid: [header(rid, q, a), *events()] for rid, q, a in (
             (RUN1, "How many people are called Alex?", "There are 12."),
@@ -269,7 +275,8 @@ def test_open_session_and_replay_chat_faithful(tmp_path, monkeypatch, capsys):
     assert run(brain, "replay", "11111111") == 0
     ask = [c for c in calls(log, "ask") if "--help" not in c][-1]
     assert ask[:3] == ["ask", "--replay-chat-run", RUN2]
-    assert "--principal-kind" not in ask and "--scenario" not in ask and "--tenant" not in ask
+    assert "--principal-kind" not in ask and "--scenario" not in ask
+    assert ask[ask.index("--tenant") + 1] == "tenant-a"  # source tenant forwarded, never the ambient one
     md = next((brain / ".rootcause/chatdebug/11111111/replays").glob("*-baseline.md")).read_text()
     assert cc.CHAT_FAITHFUL in md and "not chat-equivalent" not in md and "New answer." in md
     out = capsys.readouterr().out
@@ -317,3 +324,30 @@ def test_dry_scope_and_widen(tmp_path, monkeypatch, capsys):
     assert "New question: Give me 3 links" in rows[1]
     out = capsys.readouterr().out
     assert '"$DL" ask --tag chat-11111111' in out and "--scenario raw --simulation" in out
+
+
+def test_chat_replay_tenant_explicit_match_and_conflict(tmp_path, monkeypatch, capsys):
+    brain, log = fake_env(tmp_path, monkeypatch, chat=True)
+    assert run(brain, "open", SESSION) == 0
+    assert run(brain, "replay", "11111111", "--tenant", "tenant-a") == 0
+    ask = [c for c in calls(log, "ask") if "--help" not in c][-1]
+    assert ask.count("--tenant") == 1 and ask[ask.index("--tenant") + 1] == "tenant-a"
+    capsys.readouterr()
+    submits = lambda: [c for c in calls(log, "ask") if "--help" not in c]
+    before = len(submits())
+    assert run(brain, "replay", "11111111", "--tenant", "tenant-b") == 2
+    err = capsys.readouterr().err
+    assert "tenant-b" in err and "tenant-a" in err and len(submits()) == before  # refused pre-submit
+    assert run(brain, "replay", "11111111", "--mode", "raw", "--tenant", "tenant-b") == 0  # raw may retarget
+    ask = [c for c in calls(log, "ask") if "--help" not in c][-1]
+    assert ask[ask.index("--tenant") + 1] == "tenant-b"
+
+
+def test_open_finds_session_created_days_before_first_question(tmp_path, monkeypatch, capsys):
+    brain, log = fake_env(tmp_path, monkeypatch, session_created="2025-12-27T08:00:00Z")
+    assert run(brain, "open", SESSION) == 0
+    case = json.loads((brain / ".rootcause/chatdebug/11111111/case.json").read_text())
+    assert case["principal"] == {"kind": "acme_admin", "id": ADMIN} and case["surface"] == "embed"
+    search = calls(log, "search")[-1]
+    assert "--since" not in search and search[search.index("--until") + 1] == "2026-01-01"
+    assert run(brain, "replay", "11111111", "--dry-scope") == 0
