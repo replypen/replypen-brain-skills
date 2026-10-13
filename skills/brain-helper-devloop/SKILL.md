@@ -95,7 +95,8 @@ pickup of a wrong answer.
 - Derive 5–8 **synthetic admin questions** from the tickets into `questions.tsv` (`id`, `tenant`,
   `question`, optional `as` = roster label): the admin's words, chat style, anonymised, with the real
   record ids a ticket needs. Never invent ids. Keep the question path-free — do not name your helper
-  or SKILL file; that is the thing under test.
+  or SKILL file; that is the thing under test. Starting from a real chat?
+  [`brain-chat-debug widen`](../brain-chat-debug/SKILL.md#6-widen) writes the `questions.tsv` for you.
 - One command asks them all (3 in flight, run ids persisted before waiting, re-entrant):
 
   ```bash

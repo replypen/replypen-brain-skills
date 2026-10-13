@@ -206,6 +206,8 @@ A pasted run link works with **no login and no profile** — the `?t=` token is 
 `rc run debug 'https://app.replypen.com/runs/<id>?t=<token>'` writes the same two artifacts. A chat
 share link goes through `rc run session 'https://app.replypen.com/s/<token>'`, which writes one
 `.rootcause/debug/session-<id>.md` (transcript + the runs behind it, each with its drill command).
+To debug a bad chat answer end to end (case file, replay on a dev ref, compare), use
+[`brain-chat-debug`](../skills/brain-chat-debug/SKILL.md).
 
 Refused (`UNKNOWN_RUN`/404, or not logged in)? Since rc 1.27.2 the error carries a `hint:` line (a
 `hint` field in `-o json`) — a bare id you cannot see is indistinguishable from no login, so rerun

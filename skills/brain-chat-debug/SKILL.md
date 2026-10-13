@@ -1,0 +1,105 @@
+---
+name: brain-chat-debug
+description: "Debug one bad in-app chat answer from a share link, run link or session id: gather the case, decide where the fix belongs, replay it on a dev ref. Use for a pasted chat share link (/s/…) or run link (/runs/…?t=…), 'why did the chat say X', 'this is what I expected', a bad chat answer, replaying a chat turn, or rerunning it after a brain or mirror edit."
+---
+
+# brain-chat-debug — bad chat answer → fix → replay
+
+One script does the mechanics; you do the judgement. Public `rc` ≥ 1.41 only.
+
+## Required Context
+
+- [rc-debug](../rc-debug/SKILL.md): reading one trace, and its discipline: a single bad run is
+  evidence, not permission to oversteer ([run-trace-model](../../docs/run-trace-model.md#debug-discipline)).
+- [brain-helper-devloop](../brain-helper-devloop/SKILL.md) when the fix is a helper;
+  [mirror-try](../mirror-try/SKILL.md) / [scope-check](../scope-check/SKILL.md) to prove it on real data.
+- [brain-publish](../brain-publish/SKILL.md), [brain-git-sync § git_land](../brain-git-sync/SKILL.md) to ship.
+
+```bash
+CC="$PWD/.agents/skills/brain-chat-debug/scripts/chat_case.py"   # run from the brain checkout
+```
+
+## 1. Open
+
+```bash
+uv run --no-project python "$CC" open '<share link | run link | session id | run id>' --expected "<what the user expected>"
+```
+
+Writes `.rootcause/chatdebug/<session8>/case.md` + `case.json`: header (project, tenant, surface,
+principal, feedback), Expected verbatim, every turn's Q/A, and per run the brain/mirror refs it ran on,
+relevant prompt sections that were off, commands with exit + stdout head, files read, flags. Traces
+land in `.rootcause/debug/` (`rc run debug`, skipped when present; `--force` refetches).
+A share/run link needs no login but withholds feedback and principal; logged in, `open` adds both.
+
+- **0 runs** ("No answer exists in this shared chat…"): a spawned child chat nobody asked anything in.
+  Say so, find the real chat with `rc run sessions search --contains "<words>" --since <date>`, never
+  guess a failure from the seed message.
+- The scratch dir holds customer data and capability links (`share_url`, `?t=`); it is gitignored
+  with `.rootcause/`. In tickets and chat reports cite run ids, never those links.
+
+## 2. Read
+
+`case.md` first. Then the turn's trace md (path in case.md), then `jq` on its JSONL exactly as in
+[rc-debug § Drill](../rc-debug/SKILL.md#drill) (header drift first: `brain_resolved`, mirrors,
+`tenant_settings_drift`). Compare the answer with Expected and say which claim is wrong and why.
+
+## 3. Diagnose + own
+
+Fix at the highest layer that generalizes; nothing lower papers over a higher-layer bug.
+
+| Symptom | Layer | Edit |
+|---|---|---|
+| Rendering/privacy of the chat itself (raw `⟦pii:…⟧` tokens, broken record links, output contract) | RootCause host | support request ([support-boundary](../../docs/support-boundary.md)); never a brain rule |
+| Wrong fact/query shared by all of the product's projects, helper missing or misleading | shared source mirror | its `skills/**` helper or doc ([brain-helper-devloop](../brain-helper-devloop/SKILL.md)) |
+| Audience-specific routing, case runbook, missing pointer for this brain | project brain | `AGENTS.md` routing line / `skills/cases/*` |
+| One tenant's genuinely local policy | tenant overlay / tenant settings | overlay repo or settings, not shared prose |
+| Tone, language, signature; process vs skip | persona / triage settings | `rc` settings, not brain prose |
+| The customer's app computes or shows the wrong thing | the customer's app | report to its developers; the brain explains, never hides it |
+
+KampAdmin: per-repo map in `rootcause-brain-kampadmin/_internal/reply-audit.md` § "Repository and
+settings map". Propose the smallest change, then stop unless the user asked to fix it.
+
+## 4. Edit on a dev ref
+
+Brain: `git push origin HEAD:refs/heads/dev/<branch>`. Mirror: the same in the mirror repo (a
+worktree on a shared checkout). Nothing moves `main`/`stable`.
+
+## 5. Replay
+
+```bash
+uv run --no-project python "$CC" replay <session8> --turn N                    # baseline: today's live brain
+uv run --no-project python "$CC" replay <session8> --turn N --brain-ref dev/<branch> \
+  --mirror-ref <repo>=dev/<branch>                                              # candidate
+```
+
+- **Chat-faithful first.** When `rc ask --help` lists `--replay-chat-run`, `replay` uses it: the
+  stored chat turn with chat framing, prior turns (text only, no attachments) and the session's own
+  principal, as a simulation test run. `--prompt-override` swaps the question text.
+- **Raw fallback = grounding-only probe** (`--mode raw|email`, or an older rc): `rc ask --scenario raw
+  --simulation` with prior turns embedded in the question and the case principal. Not
+  chat-equivalent (no persona, confidentiality floor, chat output contract, record links): judge
+  facts, grounding and helper pickup, not prose; it can never close a privacy/rendering regression.
+  `--mode raw --dry-scope` previews the principal scope without LLM spend.
+- Baseline first when unsure whether the bad answer is flaky. Each replay costs a real LLM run.
+
+`replays/<ts>-<label>.md`: refs actually mounted (`override` = your mirror ref), **Expected check**
+with an empty `verdict:` you fill (pass / still wrong / partial; the script never judges), then
+historical vs latest baseline vs this replay: answers, commands, files read. `compare <session8> <a>
+<b>` sets any two replays side by side.
+
+## 6. Widen
+
+When the fix touches a shared mirror or the project brain, check 5–10 other tenants:
+
+```bash
+uv run --no-project python "$CC" widen <session8> --tenants a,b,c [--as <roster label>] [--brain-ref dev/<branch>]
+```
+
+It writes `questions-<tag>.tsv` and prints the [devloop](../brain-helper-devloop/SKILL.md) `ask` +
+`report` commands (no spend itself). Edit rows whose record ids or names do not exist in that tenant.
+
+## 7. Ship
+
+[brain-publish](../brain-publish/SKILL.md) for the brain; the mirror via `git_land.py … --also stable
+--refresh-mirror <mirror> --project <each consuming project>`. Then one replay without refs (or one
+live question) and confirm the published SHAs in its trace. Done means live.

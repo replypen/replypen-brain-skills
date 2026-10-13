@@ -23,6 +23,10 @@ Public `rc` only; scope comes from `.rootcause.toml` + the OAuth login
   first: an infra class means RootCause's machinery failed — report it, do not edit the brain
   ([docs/actions.md](../../docs/actions.md#failure-classes-infra-vs-domain)).
 - **Thread/session id** → `rc run thread <id>`. No run at all → explain the channel/support boundary.
+- **Chat share link** (`…/s/<token>`, no login needed) or a bad chat answer with "this is what I
+  expected" → [brain-chat-debug](../brain-chat-debug/SKILL.md) (case file, replay on a dev ref).
+- **Run link** (`…/runs/<id>?t=<token>`) → `rc run debug '<link>'` works without login; for a chat
+  run, `brain-chat-debug open '<link>'` pulls the whole conversation.
 - **A forwarded email** → `rc run list --from <address> --since <YYYY-MM-DD>` (`--subject` narrows;
   rows show FROM/SUBJECT). No run → `rc run thread <address>`: its threads, including mail triage
   skipped or security-blocked before any run, with the triage reason.

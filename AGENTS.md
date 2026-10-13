@@ -129,6 +129,9 @@ Only these are first-class:
   and reviewed prefer/avoid imports for large document sources.
 - `brain-ask` — last-mile prod/test run validation with `rc ask`.
 - `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
+- `brain-chat-debug` — one bad chat answer (share/run link, session id): case file, ownership
+  decision, replay of the turn on a `dev/*` brain/mirror ref (`rc ask --replay-chat-run` when
+  available, raw fallback), compare, widen to other tenants via devloop.
 - `rc-mailbox-cockpit` — local Google inbox/draft triage, independent Opus checks, concise cockpit,
   and explicitly authorized guarded draft-body corrections.
 - `rc-health` — stale mirrors and dead-lettered runs.
