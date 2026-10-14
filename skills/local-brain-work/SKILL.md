@@ -54,6 +54,15 @@ Set `SKILL` to the directory holding this `SKILL.md`; every command below is
 | `brain_projection.py` | tenant projection preview — see [projection.md](projection.md) |
 | `brain_dump.py` | explode one prod run id into `.rootcause/dump/` (markdown index + JSONL) |
 
+**Fixed a brain defect these checks missed?** Propose a new rule only when it generalizes beyond this
+brain, flags the demonstrated before-state, and stays quiet on current content of other brains (run it
+against them; quotes, negations and examples are the usual false positives). One brain's wording rule
+is a brain-local pytest instead. Edit rule source only in a checkout of the canonical
+`rootcause-org/rootcause-brain-skills` you can push to (WRITE, MAINTAIN or ADMIN from
+`gh repo view rootcause-org/rootcause-brain-skills --json viewerPermission`); the installed kit and the
+pinned `rootcause-runtime` are copies. Without that access, the before/after fixture and counterfactual
+go into a support request.
+
 `brain_env.py` is shared plumbing (version line, image tag, mirror discovery), not an entry point. The
 scripts resolve `lib` from a sibling `runtime/` checkout when present, else from the tag-pinned
 `rootcause-runtime` git spec — so unreleased local `lib` edits are visible immediately.
