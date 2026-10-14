@@ -7,10 +7,10 @@
 # Because both install identical versioned bytes, "tested locally" provably equals "runs in prod".
 #
 # Pin by tag, never float `main` — a push would silently break clients' green local tests.
-#   uv add "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.11.22#subdirectory=runtime"
+#   uv add "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.11.23#subdirectory=runtime"
 [project]
 name = "rootcause-runtime"
-version = "0.11.22"
+version = "0.11.23"
 description = "Read-only grounding helpers (db, stripe, cloudwatch, fs, http, html, livecheck) that a rootcause brain's scripts import."
 requires-python = ">=3.11"
 
