@@ -136,6 +136,27 @@ The preflight `summary` is the human's one-line blurb on the confirm surface, so
 behind `resource_url`. The host now shows the preflight summary instead of the agent's `intent` when
 both exist.
 
+### `param_labels` — a grounded human label per param
+
+The card and confirm page show each param as a row. For a param that is an id (a record uuid), the
+**preflight** may return `param_labels`: `{"<param name>": {"value": "<the validated param, verbatim>",
+"label": "Maité J. · Basketbalkamp (2026-0142)"}}`. The host shows the label as the row's value and folds
+the raw id under "Technical details" — but only when `value` equals the param it will execute with;
+a mismatch or an unknown name drops the label (raw value stays). Labels are deterministic: resolve the
+supplied id with a tenant-scoped query, never a model-written name and never a new param. Plain text,
+≤120 characters, no e-mail/RRN/medical data. Add the key to the result dict yourself
+(`out["param_labels"] = {...}`) until `preflight.result` grows the kwarg. Distinct from `observed`,
+which stays model/reviewer grounding and never reaches an embed card.
+
+### `label` / `display` — how a param reads on the card
+
+Per param in `manifest.yaml`: `label: Uitleg` (customer-facing, project language; absent → the
+humanized name) and `display: default | details | markdown`. `details` folds a technical row (session
+ids, bound identities) under one collapsed "Technical details" disclosure — still sent and inspectable,
+never hidden; `from_claim` params fold there by default. `markdown` renders a long text through the
+sanitized markdown pipeline, clamped with a "Show all" toggle. Nothing in the card may make the
+identity, target or effect of the action unclear: keep those rows `default`.
+
 ## Param Types
 
 `manifest.yaml` params are a small closed vocabulary:
