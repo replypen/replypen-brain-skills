@@ -95,7 +95,8 @@ jq -r 'select(.seq>=4000000).args | .before, .after, .rejected_diff' "$F"  # dra
 
 ## Stop with
 
-Root cause or best hypothesis · trace/file evidence · the smallest proposed brain change ·
+Root cause or best hypothesis · trace/file evidence · the smallest proposed brain change, naming each
+file it creates or edits as a clickable absolute-path link (new file: its absolute target directory) ·
 a verification plan (usually `brain-ask --brain-ref dev/<branch>`) · the publish path
 (`brain-publish`).
 
