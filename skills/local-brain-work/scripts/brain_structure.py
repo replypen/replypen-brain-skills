@@ -483,7 +483,8 @@ def check_lint(ctx: Ctx) -> list[Finding]:
 def check_hygiene(ctx: Ctx) -> list[Finding]:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import brain_hygiene  # lazy: brain_hygiene imports this module
-    return brain_hygiene.check(ctx.root, None if ctx.scope == "full" else git_changed_paths(ctx.root))
+    return brain_hygiene.check(ctx.root, None if ctx.scope == "full" else git_changed_paths(ctx.root),
+                               "origin/main")
 
 
 def check_raw_tracked(ctx: Ctx) -> list[Finding]:

@@ -57,14 +57,16 @@ from typing import Callable
 import yaml
 
 from .action_lint import lint_actions
+from .brain_doc import FRONTMATTER_CAP
+from .brain_doc import frontmatter_lines as _frontmatter_lines
+from .brain_doc import include_in as _include_in
+from .brain_doc import strip_frontmatter as _strip_frontmatter
 
 # Mirror treeview's descMaxLen (tree gloss) / descFullMaxLen (agentskills.io cap) / descHeadBytes
 # (legacy line-scan fallback) so the lint's verdict matches what the host reads.
 DESC_MAX_LEN = 150
 DESC_FULL_MAX_LEN = 1024
 DESC_HEAD_BYTES = 2048
-# Mirrors treeview's frontmatterCap: the host only reads frontmatter whose closing fence lies within it.
-FRONTMATTER_CAP = 8 << 10
 _YAML_NULL = "tag:yaml.org,2002:null"
 _YAML_STR = "tag:yaml.org,2002:str"
 _ACTION_SURFACE_CONTRACT = json.loads(
@@ -83,7 +85,8 @@ _CONTAINS_STYLE = re.compile(
 )
 _SENTENCE_BOUNDARY = re.compile(r"[.!?](?=\s|$)")
 
-_SCRIPT_ALLOWED_ROOTS = frozenset({"skills", "actions", "tests"})
+# `actions-drafts/<id>/` is written onto brain main by the host's Action Studio (script.py, policy.py).
+_SCRIPT_ALLOWED_ROOTS = frozenset({"skills", "actions", "actions-drafts", "tests"})
 _SCRIPT_IGNORED_DIRS = frozenset({
     ".agents",
     ".claude",
@@ -393,59 +396,6 @@ _DOC_SIZE_IGNORED_DIRS = frozenset({".agents", ".claude", ".rootcause", ".git", 
 
 def _kb(n: int) -> str:
     return f"{n / 1024:.1f} KB"
-
-
-def _frontmatter_lines(text: str) -> list[str] | None:
-    """The lines between the leading `---` fences exactly as treeview.frontmatterLines sees them:
-    opening fence at byte 0, closing fence within FRONTMATTER_CAP BYTES; None when the host reads no block."""
-    lines = text.encode("utf-8")[:FRONTMATTER_CAP].decode("utf-8", "ignore").split("\n")
-    if len(lines) < 2 or lines[0].rstrip("\r") != "---":
-        return None
-    close = next((i for i, line in enumerate(lines[1:], start=1) if line.rstrip("\r") == "---"), None)
-    return None if close is None else lines[1:close]
-
-
-def _include_in(text: str) -> set[str]:
-    """`include_in` entries, read like treeview.frontmatterList: top-level key, flow or block list,
-    frontmatter closing within FRONTMATTER_CAP. Line scan, not YAML — what it can't read the host
-    doesn't read either."""
-    block = _frontmatter_lines(text)
-    if block is None:
-        return set()
-    for i, raw in enumerate(block):
-        line = raw.rstrip("\r")
-        if not line.startswith("include_in:"):
-            continue
-        rest = re.sub(r"(^|\s)#.*$", "", line[len("include_in:"):]).strip()
-        if rest:
-            items = rest.strip("[]").split(",")
-        else:
-            items = []
-            for nxt in block[i + 1:]:
-                item = re.sub(r"(^|\s)#.*$", "", nxt).strip()
-                if not item:
-                    continue
-                if not item.startswith("- "):
-                    break
-                items.append(item[2:])
-        return {v for v in (_unquote(p.strip()) for p in items) if v}
-    return set()
-
-
-def _unquote(v: str) -> str:
-    return v[1:-1] if len(v) >= 2 and v[0] in "\"'" and v[-1] == v[0] else v
-
-
-def _strip_frontmatter(text: str) -> str:
-    """The body the host pastes (hardload.go's stripHardLoadFrontmatter + TrimRight "\\n")."""
-    first, sep, rest = text.partition("\n")
-    if sep and first.rstrip("\r") == "---":
-        offset = len(first) + 1
-        for line in rest.split("\n"):
-            if line.rstrip("\r") == "---":
-                return text[offset + len(line) + 1:].lstrip("\n").rstrip("\n")
-            offset += len(line) + 1
-    return text.rstrip("\n")
 
 
 def _doc_size_candidates(root: Path) -> list[str]:

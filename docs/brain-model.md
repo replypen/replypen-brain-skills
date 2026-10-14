@@ -13,7 +13,7 @@ is required to work on it.
 | `.env.action` | Gitignored sealed write credentials for local hosted-Python action tests. Only `brain_action.py` uses it. |
 | `AGENTS.md` | Local instructions for agents working in that brain repo. |
 | `skills/` / `playbooks/` / notes | Durable knowledge and project-specific scripts a run may read. |
-| `skills/<topic>/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `rootcause-runtime`. The offline lint rejects Python outside `skills/`, `actions/`, and `tests/` (root `conftest.py` is allowed), ensuring import smoke's intentional `skills/**` scope covers every grounding script. Resolve source checkouts with `lib.fs.mirror_path()` / `mirror_scripts()`. |
+| `skills/<topic>/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `rootcause-runtime`. The offline lint rejects Python outside `skills/`, `actions/`, `actions-drafts/` (Action Studio drafts), and `tests/` (root `conftest.py` is allowed), ensuring import smoke's intentional `skills/**` scope covers every grounding script. Resolve source checkouts with `lib.fs.mirror_path()` / `mirror_scripts()`. |
 | `tests/`, fixtures | Brain-local test fixtures; safe to commit when project-specific. |
 | `actions/<id>/` | Optional action catalog: manifest plus script/preflight. Proposal is in-loop; execution is gated later. |
 | `.replypenignore` | Canonical root run-visibility rules for committed maintainer-only content. |
@@ -194,7 +194,8 @@ Standing rule for every role: **tag sparingly**. Each tagged doc is a per-run to
 the caps are a safety net, not a budget. Past a cap the body is cut ("read the rest with bash") and
 models rarely read on; on-demand docs fare no better — a bash read over 6000 chars shows only a ~3 KB
 preview. Lint WARN `doc-size` flags tagged docs over their cap and `AGENTS.md`/on-demand docs over
-16 KB. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
+16 KB; the commit/push hygiene gate adds a NOTICE (`doc-spill`) when a change pushes an on-demand doc
+past 6000 bytes. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
 "Open X for Y" line. `AGENTS.md` inclusion depends on its mount:
 
 | Path | Grounding pre-step | Main agent |

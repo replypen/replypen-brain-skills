@@ -150,6 +150,8 @@ def test_lint_brain_allows_python_in_supported_and_ignored_dirs(tmp_path: Path) 
         "conftest.py",
         "skills/faq/scripts/generate_index.py",
         "actions/refund/script.py",
+        "actions-drafts/refund/script.py",
+        "actions-drafts/refund/policy.py",
         "tests/test_faq.py",
         ".agents/skills/local/scripts/helper.py",
         ".claude/skills/local/scripts/helper.py",

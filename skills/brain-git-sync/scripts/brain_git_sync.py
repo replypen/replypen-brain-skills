@@ -496,7 +496,7 @@ def _hygiene_gate(repo: Path, base: str, reporter: Reporter) -> None:
     import brain_hygiene
 
     reporter.note("Verify merged tree: brain hygiene gate")
-    findings = brain_hygiene.check(repo, brain_hygiene.bs.git_changed_paths(repo, base))
+    findings = brain_hygiene.check(repo, brain_hygiene.bs.git_changed_paths(repo, base), base)
     blocking = [f.render() for f in findings if f.severity != "NOTICE"]
     for notice in (f.render() for f in findings if f.severity == "NOTICE"):
         reporter.note(notice)

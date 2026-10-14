@@ -33,6 +33,11 @@ and dev-tooling dot-dirs are judged for conflict markers only):
                    duplicate prompt text, bullets swallowed by a sub-heading, an indented bullet
                    before a category's first prompt, a `skill:` typo, a prompt without any skill
                    pointer (only once the file uses `skills:`).
+  * doc-spill    — NOTICE only: an on-demand doc (no `include_in`, not root AGENTS.md /
+                   chat_inspiration.md, not under journal/_internal/tests/docs/dot-dirs) whose body
+                   crosses 6000 bytes in this change (≤6000 or absent at the base: HEAD for --staged,
+                   else `--base`); bash shows such a read as a 2000+1000-char preview. Already-over
+                   docs stay silent.
 
 Everything but `conflict` is scoped to changed files (vs `--base`, default origin/main) so a mature
 tree's legacy debt cannot block an unrelated publish; `--all` judges every tracked file.
@@ -49,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import re
 import shutil
 import subprocess
@@ -86,6 +92,50 @@ CI_MAX_NOTE_RUNES, CI_MAX_NOTES, CI_MAX_SKILLS = 300, 8, 6  # per note line; eff
 CI_SKILL_NAME_RE = re.compile(r"[A-Za-z0-9_-]+", re.ASCII)
 CI_SKILL_ROOTS = ("/brain/", "/tenant/", "/skills/", "/mirrors/")
 CI_SKILL_TYPOS = ("skill:", "skils:", "skillz:")
+
+SPILL_BYTES = 6000  # rootcause internal/tool/tool.go defaultBashSpillThreshold (Go len = bytes)
+SPILL_SKIP_DIRS = {"journal", "_internal", "tests", "docs"}
+BRAIN_DOC = Path(__file__).resolve().parents[3] / "runtime" / "lib" / "brain_doc.py"
+
+
+def _brain_doc():
+    """The kit's stdlib-only `lib.brain_doc`, loaded by path: the hook and push gate run without
+    PyYAML, and a brain's own `lib` package must not shadow it. None when the kit ships no runtime/."""
+    spec = importlib.util.spec_from_file_location("rc_kit_brain_doc", BRAIN_DOC)
+    if spec is None or not BRAIN_DOC.is_file():
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding]:
+    """NOTICE per on-demand doc this change pushes past the bash spill cliff (regression-only)."""
+    doc = _brain_doc()
+    if doc is None:
+        return []
+
+    def body(text: str) -> int:
+        return len(doc.strip_frontmatter(text).encode("utf-8"))
+
+    out: list[bs.Finding] = []
+    for rel in sorted(files):
+        parts = rel.split("/")
+        if (not rel.endswith(".md") or rel in ("AGENTS.md", CHAT_INSPIRATION_FILE)
+                or any(d in SPILL_SKIP_DIRS or d.startswith(".") for d in parts[:-1])):
+            continue
+        text = (root / rel).read_text("utf-8", errors="replace")
+        if doc.include_in(text) or (new := body(text)) <= SPILL_BYTES:
+            continue
+        prev = subprocess.run(["git", "-C", str(root), "show", f"{base}:{rel}"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+        old = body(prev.stdout) if prev.returncode == 0 else None
+        if old is not None and old > SPILL_BYTES:
+            continue
+        out.append(bs.Finding("hygiene", f"doc-spill: body {old if old is not None else 'new'}→{new} "
+                              "bytes; bash shows only a 2000+1000-char preview past 6000 chars: split "
+                              "into a lean core + detail file", path=rel, severity="NOTICE"))
+    return out
 
 
 def _glob_re(glob: str) -> re.Pattern[str]:
@@ -453,9 +503,9 @@ def parse_chat_inspiration(text: str, path: str = CHAT_INSPIRATION_FILE, root: P
     return cats, findings
 
 
-def check(root: Path, files: list[str] | None = None) -> list[bs.Finding]:
+def check(root: Path, files: list[str] | None = None, base: str | None = None) -> list[bs.Finding]:
     """Hygiene findings for a brain at `root`. `files` scopes every rule but `conflict`;
-    None judges the whole tracked tree."""
+    None judges the whole tracked tree. `base` (the ref `files` changed against) enables doc-spill."""
     tracked = bs.git_tracked(root)
     ctx = bs.Ctx(root=root, tracked=tracked, tracked_set=set(tracked),
                  md_files=[p for p in tracked if p.lower().endswith(".md")])
@@ -532,6 +582,8 @@ def check(root: Path, files: list[str] | None = None) -> list[bs.Finding]:
     if renderer_failure:
         findings.append(bs.Finding("hygiene", f"mermaid: renderer failed, diagrams unchecked: "
                                    f"{renderer_failure}", severity="NOTICE"))
+    if base and files is not None:
+        findings += _spill_crossings(root, sorted(scoped), base)
     return findings
 
 
@@ -553,7 +605,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "--diff-filter=ACMR"], capture_output=True, text=True).stdout.split()
     else:
         files = None if args.all else bs.git_changed_paths(root, args.base)
-    findings = check(root, files)
+    findings = check(root, files, None if args.all else "HEAD" if args.staged else args.base)
     for f in findings:
         print(f.render())
     blocking = [f for f in findings if f.severity != "NOTICE"]

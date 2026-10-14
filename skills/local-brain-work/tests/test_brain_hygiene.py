@@ -119,6 +119,39 @@ def test_staged_mode_judges_only_the_index(tmp_path: Path) -> None:
     assert "a.md:1: hygiene: abs-path" in run.stdout and "b.md" not in run.stdout
 
 
+
+# --- doc-spill (6000-byte bash cliff, regression-only NOTICE) -------------------------------------
+
+def _staged_spill(tmp_path: Path, before: dict[str, str], after: dict[str, str]) -> subprocess.CompletedProcess:
+    root = make_brain(tmp_path, before)
+    for rel, text in after.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, "utf-8")
+    git(root, "add", "-A")
+    return subprocess.run([sys.executable, str(SCRIPTS / "brain_hygiene.py"), "--staged",
+                           "--root", str(root)], capture_output=True, text=True)
+
+
+def test_doc_spill_notices_a_crossing_without_failing(tmp_path: Path) -> None:
+    fm = "---\ndescription: Open for refunds.\n---\n"
+    run = _staged_spill(tmp_path, {"skills/cases/a.md": fm + "x" * 5900},
+                        {"skills/cases/a.md": fm + "x" * 6100, "skills/cases/b.md": "y" * 6001})
+    assert run.returncode == 0, run.stdout
+    assert "NOTICE skills/cases/a.md: hygiene: doc-spill: body 5900→6100 bytes" in run.stdout
+    assert "NOTICE skills/cases/b.md: hygiene: doc-spill: body new→6001 bytes" in run.stdout
+
+
+def test_doc_spill_silent_when_already_over_tagged_or_exempt(tmp_path: Path) -> None:
+    tagged = "---\ninclude_in: [agent]\n---\n"
+    run = _staged_spill(tmp_path, {"skills/cases/big.md": "x" * 7000},
+                        {"skills/cases/big.md": "x" * 9000,
+                         "skills/cases/tagged.md": tagged + "x" * 7000,
+                         "docs/long.md": "x" * 7000, "journal/2026-10.md": "x" * 7000,
+                         "AGENTS.md": "x" * 7000})
+    assert run.returncode == 0, run.stdout
+    assert "doc-spill" not in run.stdout
+
+
 # --- chat-inspiration --------------------------------------------------------------------------
 
 GOOD_INSPIRATION = """---
