@@ -69,7 +69,7 @@ Publication writes standard technical options; owner options come from the findi
 linked rows; the technical twin waits for the owner decision. Tenant owner rows use that tenant’s open queue session; technical rows stay on project sessions
 with the tenant slug as scope_label. One-practice FAQ/profile/master-data asks are tenant scope;
 project scope is for cross-tenant asks. Legacy owner cards on project sessions match by signature
-and tenant scope_label: their next publication moves an active card into its tenant session,
+and tenant scope_label (else scope_label `project`): their next publication moves an active card into its tenant session,
 preserving ID, decisions and links. No one-off republish/migration is needed.
 
 ## Evidence excerpts

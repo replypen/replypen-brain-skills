@@ -959,7 +959,7 @@ def load_report(path: str | Path, *, dsn=None, prior=None) -> Report:
                     (row.get("audience") != "owner" or row.get("tenant") ==
                      (f.scope.tenant if f.scope.level == "tenant" else None) or
                      (f.scope.level == "tenant" and row.get("tenant") is None and
-                      row.get("scope_label") == f.scope.tenant)) and
+                      row.get("scope_label") in (f.scope.tenant, "project"))) and
                     "#archived:" not in row.get("signature", "")] if old else []
         if old and old.get("rows") and not relevant:
             old = None

@@ -307,6 +307,27 @@ def test_legacy_owner_moves_on_next_sighting_preserving_identity(db, projects, t
         assert (card['tenant_id'] is not None) == (card['audience'] == 'owner')
 
 
+def test_project_scoped_owner_card_moves_to_tenant_on_tenant_sighting(db, projects, tmp_path):
+    from report_schema import load_report
+    r = report(projects, audience='owner')
+    publish(db, r, write=True)
+    before = rows(db, projects)
+    assert {c['scope_label'] for c in before} == {'project'} and all(c['tenant_id'] is None for c in before)
+    carried = next_day(r)
+    data = carried.model_dump(exclude_unset=True)
+    data['window']['focus'] = carried.date
+    data['findings'][0]['scope'] = {'level': 'tenant', 'tenant': 'practice'}
+    data['kpis']['per_axis'] = [{'axis': 'tenant', 'key': 'practice', 'name': 'Practice'}]
+    for key in ('text_en', 'text_nl', 'ask_nl', 'ask_for', 'prompt', 'impact', 'root_cause'):
+        data['findings'][0].pop(key, None)
+    path = tmp_path / 'report.json'
+    path.write_text(json.dumps(data))
+    carried = load_report(path, prior=read_prior(db, list(projects)))
+    assert all(p['action'] == 'update' for p in publish(db, carried, write=True))
+    after = rows(db, projects)
+    assert {c['id'] for c in after} == {c['id'] for c in before}
+    assert all(c['tenant_id'] is not None and c['scope_label'] == 'practice' for c in after)
+
 def test_prototype_open_card_repair_preserves_decisions(db, projects):
     from body_update import update_body
     from test_helper_prototype import sample

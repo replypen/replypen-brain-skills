@@ -177,9 +177,11 @@ def publish(conn, report, *, write=False):
                 old = conn.execute('SELECT * FROM review_items WHERE session_id=%s AND signature=%s' + (' FOR UPDATE' if write else ''), (session, finding.signature)).fetchone() if session else None
                 legacy = False
                 if not old and audience == 'owner' and tenant_id is not None:
-                    # Pre-tenant-routing cards keep their identity/decisions on their next sighting.
-                    old = conn.execute('SELECT * FROM review_items WHERE session_id=%s AND signature=%s AND scope_label=%s' + (' FOR UPDATE' if write else ''),
-                                       (sessions[member, audience], finding.signature, finding.scope.tenant)).fetchone()
+                    # Pre-tenant-routing cards keep their identity/decisions on their next sighting:
+                    # prefer the tenant-labelled row, else a card first filed at project scope.
+                    old = conn.execute("SELECT * FROM review_items WHERE session_id=%s AND signature=%s AND scope_label IN (%s,'project')"
+                                       " ORDER BY scope_label=%s DESC LIMIT 1" + (' FOR UPDATE' if write else ''),
+                                       (sessions[member, audience], finding.signature, finding.scope.tenant, finding.scope.tenant)).fetchone()
                     legacy = old is not None
                 action, note = transition(old, finding, runs.values(), focus)
                 output.append({'project': member, 'audience': audience, 'signature': finding.signature, 'action': action, 'note': note})
@@ -191,7 +193,7 @@ def publish(conn, report, *, write=False):
                     continue
                 if legacy and action == 'update':
                     position = conn.execute('SELECT COALESCE(MAX(position),0)+1 AS n FROM review_items WHERE session_id=%s', (session,)).fetchone()['n']
-                    conn.execute('UPDATE review_items SET session_id=%s,position=%s WHERE id=%s', (session, position, old['id']))
+                    conn.execute('UPDATE review_items SET session_id=%s,position=%s,scope_label=%s WHERE id=%s', (session, position, finding.scope.tenant, old['id']))
                 update = finding.update_en if audience == 'technical' else finding.update_nl
                 if action in ('regression', 'reopen'):
                     # The locked unique(session_id,signature) contract needs the historical generation
