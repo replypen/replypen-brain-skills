@@ -6,7 +6,7 @@ repointing prod before the tag exists breaks prod image builds.
 
 ## Order of operations
 
-1. **Publish this repo** at `v0.11.20` with `./refresh-brains.sh --release patch` (or an explicit
+1. **Publish this repo** at `v0.11.21` with `./refresh-brains.sh --release patch` (or an explicit
    version). The release must be cut on `main`; the publisher pushes and verifies `origin/main` at
    the release commit before it pushes the tag. Never publish the tag first.
    - Bump the whole single version line together first — see [../RELEASING.md](../RELEASING.md)
@@ -15,14 +15,14 @@ repointing prod before the tag exists breaks prod image builds.
    - Prove the package resolves by tag (no `rootcause` source):
      ```bash
      uv run --no-project \
-       --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.11.20#subdirectory=runtime" \
+       --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.11.21#subdirectory=runtime" \
        python -c "import lib.db; print('ok')"
      ```
 
 2. **Publish the workspace image** to ghcr, pinned to the same tag:
    ```bash
-   docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:v0.11.20 .
-   docker push ghcr.io/rootcause-org/workspace:v0.11.20
+   docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:v0.11.21 .
+   docker push ghcr.io/rootcause-org/workspace:v0.11.21
    ```
    (Already builds + runs locally — see verification in the session that produced this repo.)
 
@@ -44,7 +44,7 @@ repointing prod before the tag exists breaks prod image builds.
    +# subdirectory=runtime is where pyproject.toml lives; the import name stays `lib`.
    +# Needs build-time network + read auth to the (private) repo; pin the tag, never float main.
    +RUN uv pip install --system --no-cache \
-   +        "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.11.20#subdirectory=runtime"
+   +        "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.11.21#subdirectory=runtime"
    ```
    **Confirm a real prod run still grounds** before deleting anything (the make-or-break check).
 
