@@ -469,7 +469,11 @@ surfaces: [chat, dashboard_chat]
   badge; an identical prompt text (case-insensitive) keeps one copy, the tenant's.
 
 **Author notes + skill pointers** — hidden from the gallery; reach the agent only on the turn the user
-sent a picked example (even edited), as reference guidance below the request.
+sent a picked example (even edited), as brain-authored instructions rendered inside that user turn.
+Provenance is the click: text pasted, typed or sent via `rc project chat send` carries no notes. To
+verify on a run: `rc run debug <run>` → `inspiration` in the JSONL header / "Gallery pick" in the index
+(it is not a system-prompt section, so the prompt-sections table never shows it; `chat_hidden_context`
+is a different mechanism).
 
 ```markdown
 ## 📝 Inschrijvingen
