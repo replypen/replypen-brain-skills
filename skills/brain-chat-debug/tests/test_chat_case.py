@@ -351,3 +351,20 @@ def test_open_finds_session_created_days_before_first_question(tmp_path, monkeyp
     search = calls(log, "search")[-1]
     assert "--since" not in search and search[search.index("--until") + 1] == "2026-01-01"
     assert run(brain, "replay", "11111111", "--dry-scope") == 0
+
+
+def test_inherited_context_provenance():
+    warm = {**header(RUN2), "context_capture_origin": "inherited", "context_capture_origin_run_id": RUN1,
+            "context_captured_at": "2026-01-01T10:00:01Z", "prompt_decomposition": "unavailable"}
+    warm["grounding_sources"] = {"captured": False, "reason": "hot_no_source", "inherited_from_run_id": RUN1}
+    ev = cc.summarise_trace(warm, events(), MD)
+    lines = cc.refs_line(ev)
+    assert "- prompt context: inherited from run aaaaaaaa (warm container), captured 2026-01-01T10:00:01Z" in lines
+    assert any("warm turn without a captured origin" in line for line in lines)
+    assert not any("inherited" in line for line in cc.refs_line(cc.summarise_trace(header(), events(), MD)))
+    case = case_doc()
+    turn = {**case["turns"][0], "evidence": ev}
+    rec = {"stamp": "20260101T000001Z", "label": "baseline", "mode": "raw", "answer": "x", "run_id": NEW,
+           "evidence": cc.summarise_trace(header(NEW, on=("persona",)), events(), MD), "limitations": []}
+    md = cc.render_replay_md(case, turn, rec, None)
+    assert "not comparable (prompt decomposition unavailable)" in md and "off in this replay: chat_" not in md

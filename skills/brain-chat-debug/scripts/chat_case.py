@@ -242,6 +242,13 @@ def summarise_trace(header: dict[str, Any], events: list[dict[str, Any]],
         "brain_ref": header.get("brain_ref"), "brain_resolved": header.get("brain_resolved"),
         "mirrors": mirrors, "sources_captured": sources.get("captured", True) is not False,
         "sources_reason": sources.get("reason"), "sections_on": on, "sections_off": off,
+        # Warm chat turns may reuse an earlier run's assembled context; the host resolves it into the
+        # same fields and stamps the provenance here.
+        "context_origin": header.get("context_capture_origin"),
+        "context_origin_run_id": header.get("context_capture_origin_run_id")
+        or sources.get("inherited_from_run_id"),
+        "context_captured_at": header.get("context_captured_at"),
+        "prompt_decomposition": header.get("prompt_decomposition"),
         "sections_off_relevant": [s for s in off if s in RELEVANT_SECTIONS],
         "commands": commands, "files_read": files, "flags": md_section(md_text, "Flags")[:8],
         "question": header.get("question") or "", "answer": header.get("draft") or "",
@@ -584,14 +591,23 @@ def case_summary(case: dict[str, Any], md_path: str | None) -> list[str]:
 
 
 # --- renderers (pure) -------------------------------------------------------------------------
+SOURCE_REASONS = {"pre_migration": "run predates capture",
+                  "hot_no_source": "warm turn without a captured origin",
+                  "source_deleted": "origin capture expired/deleted"}
+
+
 def refs_line(ev: dict[str, Any] | None) -> list[str]:
     if not ev:
         return ["- (no trace)"]
     out = [f"- brain: `{ev.get('brain_resolved') or ev.get('brain_ref') or '?'}`"]
     for m in ev.get("mirrors") or []:
         out.append(f"- mirror {m['name']}: {m.get('ref')} @ {m.get('sha')}" + (" · override" if m.get("override") else ""))
+    if ev.get("context_origin") == "inherited":
+        out.append(f"- prompt context: inherited from run {(ev.get('context_origin_run_id') or '?')[:8]} "
+                   f"(warm container), captured {ev.get('context_captured_at') or '?'}")
     if not ev.get("mirrors") and ev.get("sources_captured") is False:
-        out.append(f"- mirrors: not captured in this trace ({ev.get('sources_reason') or 'unknown'}); "
+        reason = ev.get("sources_reason")
+        out.append(f"- mirrors: not captured in this trace ({SOURCE_REASONS.get(reason, reason or 'unknown')}); "
                    "see a sibling turn")
     return out
 
@@ -724,8 +740,11 @@ def render_replay_md(case: dict[str, Any], turn: dict[str, Any], rec: dict[str, 
            f"- trace: {rec.get('run_url') or '-'} · local `{rec.get('trace_md') or '-'}`"]
     if rec.get("note"):
         out.append(f"- note: {rec['note']}")
-    if rec.get("mode") != "chat" and ev.get("sections_on") and (turn.get("evidence") or {}).get("sections_on"):
-        gap = [s for s in turn["evidence"]["sections_on"] if s not in set(ev["sections_on"])]
+    hist_ev = turn.get("evidence") or {}
+    if rec.get("mode") != "chat" and "unavailable" in (hist_ev.get("prompt_decomposition"), ev.get("prompt_decomposition")):
+        out.append("- on in the chat run, off in this replay: not comparable (prompt decomposition unavailable)")
+    elif rec.get("mode") != "chat" and ev.get("sections_on") and hist_ev.get("sections_on"):
+        gap = [s for s in hist_ev["sections_on"] if s not in set(ev["sections_on"])]
         out.append(f"- on in the chat run, off in this replay: {', '.join(gap) or '-'}")
     out += ["", "## Expected check", "", f"> {case['expected']}" if case.get("expected") else "(no expected text in case.json)",
             "", "verdict: ", "", "## Facts", ""] + facts_table(cols) + [""]
