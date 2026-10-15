@@ -2,7 +2,13 @@
 
 The host owns credentials, scope checks and all provider work. This module only calls the per-run
 ``http://rc-broker.internal/mail/*`` surface; when the capability is absent it fails with one clear
-sentence. Every write places a draft for human review — there is no send operation.
+sentence. Every write places a draft for human review — there is no send operation: never claim a
+mail was sent; when asked to send, offer to place a draft instead. Every payload carries the mailbox
+``slug`` and ``address``; name the mailbox address you searched or drafted in when answering.
+
+``search`` returns the broker's whole envelope (``threads``, ``warnings``, ``since_days``, ``truncated``):
+a per-mailbox failure arrives as a warning, so an empty ``threads`` list is only "no matches" when
+``warnings`` is empty too.
 """
 
 from __future__ import annotations
@@ -29,11 +35,21 @@ def mailboxes() -> list[dict]:
     return _request("GET", "/mailboxes").get("mailboxes", [])
 
 
-def search(with_email: str, *, since_days: int = 14, limit: int = 20, mailbox: str | None = None) -> list[dict]:
-    body = {"with": with_email, "since_days": since_days, "limit": limit}
+def search(with_email: str | None = None, *, subject: str | None = None, inbox: bool = False,
+           since_days: int = 14, limit: int = 20, mailbox: str | None = None) -> dict:
+    """Find threads by exact correspondent, subject substring and/or the real inbox (combinable)."""
+    if not (with_email or subject or inbox):
+        raise ValueError("search needs at least one of with_email, subject or inbox")
+    body: dict = {"since_days": since_days, "limit": limit}
+    if with_email:
+        body["with"] = with_email
+    if subject:
+        body["subject"] = subject
+    if inbox:
+        body["inbox"] = True
     if mailbox:
         body["mailbox"] = mailbox
-    return _request("POST", "/search", body).get("threads", [])
+    return _request("POST", "/search", body)
 
 
 def thread(ref: str) -> dict:
@@ -95,7 +111,9 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("mailboxes")
     find = sub.add_parser("search")
-    find.add_argument("--with", dest="with_email", required=True)
+    find.add_argument("--with", dest="with_email", help="exact correspondent address")
+    find.add_argument("--subject", help="subject substring (max 120 characters)")
+    find.add_argument("--inbox", action="store_true", help="recent threads in the real inbox")
     find.add_argument("--since", type=_since_days, default=14)
     find.add_argument("--limit", type=int, default=20)
     find.add_argument("--mailbox")
@@ -121,7 +139,10 @@ def _main(argv=None) -> int:
         if args.command == "mailboxes":
             value = mailboxes()
         elif args.command == "search":
-            value = search(args.with_email, since_days=args.since, limit=args.limit, mailbox=args.mailbox)
+            if not (args.with_email or args.subject or args.inbox):
+                parser.error("search needs --with, --subject or --inbox")
+            value = search(args.with_email, subject=args.subject, inbox=args.inbox, since_days=args.since,
+                           limit=args.limit, mailbox=args.mailbox)
         elif args.command == "thread":
             value = thread(args.ref)
         elif args.command == "draft":
