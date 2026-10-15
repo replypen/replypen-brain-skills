@@ -74,6 +74,13 @@ _ACTION_SURFACE_CONTRACT = json.loads(
 )
 ACTION_SURFACES = tuple(_ACTION_SURFACE_CONTRACT["surfaces"])
 ACTION_SURFACE_ALIASES = dict(_ACTION_SURFACE_CONTRACT["deprecated_aliases"])
+# Dotted keys address a nested block (`preflight.runtime`). Mirrored byte-for-byte by the host's
+# internal/action/testdata copy (guard test there), so both repos change together.
+ACTION_MANIFEST_ENUMS = {
+    key: tuple(values) for key, values in json.loads(
+        (Path(__file__).parent / "contracts" / "action_manifest_enums.json").read_text("utf-8")
+    ).items()
+}
 
 # Leading-phrase patterns that describe *contents* ("what this holds") instead of *when to open this*.
 # WARN-only and deliberately small — a few high-precision openers in English + Dutch, matched at the
@@ -329,6 +336,33 @@ def _check_manifest_surfaces(path: Path, rel: str) -> list[Finding]:
             findings.append(Finding(rel, "FAIL", f"action surface {normalized!r} is repeated after alias normalization",
                                     "action-surfaces"))
         seen.add(normalized)
+    return findings
+
+
+def _check_manifest_enums(path: Path, rel: str) -> list[Finding]:
+    """Reject manifest enum values the host refuses or mis-reads. Stricter than the host (exact case):
+    a typo like `risk: Hgih` would otherwise silently drop the high-risk floor."""
+    try:
+        data = yaml.safe_load(path.read_text("utf-8"))
+    except (OSError, yaml.YAMLError):
+        return []  # Existing manifest parsing/description checks report malformed YAML.
+    if not isinstance(data, dict):
+        return []
+    findings: list[Finding] = []
+    for key, allowed in ACTION_MANIFEST_ENUMS.items():
+        *parents, leaf = key.split(".")
+        node = data
+        for part in parents:
+            node = node.get(part) if isinstance(node, dict) else None
+        if not isinstance(node, dict) or leaf not in node:
+            continue  # absent = host default
+        value = node[leaf]
+        if isinstance(value, str) and value in allowed:
+            continue
+        findings.append(Finding(
+            rel, "FAIL", f"`{key}` must be one of: {', '.join(allowed)} (got {value!r})",
+            "action-manifest-enums",
+        ))
     return findings
 
 
@@ -966,6 +1000,7 @@ def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]
     surface_manifests.update(root.glob("actions-drafts/*/manifest.yaml"))
     for manifest in sorted(surface_manifests):
         findings += _check_manifest_surfaces(manifest, _rel(root, manifest))
+        findings += _check_manifest_enums(manifest, _rel(root, manifest))
 
     kind = kind or detect_repo_kind(root)[0]
     if kind != "mirror":  # a mirror's `surfaces:` is never honored at all — _check_frontmatter FAILs it

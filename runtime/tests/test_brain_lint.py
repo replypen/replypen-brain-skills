@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.brain_lint import (
+    ACTION_MANIFEST_ENUMS,
     ACTION_SURFACE_ALIASES,
     ACTION_SURFACES,
     DESC_FULL_MAX_LEN,
@@ -130,6 +131,47 @@ def test_action_surface_vocabulary_is_loaded_from_embassy_contract() -> None:
         "compose", "prompt_api", "mcp", "embassy", "console",
     )
     assert ACTION_SURFACE_ALIASES == {"gmail": "email", "outlook": "email", "imap": "email"}
+
+
+def test_lint_brain_validates_action_manifest_enums_in_live_and_draft_manifests(tmp_path: Path) -> None:
+    _seed_brain(tmp_path)
+    _write(tmp_path / "actions/refund/manifest.yaml",
+           "id: refund\ndescription: Refund a customer\nruntime: python\nautonomy: policy\n"
+           "risk: high\nconfirm: requester\nmin_tier: pro\npreflight: {runtime: bash}\n"
+           "policy: {runtime: ruby}\n")
+    _write(tmp_path / "actions/unknown/manifest.yaml",
+           "id: unknown\ndescription: Unknown value\nautonomy: always\n")
+    _write(tmp_path / "actions/wrong_case/manifest.yaml",
+           "id: wrong_case\ndescription: Wrong case\nrisk: High\n")
+    _write(tmp_path / "actions/null_tier/manifest.yaml",
+           "id: null_tier\ndescription: Null\nmin_tier: null\n")
+    _write(tmp_path / "actions-drafts/bad_preflight/manifest.yaml",
+           "id: bad_preflight\ndescription: Draft\npreflight:\n  runtime: node\n")
+
+    findings = [f for f in lint_brain(tmp_path) if f.rule == "action-manifest-enums"]
+
+    assert [(f.path, f.level) for f in findings] == [
+        ("actions/null_tier/manifest.yaml", "FAIL"),
+        ("actions/unknown/manifest.yaml", "FAIL"),
+        ("actions/wrong_case/manifest.yaml", "FAIL"),
+        ("actions-drafts/bad_preflight/manifest.yaml", "FAIL"),
+    ]
+    assert findings[0].message == "`min_tier` must be one of: pro (got None)"
+    assert findings[1].message == "`autonomy` must be one of: human, policy, auto (got 'always')"
+    assert findings[2].message == "`risk` must be one of: low, medium, high (got 'High')"
+    assert findings[3].message == "`preflight.runtime` must be one of: python, bash, ruby (got 'node')"
+
+
+def test_manifest_enum_vocabulary_is_loaded_from_contract() -> None:
+    assert ACTION_MANIFEST_ENUMS == {
+        "autonomy": ("human", "policy", "auto"),
+        "confirm": ("reviewer", "requester"),
+        "min_tier": ("pro",),
+        "policy.runtime": ("python", "bash", "ruby"),
+        "preflight.runtime": ("python", "bash", "ruby"),
+        "risk": ("low", "medium", "high"),
+        "runtime": ("ruby", "python"),
+    }
 
 
 def test_lint_brain_flags_python_outside_supported_roots(tmp_path: Path) -> None:

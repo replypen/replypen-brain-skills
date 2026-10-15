@@ -1,0 +1,1 @@
+{"autonomy":["human","policy","auto"],"confirm":["reviewer","requester"],"min_tier":["pro"],"policy.runtime":["python","bash","ruby"],"preflight.runtime":["python","bash","ruby"],"risk":["low","medium","high"],"runtime":["ruby","python"]}
