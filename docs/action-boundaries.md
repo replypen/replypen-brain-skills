@@ -60,7 +60,7 @@ passes through the host. But approval must also review any extra effects the cho
 | Mechanism | Verdict | Current production effect |
 |---|---|---|
 | Manifest parameter schema | Valid/invalid arguments | Invalid inputs are rejected before dispatch. |
-| Optional `preflight.py` | `ok`, `summary`, optional `reason`, `class`, `observed`, `resource_url` | A completed `ok:false` blocks execution. A technical failure requires human review. |
+| Optional `preflight.py` | `ok`, `summary`, optional `reason`, `class`, `observed`, `resource_url` | A completed `ok:false` blocks execution. `class: "correctable"` (fixable input content/shape) lets the agent resend corrected inputs, 4 attempts per action per run; any other refusal is final for the run. A technical failure requires human review. |
 | `policy.py` for effective `policy` autonomy | `allow`, `reason`, optional `observed` | `allow:false` or a technical failure prevents automatic execution and falls back to human review. It is not an absolute prohibition. |
 | `script.py` | Execution result | Recheck hard business limits and current state before writing, including after a human confirms. |
 
@@ -71,6 +71,9 @@ agent requests execution through the host's `action` tool.
 The host runs the installed preflight during an action-tool request, so a prior manual preflight
 is not accepted as a reusable permission slip. A completed rejection returns feedback to the agent
 before automatic execution or proposal creation (human-gated chat may show a disabled card).
+Declare `failure_class="correctable"` only when `reason` tells the agent exactly how to fix the
+inputs (a missing required section, a wrong format); never for rights, identity, tenant or record-state
+refusals, so the agent cannot loop around a check.
 A crash, timeout, unparseable result or missing preview prevents automation and instead creates a
 human-review proposal/card marked **preview unavailable**. A pass still needs autonomy/policy approval.
 No preflight means schema validation alone, not proof that the business operation will succeed.

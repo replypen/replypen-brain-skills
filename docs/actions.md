@@ -358,7 +358,9 @@ omits optional params, so do not index them with `p["name"]`.
 
 Preflight scripts can reuse the matching small primitives: `preflight.params()` loads the host or
 local JSON object, while `preflight.result()` builds the verdict envelope. Keep the project's checks
-and failure wording in the script.
+and failure wording in the script. `failure_class` on a refusal: default `rejected` (final for the
+run), `correctable` (the agent fixes the inputs as `reason` says and calls again, 4 attempts), or
+`infrastructure` (the check itself failed; see [action boundaries](action-boundaries.md)).
 
 ```python
 from lib.action import preflight
