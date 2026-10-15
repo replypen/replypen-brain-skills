@@ -49,6 +49,13 @@ actions/<id>/
   disappear everywhere. Symmetric: declaring it on one side is enough. Every id must exist in the same
   registry (a typo fails loading), and an action may not list itself. Only use it for genuine
   either/or pairs — two proposals of the SAME action (one per patient, per child) are never exclusive.
+- Optional `min_tier: pro` reserves the action for the thorough model (chat's "Deeper"). Use it for
+  escalations and writes whose params rest on careful reading (support tickets, refunds), not for
+  routine lookups. A call from any other model is refused before anything is minted; in chat the host
+  says it is switching, moves the session to Deeper and reruns the request, so the action is always
+  authored by the thorough model after a re-check. Email and other surfaces just refuse. Any other
+  value fails loading. It is no substitute for `autonomy`: it decides WHO may write the params, not
+  whether a human confirms.
 - `preflight.py`, when present, is read-only and blocks unsafe/mis-grounded params before proposal.
 - `policy.py`, when present, is read-only and decides per-invocation whether an `autonomy: policy` action
   auto-executes or escalates to a human (see [Autonomy](#autonomy-human--policy--auto)).
