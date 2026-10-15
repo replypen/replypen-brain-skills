@@ -15,14 +15,22 @@ pagination:
   style: none
 rate_limit:
   remaining_header: ""
+# Delegated writes: only on the fleet service-account route, only for a doc shared with that account
+# as Editor (the host verifies the share per file; the share is the consent). OAuth grants stay read-only.
+write_endpoints:
+  consent: google_drive_share
+  post:
+    - /documents/*:batchUpdate
+    - /v1/documents/*:batchUpdate
 oauth:
   auth_url: https://accounts.google.com/o/oauth2/v2/auth
   token_url: https://oauth2.googleapis.com/token
   default_scopes:
     - https://www.googleapis.com/auth/documents.readonly
 help_md: |
-  Reads native Google Docs document structure and text runs for support grounding. Read-only:
-  only ever issues GETs, never writes to a document.
+  Reads native Google Docs document structure and text runs for support grounding. Read-only,
+  except a doc shared with ReplyPen's service account as Editor: that may be edited via
+  documents/DOCUMENT_ID:batchUpdate (the host verifies the Editor share per file).
 
   Read a Doc by id or URL that the connected account can open.
 
@@ -42,4 +50,5 @@ help_md: |
 onboarding_md: |
   Ask which Docs future support work should consult and when. Capture each document's stable ID or URL,
   its purpose, and the relevant sections or headings. If a workflow should edit a document, record it as
-  a write requiring a live action; this connector only reads.
+  a write requiring a live action, unless the doc is shared with ReplyPen's shared address as Editor: then
+  it may be edited directly via the delegated write path.

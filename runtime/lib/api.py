@@ -18,6 +18,11 @@ guidance), raise LOUDLY with the failing provider detail on error rather than re
 empty/partial, and take the credential from ``lib.oauth.token`` so it never lands in argv, logs, or
 model context.
 
+One exception to read-tier: a manifest's ``write_endpoints`` (verb → path patterns + a ``consent``
+name) lets a BROKERED run mutate those paths, because the host broker enforces the per-resource consent
+on every call (e.g. ``google_drive_share``: the file is shared with ReplyPen's address as Editor). A
+non-brokered client has no such gate, so it still refuses.
+
 Env-token auth is the credential VALUE injected as ``RC_CONN_<KEY>`` plus a manifest-declared
 *strategy* that says where it goes (bearer header / basic / api-key header / query param / oauth2
 client-credentials). Brokered connectors route through ``http://rc-broker.internal/<key>/...`` and
@@ -77,6 +82,10 @@ class ApiError(RuntimeError):
     Mirrors ``lib.db``'s raise-loud posture: the caller sees the failing detail (status + the
     provider's own error JSON/text, truncated) instead of a silent fallback. ``retryable`` lets the
     retry layer decide without re-parsing.
+
+    ``code``/``message`` are set only for a host-broker denial (``{"error":{"code":"<SYMBOL>",
+    "message":…}}`` with a STRING code, e.g. ``DELEGATED_WRITE_DENIED``); the message then leads with
+    them verbatim because it carries the exact ask for the user. Provider errors keep numeric codes.
     """
 
     def __init__(self, status: int, body: str, *, url: str = "", retryable: bool = False):
@@ -84,11 +93,28 @@ class ApiError(RuntimeError):
         self.body = body
         self.url = url
         self.retryable = retryable
+        self.code, self.message = _broker_error(body)
         detail = (body or "").strip()
         if len(detail) > 800:
             detail = detail[:800] + "…(truncated)"
         where = f" for {url}" if url else ""
-        super().__init__(f"HTTP {status}{where}: {detail}" if detail else f"HTTP {status}{where}")
+        if self.code:
+            super().__init__(f"HTTP {status} {self.code}: {self.message}")
+        else:
+            super().__init__(f"HTTP {status}{where}: {detail}" if detail else f"HTTP {status}{where}")
+
+
+def _broker_error(body: str) -> tuple[str, str]:
+    try:
+        err = json.loads(body or "").get("error")
+    except (ValueError, AttributeError):
+        return "", ""
+    if not isinstance(err, dict):
+        return "", ""
+    code = err.get("code")
+    if not isinstance(code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]+", code):
+        return "", ""
+    return code, str(err.get("message") or "")
 
 
 class MethodPolicyError(RuntimeError):
@@ -161,6 +187,9 @@ class Manifest:
     default_headers: dict[str, str] = field(default_factory=dict)
     allowed_post_paths: tuple[str, ...] = ()
     brokered: bool = False
+    # Delegated writes: upper-case verb → path patterns, honoured only on a brokered client.
+    write_endpoints: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    write_consent: str = ""
 
 
 @dataclass
@@ -502,11 +531,21 @@ class Client:
         return self._assert_read_tier(verb, path)
 
     def _assert_read_tier(self, verb: str, path: str) -> bool:
+        """Run-tier policy. True = read-tier (retry-safe); False = an allowed delegated write."""
         if verb in _IDEMPOTENT_METHODS:
             return True
+        if verb == "POST" and _matches_any_path(path, self.manifest.allowed_post_paths):
+            return True
+        if self._is_delegated_write(verb, path):
+            if not self.manifest.brokered:
+                raise MethodPolicyError(
+                    f"{verb} {path!r} is a delegated write for integration {self.manifest.key!r}, but this "
+                    "connection is not brokered this run, so its consent "
+                    f"({self.manifest.write_consent or 'host'}) cannot be checked. Writes need the host "
+                    "broker; locally, or through a customer-connected account, it is read-only."
+                )
+            return False
         if verb == "POST":
-            if _matches_any_path(path, self.manifest.allowed_post_paths):
-                return True
             allowed = ", ".join(self.manifest.allowed_post_paths) or "(none)"
             raise MethodPolicyError(
                 f"POST {path!r} is not in integration {self.manifest.key!r}'s read-only POST allowlist "
@@ -517,6 +556,10 @@ class Client:
         if verb in _STATE_CHANGING_METHODS:
             raise MethodPolicyError(_WRITE_VERB_HINT)
         raise MethodPolicyError(f"HTTP method {verb!r} is not supported by lib.api read-tier grounding")
+
+    def _is_delegated_write(self, verb: str, path: str) -> bool:
+        patterns = self.manifest.write_endpoints.get(verb, ())
+        return bool(patterns) and _matches_any_path(path, patterns, base_url=self.manifest.base_url)
 
     def _retry_delay(self, resp, attempt: int) -> float:
         """Wait before the next retry: honour ``Retry-After`` on a 429 (capped), else jittered
@@ -999,11 +1042,17 @@ def _normalized_path(path: str) -> str:
     return raw.rstrip("/") or "/"
 
 
-def _matches_any_path(path: str, patterns: tuple[str, ...]) -> bool:
-    normalized = _normalized_path(path)
+def _matches_any_path(path: str, patterns: tuple[str, ...], *, base_url: str = "") -> bool:
+    """Match ``path`` against manifest patterns. With ``base_url`` its path prefix (``/v4``) is
+    optional on either side, so ``spreadsheets/x`` and ``/v4/spreadsheets/x`` match the same rule."""
+    candidates = {_normalized_path(path)}
+    prefix = urlsplit(base_url).path.rstrip("/") if base_url and "{" not in base_url else ""
+    if prefix:
+        for c in list(candidates):
+            candidates.add(c[len(prefix):] if c.startswith(prefix + "/") else prefix + c)
     for pattern in patterns:
-        candidate = _normalized_path(pattern)
-        if _path_pattern_re(candidate).fullmatch(normalized):
+        rx = _path_pattern_re(_normalized_path(pattern))
+        if any(rx.fullmatch(c) for c in candidates):
             return True
     return False
 
@@ -1207,6 +1256,20 @@ def _manifest_from_dict(raw: dict) -> Manifest:
     # local manifest client into broker mode; local fixture usage should keep env-token behavior.
     brokered = _entry_marks_brokered(raw.get("brokered"))
 
+    write_raw = raw.get("write_endpoints") or {}
+    if not isinstance(write_raw, dict):
+        raise ValueError("'write_endpoints' must be a mapping")
+    write_endpoints: dict[str, tuple[str, ...]] = {}
+    for verb in ("post", "put", "patch", "delete"):
+        paths = write_raw.get(verb) or []
+        if not isinstance(paths, list):
+            raise ValueError(f"'write_endpoints.{verb}' must be a list")
+        if cleaned := tuple(str(v) for v in paths if str(v).strip()):
+            write_endpoints[verb.upper()] = cleaned
+    write_consent = str(write_raw.get("consent") or "")
+    if write_endpoints and not write_consent:
+        raise ValueError("'write_endpoints' needs a 'consent' the host broker enforces")
+
     return Manifest(
         key=key,
         base_url=base_url,
@@ -1216,6 +1279,8 @@ def _manifest_from_dict(raw: dict) -> Manifest:
         default_headers=default_headers,
         allowed_post_paths=allowed_post_paths,
         brokered=brokered,
+        write_endpoints=write_endpoints,
+        write_consent=write_consent,
     )
 
 
@@ -1241,9 +1306,12 @@ def _main(argv: list[str] | None = None) -> int:
             sp.add_argument("--file", action="append", default=[], metavar="FIELD=PATH", help="multipart file (repeatable)")
 
     add_common(sub.add_parser("get", help="GET a path on a registered integration and print JSON"))
-    add_common(sub.add_parser("post", help="POST to a manifest-allowlisted read endpoint"), body=True)
+    add_common(sub.add_parser("post", help="POST to an allowlisted read endpoint or a manifest write endpoint"), body=True)
     for verb in ("put", "patch", "delete"):
-        add_common(sub.add_parser(verb, help=f"{verb.upper()} is refused; use an action for writes"), body=True)
+        add_common(
+            sub.add_parser(verb, help=f"{verb.upper()} to a manifest write endpoint (brokered runs); otherwise refused"),
+            body=True,
+        )
     args = p.parse_args(argv)
 
     load_manifests()  # discover catalogued manifests so any zero-Python integration is drivable
@@ -1252,8 +1320,8 @@ def _main(argv: list[str] | None = None) -> int:
         p.error(f"no manifest registered for {args.key!r}; known: {sorted(MANIFESTS) or '(none)'}")
     query = dict(kv.split("=", 1) for kv in args.query if "=" in kv)
     method = args.cmd.upper()
-    try:
-        Client(manifest=mani, credential="")._assert_read_tier(method, args.path)
+    try:  # policy before credential resolution: a refused verb never touches a token
+        Client(manifest=_manifest_with_runtime_broker_flag(mani), credential="")._assert_read_tier(method, args.path)
     except MethodPolicyError as e:
         p.exit(2, f"{e}\n")
     c = client(mani)
@@ -1282,6 +1350,10 @@ def _main(argv: list[str] | None = None) -> int:
                 print(json.dumps(pick(body, args.pick) if args.pick else body, indent=2, default=str))
         except MethodPolicyError as e:
             p.exit(2, f"{e}\n")
+        except ApiError as e:
+            if not e.code:
+                raise
+            p.exit(1, f"{e}\n")  # a broker denial is an answer for the user, not a traceback
     finally:
         for fh in open_files:
             fh.close()

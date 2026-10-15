@@ -30,6 +30,24 @@ read_endpoints:
     - /v4/spreadsheets/*:getByDataFilter
     - /v4/spreadsheets/*/values:batchGetByDataFilter
     - /v4/spreadsheets/*/developerMetadata:search
+# Delegated writes: only on the fleet service-account route, only for a file shared with that account
+# as Editor (the host verifies the share per file; the share is the consent). OAuth grants stay read-only.
+write_endpoints:
+  consent: google_drive_share
+  put:
+    - /spreadsheets/*/values/*
+    - /v4/spreadsheets/*/values/*
+  post:
+    - /spreadsheets/*/values/*:append
+    - /spreadsheets/*/values/*:clear
+    - /spreadsheets/*/values:batchUpdate
+    - /spreadsheets/*/values:batchClear
+    - /spreadsheets/*:batchUpdate
+    - /v4/spreadsheets/*/values/*:append
+    - /v4/spreadsheets/*/values/*:clear
+    - /v4/spreadsheets/*/values:batchUpdate
+    - /v4/spreadsheets/*/values:batchClear
+    - /v4/spreadsheets/*:batchUpdate
 oauth:
   auth_url: https://accounts.google.com/o/oauth2/v2/auth
   token_url: https://oauth2.googleapis.com/token
@@ -40,7 +58,8 @@ oauth:
 help_md: |
   Reads Google Sheets spreadsheet structure and cell values for support grounding — e.g. reading
   a customer-submitted configuration sheet, pricing table, or data export the team works in.
-  Read-only: only ever issues GETs, never writes to any sheet.
+  Read-only, except a sheet shared with ReplyPen's service account as Editor: those may be edited
+  through the write_endpoints (the host verifies the Editor share per file).
 
   Read a Sheet by id or URL that the connected account can open.
 
@@ -80,4 +99,5 @@ help_md: |
 onboarding_md: |
   Ask which Sheets future support work should consult and when. Capture each spreadsheet's stable ID
   or URL, exact tab names, header columns, lookup keys, and date or amount conventions. If a workflow
-  should append or change cells, record it as a write requiring a live action; this connector only reads.
+  should append or change cells, record it as a write requiring a live action, unless the sheet is shared
+  with ReplyPen's shared address as Editor: then it may be edited directly via the delegated write path.
