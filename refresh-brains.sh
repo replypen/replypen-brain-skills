@@ -299,19 +299,98 @@ if [ "${#BRAINS[@]}" -eq 0 ]; then
   )
 fi
 say "Refresh ${#BRAINS[@]} brain(s) to $TARGET (shared clone: $KIT)"
+# install.sh (~2 s) + the hygiene sweep (~1 s) for ~80 brains ran strictly serially (~4 min). Now:
+#   - the first unit runs alone and pins the shared clone to $TARGET (the only fetch/checkout); every
+#     later install.sh takes its read-only "already at" fast path, so the kit never mutates mid-fan-out;
+#   - brains sharing a git common-dir (worktrees of one repo) form one serial unit, because install.sh
+#     rewrites info/exclude + hooks there; units run FANOUT_JOBS at a time;
+#   - output is buffered per unit and printed in order; failed installs fail the script after the sweep
+#     (hygiene stays advisory).
+FANOUT_JOBS=4
+VALID=() UNIT_KEYS=() UNITS=()   # UNITS[k] = newline-separated brain dirs sharing UNIT_KEYS[k]
 for b in ${BRAINS[@]+"${BRAINS[@]}"}; do  # bash 3.2 + set -u: an empty array is "unbound"
   # accept all brain layouts: project (skills/ | playbooks/ | projection.yaml) + nested tenant
   # (.rootcause.toml — its committed project∪tenant binding; a tenant brain holds only a free-form NL
   # delta + sealed .env now, no tenant.json, so .rootcause.toml is its marker).
   [ -d "$b/skills" ] || [ -d "$b/playbooks" ] || [ -f "$b/projection.yaml" ] || [ -f "$b/.rootcause.toml" ] || {
     echo "  skip $b (no skills/ | playbooks/ | projection.yaml | .rootcause.toml — not a brain)"; continue; }
-  echo "  → $(basename "$b")"
-  [ "$DRY" = 1 ] || RC_BRAIN_KIT="$KIT" RC_BRAIN_KIT_TAG="$TARGET" "$ROOT/install.sh" "$b" >/dev/null
-  # Legacy-debt sweep: the commit/push gates judge changed files only, so a rule added after a file
-  # was written (2026-10-08: a 176-char description from before the 150-char rule) stays invisible
-  # until someone runs --all. Report, never block a release.
-  [ "$DRY" = 1 ] || (cd "$b" && uv run --no-project python "$ROOT/skills/local-brain-work/scripts/brain_hygiene.py" --all 2>/dev/null | grep -v '^NOTICE' | grep -E ' hygiene: ' | sed 's/^/    ⚠ /' || true)
+  b="$(cd "$b" && pwd -P)"
+  dup=0; for v in ${VALID[@]+"${VALID[@]}"}; do [ "$v" != "$b" ] || dup=1; done
+  [ "$dup" = 0 ] || continue
+  VALID+=("$b")
+  key="$(cd "$b" && git rev-parse --git-common-dir 2>/dev/null)" && key="$(cd "$b" && cd "$key" && pwd -P)" || key="$b"
+  k=0
+  while [ "$k" -lt "${#UNIT_KEYS[@]}" ] && [ "${UNIT_KEYS[$k]}" != "$key" ]; do k=$((k + 1)); done
+  if [ "$k" = "${#UNIT_KEYS[@]}" ]; then UNIT_KEYS+=("$key"); UNITS+=("$b"); else UNITS[$k]="${UNITS[$k]}"$'\n'"$b"; fi
 done
+
+# One unit (its brains serially) → $FANOUT_DIR/<k>.log; failed brain names → <k>.failed.
+refresh_unit() {
+  local k="$1" b rc
+  : >"$FANOUT_DIR/$k.failed"
+  while IFS= read -r b; do
+    echo "  → $(basename "$b")"
+    rc=0
+    RC_BRAIN_KIT="$KIT" RC_BRAIN_KIT_TAG="$TARGET" "$ROOT/install.sh" "$b" >/dev/null 2>"$FANOUT_DIR/$k.err" || rc=$?
+    sed 's/^/    /' "$FANOUT_DIR/$k.err"
+    if [ "$rc" != 0 ]; then
+      echo "    ✗ install.sh failed (exit $rc)"; basename "$b" >>"$FANOUT_DIR/$k.failed"; continue
+    fi
+    # Legacy-debt sweep: the commit/push gates judge changed files only, so a rule added after a file
+    # was written (2026-10-08: a 176-char description from before the 150-char rule) stays invisible
+    # until someone runs --all. Report, never block a release.
+    (cd "$b" && uv run --no-project python "$ROOT/skills/local-brain-work/scripts/brain_hygiene.py" --all 2>/dev/null | grep -v '^NOTICE' | grep -E ' hygiene: ' | sed 's/^/    ⚠ /' || true)
+  done <<<"${UNITS[$k]}" >"$FANOUT_DIR/$k.log" 2>&1
+  return 0
+}
+
+FAILED=()
+if [ "$DRY" = 1 ]; then
+  for b in ${VALID[@]+"${VALID[@]}"}; do echo "  → $(basename "$b")"; done
+elif [ "${#UNITS[@]}" -gt 0 ]; then
+  FANOUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rc-kit-fanout.XXXXXX")"
+  PIDS=("")
+  # A cancelled/timed-out refresh must not leave installers mutating brains after the parent is gone
+  # (a retry would overlap the same destinations) nor leak FANOUT_DIR. Composes with the release trap.
+  fanout_cleanup() {
+    local p
+    for p in ${PIDS[@]+"${PIDS[@]}"}; do [ -n "$p" ] && kill "$p" 2>/dev/null; done
+    wait 2>/dev/null || true
+    [ -n "${FANOUT_DIR:-}" ] && rm -rf "$FANOUT_DIR"
+    FANOUT_DIR=""
+  }
+  on_exit() { fanout_cleanup; [ "$(type -t cleanup_release_wt)" = function ] && cleanup_release_wt; return 0; }
+  trap on_exit EXIT
+  trap 'exit 130' INT TERM
+  done_upto=0   # units [0, done_upto) are waited for and printed
+  collect() {   # wait for unit $done_upto, print its buffered output, record failures
+    [ "$done_upto" = 0 ] || wait "${PIDS[$done_upto]}" || true
+    cat "$FANOUT_DIR/$done_upto.log"
+    while IFS= read -r f; do FAILED+=("$f"); done <"$FANOUT_DIR/$done_upto.failed"
+    done_upto=$((done_upto + 1))
+  }
+  refresh_unit 0   # serial: the only unit whose install may fetch/checkout the shared clone
+  collect
+  # Pinned now, or every later install would race on the shared clone (and fail the same way anyway).
+  # Exempt the developer override install.sh itself honours (RC_BRAIN_KIT = this checkout, used as-is).
+  if [ "${#FAILED[@]}" -gt 0 ] || { [ -d "$KIT/.git" ] && [ "$(cd "$KIT" && pwd -P)" != "$(cd "$ROOT" && pwd -P)" ] && \
+       [ "$(git -C "$KIT" describe --tags --exact-match 2>/dev/null || true)" != "$TARGET" ]; }; then
+    echo "error: first install failed (${FAILED[*]:-none}) or $KIT is not at $TARGET; aborting fan-out" >&2; exit 1
+  fi
+  k=1
+  while [ "$k" -lt "${#UNITS[@]}" ]; do
+    [ $((k - done_upto)) -lt "$FANOUT_JOBS" ] || collect
+    refresh_unit "$k" &
+    PIDS+=("$!")
+    k=$((k + 1))
+  done
+  while [ "$done_upto" -lt "${#UNITS[@]}" ]; do collect; done
+  fanout_cleanup
+fi
+if [ "${#FAILED[@]}" -gt 0 ]; then
+  echo "error: install.sh failed for ${#FAILED[@]} brain(s): ${FAILED[*]}" >&2
+  exit 1
+fi
 
 # ── 3. prod (rootcause) — consume the new pin in the sibling checkout ─────────
 # A release only reaches prod once rootcause's Dockerfile pin + its lockstep requirements.lock move to

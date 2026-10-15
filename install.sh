@@ -154,6 +154,10 @@ IGNORE_ROOT="/$BRAIN_PREFIX"
 if [ -n "$KIT_OVERRIDE" ] && [ -d "$KIT" ] && [ "$(cd "$KIT" && pwd)" = "$SCRIPT_DIR" ]; then
   [ -d "$KIT/skills" ] || { echo "error: RC_BRAIN_KIT=$KIT has no skills/" >&2; exit 1; }
   echo "kit: using RC_BRAIN_KIT=$KIT"
+elif [ -d "$KIT/.git" ] && [ "$(git -C "$KIT" describe --tags --exact-match 2>/dev/null || true)" = "$TAG" ]; then
+  # Fast path: already pinned → no network fetch, no checkout. Keeps repeated installs (the
+  # refresh-brains.sh fan-out runs one per brain, in parallel) read-only on the shared clone.
+  echo "kit: $KIT already at $TAG"
 elif [ -d "$KIT/.git" ]; then
   echo "kit: updating $KIT -> $TAG"
   if ! git -C "$KIT" fetch -q --tags origin; then
