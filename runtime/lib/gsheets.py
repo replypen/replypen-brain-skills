@@ -57,6 +57,11 @@ def _input_option(value: str) -> str:
     return value
 
 
+def _cells(rows: list[list[Any]]) -> list[list[Any]]:
+    # Google SKIPS a null cell (the old value survives); "" clears it.
+    return [["" if c is None else c for c in row] for row in rows]
+
+
 def values(sheet: str, rng: str, *, formulas: bool = False) -> list[list[Any]]:
     """Cell values as a 2D list (trailing empty rows/cells trimmed, as Google returns them).
 
@@ -110,7 +115,8 @@ def update(sheet: str, rng: str, rows: list[list[Any]], *, input_option: str = "
 
     RAW stores text exactly as given (``=1+1`` stays text). Pass ``input_option="USER_ENTERED"`` only
     when the user wants Sheets to parse input like typing (formulas, dates, ``12%``). Cells of ``rng``
-    outside ``rows`` are left untouched: use ``replace_range`` for an exact replacement.
+    outside ``rows`` are left untouched: use ``replace_range`` for an exact replacement. ``None``
+    cells are sent as ``""`` and clear the cell (Google would otherwise skip them).
     """
     before = values(sheet, rng)
     body = _google.client(KEY).put(
@@ -120,7 +126,7 @@ def update(sheet: str, rng: str, rows: list[list[Any]], *, input_option: str = "
             "includeValuesInResponse": "true",
             "responseValueRenderOption": "FORMATTED_VALUE",
         },
-        json={"majorDimension": "ROWS", "values": rows},
+        json={"majorDimension": "ROWS", "values": _cells(rows)},
     )
     return {
         "range": body.get("updatedRange", rng),
@@ -155,8 +161,9 @@ def replace_range(sheet: str, rng: str, rows: list[list[Any]], *, input_option: 
     """Make ``rng`` hold exactly ``rows``: write them and blank whatever the old content had beyond
     them (extra rows, wider columns), in ONE ``values:batchUpdate``. Returns ``{"range", "before",
     "after"}``. The range must be tall/wide enough for the larger of old and new content (an open
-    range like ``Tab!A2:F`` always is)."""
+    range like ``Tab!A2:F`` always is). ``None`` cells are cleared like ``""``, never skipped."""
     before = values(sheet, rng)
+    rows = _cells(rows)
     height = max(len(before), len(rows))
     width = max([len(r) for r in before + rows] or [0])
     padded = [

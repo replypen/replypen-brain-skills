@@ -255,6 +255,19 @@ class Sheets(unittest.TestCase):
         self.assertEqual(got["before"], before)
         self.assertEqual(got["range"], "T!A1:C4")
 
+    def test_none_cells_clear_instead_of_being_skipped(self):
+        f, patch = fake(
+            ("GET", "values/", {"values": [["old", "x"], ["stale", "tail"]]}),
+            ("POST", r"values:batchUpdate$", {"responses": [{}]}),
+            ("GET", "values/", {"values": [["old"]]}),
+            ("PUT", "values/", {}),
+        )
+        with patch:
+            gsheets.replace_range(SHEET_ID, "T!A1:B", [[None, "new"]])
+            gsheets.update(SHEET_ID, "T!A1:B1", [[None, "new"]])
+        self.assertEqual(f.calls[1]["json"]["data"][0]["values"], [["", "new"], ["", ""]])
+        self.assertEqual(f.calls[3]["json"]["values"], [["", "new"]])
+
     def test_add_tab_returns_sheet_id(self):
         f, patch = fake(("POST", r":batchUpdate$", {"replies": [{"addSheet": {"properties": {"sheetId": 42, "title": "Q4", "index": 3, "gridProperties": {}}}}]}))
         with patch:
