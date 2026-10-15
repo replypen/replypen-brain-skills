@@ -49,7 +49,8 @@ Set `SKILL` to the directory holding this `SKILL.md`; every command below is
 | `brain_smoke.py` | import smoke alone (what publish verification runs) |
 | `brain_lint.py` | dependency-light action + frontmatter lint (tags the host never reads; `action-manifest-enums` rejects unknown autonomy/risk/confirm/min_tier/runtime values); whole tree by default (`--all`) or only the paths you pass; `--as tenant\|mirror` lints an overlay or mirror repo (auto-detected); non-zero on FAIL |
 | `brain_structure.py` | links, frontmatter, routing, privacy lint, hygiene |
-| `brain_hygiene.py` | pre-push gate `brain_git_sync.py` always runs: conflict markers, projection `{{ }}`, `/Users/`, dead links, customer-copy em dashes, mermaid, `chat_inspiration.md` gallery (`chat-inspiration`); NOTICE when a change grows an on-demand doc past the 6000-byte bash preview cliff (`doc-spill`) |
+| `brain_hygiene.py` | pre-push gate `brain_git_sync.py` always runs: conflict markers, projection `{{ }}`, `/Users/`, dead links, customer-copy em dashes, mermaid, `chat_inspiration.md` gallery (`chat-inspiration`); NOTICE when a change grows an on-demand doc past the 6000-byte bash preview cliff (`doc-spill`); NOTICE for a cited `/brain/…` this checkout will not ship (`paths`) |
+| `brain_paths.py` | do the absolute container paths docs/scripts cite (`/brain`, `/tenant`, `/mirrors/<repo>`, `/kb`) resolve in production? Local checkouts first (new files pass), the rest in one `rc dev console paths` call per tenant; `--all`, `--tenants a,b\|all`, `--local`. Run it after moving/renaming files, citing a KB article or mirror path, or before publishing |
 | `brain_action.py` | hosted-Python action: Layer-1 + preflight + policy + write body |
 | `brain_projection.py` | tenant projection preview — see [projection.md](projection.md) |
 | `brain_dump.py` | explode one prod run id into `.rootcause/dump/` (markdown index + JSONL) |

@@ -33,6 +33,9 @@ and dev-tooling dot-dirs are judged for conflict markers only):
                    duplicate prompt text, bullets swallowed by a sub-heading, an indented bullet
                    before a category's first prompt, a `skill:` typo, a prompt without any skill
                    pointer (only once the file uses `skills:`).
+  * paths        — NOTICE only: a cited `/brain/…` (`/tenant/…` in an overlay, `/mirrors/<self>/…` in a
+                   mirror) this checkout will not ship: absent, gitignored or run-hidden. Local only;
+                   `brain_paths.py` also checks `/kb`, `/tenant`, other mirrors in production.
   * doc-spill    — NOTICE only: an on-demand doc (no `include_in`, not root AGENTS.md /
                    chat_inspiration.md, not under journal/_internal/tests/docs/dot-dirs) whose body
                    crosses 6000 bytes in this change (≤6000 or absent at the base: HEAD for --staged,
@@ -64,6 +67,7 @@ import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import brain_paths  # noqa: E402
 import brain_structure as bs  # noqa: E402
 
 CONFLICT_RE = re.compile(r"^(<{7}|\|{7}|>{7})(?: |$)")
@@ -572,6 +576,15 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
                     add("em-dash", "em dash in a placeholder default (lands in customer replies)",
                         rel, lineno)
 
+    lay = brain_paths.layout(root)
+    refs = brain_paths.extract(root, brain_paths.scan_files(root, sorted(scoped)))
+    brain_paths.resolve_local(lay, refs)
+    for ref in refs.values():
+        if ref.verdict == "missing":
+            for rel, lineno in ref.sites:
+                findings.append(bs.Finding("hygiene", f"paths: {ref.path} is not shipped by this "
+                                           f"checkout ({lay.own}); absent, gitignored or run-hidden",
+                                           path=rel, line=lineno, severity="NOTICE"))
     for f in bs.check_links(ctx):
         if f.path in scoped:
             findings.append(bs.Finding("hygiene", f"links: {f.message}", path=f.path, line=f.line))

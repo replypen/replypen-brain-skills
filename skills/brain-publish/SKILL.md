@@ -48,7 +48,8 @@ publishing `actions/<id>/`.
 
 1. **Local checks, recorded as `--verify-command` arguments.** Pick the smallest relevant set from
    `local-brain-work` (`brain_lint.py`, `brain_test.py`, `brain_smoke.py`, `brain_structure.py`; live /
-   projection / action preflight only when appropriate). They are passed to the Git-sync primitive so it
+   projection / action preflight only when appropriate; `brain_paths.py` when the change cites or moves
+   `/brain`, `/tenant`, `/mirrors` or `/kb` paths). They are passed to the Git-sync primitive so it
    reruns them after every merge — a merge tree must never be published untested. For the kit use its
    own validators plus `SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh`.
 
