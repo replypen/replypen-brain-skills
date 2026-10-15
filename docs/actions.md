@@ -49,13 +49,17 @@ actions/<id>/
   disappear everywhere. Symmetric: declaring it on one side is enough. Every id must exist in the same
   registry (a typo fails loading), and an action may not list itself. Only use it for genuine
   either/or pairs — two proposals of the SAME action (one per patient, per child) are never exclusive.
-- Optional `min_tier: pro` reserves the action for the thorough model (chat's "Deeper"). Use it for
-  escalations and writes whose params rest on careful reading (support tickets, refunds), not for
-  routine lookups. A call from any other model is refused before anything is minted; in chat the host
-  says it is switching, moves the session to Deeper and reruns the request, so the action is always
-  authored by the thorough model after a re-check. Email and other surfaces just refuse. Any other
-  value fails loading. It is no substitute for `autonomy`: it decides WHO may write the params, not
-  whether a human confirms.
+- Optional `min_tier: pro` — **who may author the params**, independent of who confirms. Intent: the
+  thinking that fills an action's params is the part a reviewer cannot see; for anything that lands on
+  another person's desk or changes records, that thinking must come from the thorough model (chat
+  "Deeper"), never the fast one. A call from any other model (fast tier, a fallback rung) is refused
+  before anything is minted; in chat the host says it is switching, moves the session to Deeper and
+  reruns the request once with a re-check instruction, so the proposal is always Deeper-authored. Email
+  and other surfaces just refuse. Rule of thumb: declare it on every action except deterministic
+  repairs (recompute formulas) and value-copying writes where the admin dictated every field (a coupon
+  with given code and amount). It is no substitute for `autonomy` (human still confirms when `human`),
+  and `risk: high` still clamps to human regardless. Lint rule `action-manifest-enums` rejects any value
+  other than `pro`.
 - `preflight.py`, when present, is read-only and blocks unsafe/mis-grounded params before proposal.
 - `policy.py`, when present, is read-only and decides per-invocation whether an `autonomy: policy` action
   auto-executes or escalates to a human (see [Autonomy](#autonomy-human--policy--auto)).
@@ -193,6 +197,11 @@ autonomy: human   # default (omit = human)
 # autonomy: policy   # a per-invocation policy.py decides allow → auto-execute, deny → escalate to human
 # autonomy: auto     # always auto-execute — reserve for idempotent / low-blast-radius actions
 ```
+
+Lint `action-manifest-enums` rejects an unknown, wrong-case or null `autonomy`, `risk`, `confirm`,
+`min_tier`, `runtime`, `preflight.runtime` or `policy.runtime` (one table:
+`runtime/lib/contracts/action_manifest_enums.json`); a typo'd `risk: Hgih` would otherwise drop the
+high-risk floor silently.
 
 **You only DECLARE autonomy; the host GATES it.** The effective autonomy is
 `min(manifest, project cap)`, then clamped to `human` by any of these floors — so a raised manifest never
