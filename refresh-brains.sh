@@ -354,7 +354,8 @@ elif [ "${#UNITS[@]}" -gt 0 ]; then
   # (a retry would overlap the same destinations) nor leak FANOUT_DIR. Composes with the release trap.
   fanout_cleanup() {
     local p
-    for p in ${PIDS[@]+"${PIDS[@]}"}; do [ -n "$p" ] && kill "$p" 2>/dev/null; done
+    # `|| true`: under set -e a kill of an already-finished worker would abort the script right here.
+    for p in ${PIDS[@]+"${PIDS[@]}"}; do [ -z "$p" ] || kill "$p" 2>/dev/null || true; done
     wait 2>/dev/null || true
     [ -n "${FANOUT_DIR:-}" ] && rm -rf "$FANOUT_DIR"
     FANOUT_DIR=""
