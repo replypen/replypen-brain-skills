@@ -75,7 +75,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | [`rc-script-wrapper`](skills/rc-script-wrapper/SKILL.md) | Deterministic local Python/shell wrappers for `rc` console queries, exports, typed failures, and remote artifacts. |
 | `brain-dev-upgrade` | Update local kit and `rc` CLI. |
 | [`brain-git-sync`](skills/brain-git-sync/SKILL.md) | Safely inventory, merge, and push local plus cross-computer work to `origin/main`. |
-| `brain-publish` | Exact-SHA project-brain sync/promotion/verification using public `rc`, plus support handoff for remaining gaps. |
+| [`brain-publish`](skills/brain-publish/SKILL.md) | One command (`scripts/brain_publish.py`): checks, git sync, tenant preflight, edge gate, exact-SHA publish, proof; plus support handoff. |
 
 Older duplicate entrypoints are not shipped; use the canonical skills above.
 

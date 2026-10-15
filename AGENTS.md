@@ -170,7 +170,7 @@ Only these are first-class:
   exports, typed failures, parameters, and remote artifact fetches.
 - `brain-dev-upgrade` — update kit and `rc`.
 - `brain-git-sync` — safely reconcile local brain work with cross-computer `origin/main` and push.
-- `brain-publish` — post-edit publish/support-request step.
+- `brain-publish` — post-edit publish (`scripts/brain_publish.py`, one command)/support-request step.
 
 Do not reintroduce aliases such as `brain-debug`, `observability`, `rc-inspect`, `rc-thread`,
 `brain-source-intake`, or `brain-schema-intake`.

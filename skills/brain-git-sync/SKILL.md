@@ -54,7 +54,8 @@ never overwrite it.
 
 5. **Finish only on exit `0`.** Report the final SHA, the local and remote commits integrated, files
    committed, and anything intentionally left unpublished. `--json` gives machine evidence; require
-   `ancestry_verified: true` — `brain-publish` takes its publish SHA from exactly that receipt.
+   `ancestry_verified: true` — `brain-publish` takes its publish SHA from exactly that receipt. Goal is
+   "make it live"? Run `brain-publish/scripts/brain_publish.py` instead: it calls this primitive itself.
 
 ## Landing from a shared checkout
 

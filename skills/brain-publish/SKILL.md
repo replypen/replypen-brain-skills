@@ -13,111 +13,92 @@ surface is involved.
 an ambient branch, an unverified push, or an implicit remote tip. Everything below exists to protect
 that, or to prove afterwards that the intended ref really moved.
 
-These flows assume a current `rc` — upgrade with `brain-dev-upgrade` before debugging odd routing or
-missing subcommands. Command syntax lives in the rootcause-cli README; this skill owns the order, the
-gates, and the proof.
+Assumes a current `rc` (`brain-dev-upgrade` before debugging odd routing or missing subcommands).
+`scripts/brain_publish.py` owns the order, the gates and the proof; command syntax lives in the
+rootcause-cli README.
 
 ## Required Context
 
-Paths are relative to this installed skill (`.agents/docs/` in a brain checkout, `docs/` in the kit):
+Background for actions and side effects, not needed for a routine publish. Paths are relative to this installed skill (`.agents/docs/` in a brain checkout, `docs/` in the kit):
 [brain-model](../../docs/brain-model.md), [side-effects](../../docs/side-effects.md),
 [support-boundary](../../docs/support-boundary.md), plus [actions](../../docs/actions.md) when
 publishing `actions/<id>/`.
 
-## Two flags that decide whether you verified the right brain
+## Which repository
 
-- **`--project <project>`, explicitly, on every `rc dev brain` call.** An implicit project is one
-  ambient-state guess away from publishing or verifying the wrong brain.
-- **`--scope project` for anything about channels.** In a tenant context (tenant-bound login,
-  `--tenant`, or a tenant brain checkout) `rc dev brain status` answers about the *tenant overlay*, not
-  the project channels. Channel verification MUST pass `--scope project` and read `.status.channels[]`.
+- `rootcause-brain-skills` (the **kit**) → `./refresh-brains.sh --release patch` and stop; no generic
+  Git step first, never `rc dev brain sync`/promote.
+- **tenant brain** (`tenant =` in `.rootcause.toml`) → no channel; its own `main` runs, so
+  brain-git-sync is the publish.
+- **shared project brain**, including its `actions/<id>/` → below.
 
-## Classify the repository first
+## Workflow: one command
 
-- `rootcause-brain-skills` — the **kit**, not a brain: run `./refresh-brains.sh --release patch` and
-  stop. It creates the version commit, reuses `brain_git_sync.py`, proves the commit at `origin/main`,
-  then tags. Do not run the generic Git step first (unversioned kit bytes on `main` break release
-  coherence), and never `rc dev brain sync`/promote for the kit.
-- **shared project brain** (`skills/`, `playbooks/`, projection templates, shared action catalog) —
-  channel-backed; the rest of this skill applies.
-- **tenant brain** (overlay/free-form instructions) — always runs from its own `main`; there is no
-  promotion route. Never publish one to a channel.
-- **action** (`actions/<id>/`) — same as its host brain, plus `docs/actions.md` proposal/execution rules.
+From the brain checkout root (`<p>` = `project` in `.rootcause.toml`). Uncommitted edits: stage the
+intended paths first ([brain-git-sync](../brain-git-sync/SKILL.md) steps 1–2); untracked or unstaged
+files stop the sync on purpose. A clean tree needs nothing.
 
-## Workflow
+```bash
+uv run --no-project python .agents/skills/brain-publish/scripts/brain_publish.py --project <p> \
+  --commit-message '<msg>'        # omit when nothing is staged
+```
 
-1. **Local checks, recorded as `--verify-command` arguments.** Pick the smallest relevant set from
-   `local-brain-work` (`brain_lint.py`, `brain_test.py`, `brain_smoke.py`, `brain_structure.py`; live /
-   projection / action preflight only when appropriate; `brain_paths.py` when the change cites or moves
-   `/brain`, `/tenant`, `/mirrors` or `/kb` paths). They are passed to the Git-sync primitive so it
-   reruns them after every merge — a merge tree must never be published untested. For the kit use its
-   own validators plus `SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh`.
+It runs lint + `brain_test.py --mode docker` (rerun after every merge), `brain_git_sync.py`, the
+server preflight for every tenant on the channel, the edge/stable gate below, `rc dev brain publish
+--sha <SHA brain_git_sync verified at origin/main>`, and proves `resolved_sha` from status. The receipt's
+first line is the outcome, its last line the exit code:
 
-   Laptop traps:
-   - Spell interpreters as `uv run --no-project … python`, **never bare `python3`**: inside
-     `brain_git_sync.py` a verify command runs after `uv run`, where `python3` is a dependency-less venv
-     — the sync then aborts *after* commit+merge.
-   - Import smoke is mandatory and runs in Docker whenever `docker info` succeeds; on fallback print a
-     loud lower-fidelity warning rather than silently downgrading.
-   - Declare local source checkouts in `.rootcause.toml [mirrors]` so a missing mirror fails loudly
-     instead of becoming a silent collection skip.
-   - Missing laptop DB/network access is not a mysterious failure — name what was skipped and cover it
-     with production validation later.
+| Exit | Receipt | Do |
+|---|---|---|
+| 0 | `LIVE …` / `NO-OP …` | Done; report the SHA and any `WARNING` line. |
+| 3 | `CONFLICT at git-sync` | Resolve keeping both sides' intent ([recovery](../brain-git-sync/references/recovery.md)), stage, rerun the same command. |
+| 2 | `BLOCKED at <stage>` | Nothing published. `classify`: wrong repo/project (kit → `./refresh-brains.sh --release patch`). `git-sync`: a check, hygiene or local file needs fixing. `preflight`: fix the listed tenants. `edge-gate`: report the channel SHAs as the human decision. |
+| 1 | `FAILED at publish/proof` | Not live; [Support handoff](#support-handoff). |
 
-2. **Mandatory Git precondition:** run the full [`brain-git-sync`](../brain-git-sync/SKILL.md) workflow
-   (inventory and staging happen there) and take `$SHA` from its `--json` receipt only after
-   `ancestry_verified` is true and `origin/main` resolves to it. No `rc dev brain` command runs before
-   this succeeds.
+Flags: `--dry-run` (no commit/push/promote; preflights origin/main, ~10 s) · `--channel edge` (canary:
+publish edge, observe, later rerun for stable) · `--verify-command '<cmd>'` adds a check, e.g. `'uv run
+--no-project python .agents/skills/local-brain-work/scripts/brain_paths.py'` when the change cites
+`/brain`, `/tenant`, `/mirrors` or `/kb` paths ·
+`--skip-docker-tier` only when Docker cannot run (prints a lower-fidelity warning) · `--json`.
 
-3. Confirm access: `rc auth status`, `rc auth access`.
+Optional, before it: `rc dev brain render --project <p> --tenant <slug> --sha <sha>` to read 1–2
+representative tenants' view; `rc ask --brain-ref dev/<branch>` for production-infra confidence
+without moving live refs ([brain-ask](../brain-ask/SKILL.md)). Stronger proof after: a safe `rc ask`
+without `--brain-ref`, then `rc run debug <id>` shows `brain_resolved` = `channel:<channel> @ <sha>`.
 
-4. **Optional production-infra confidence without moving live refs:** push `$SHA` to a `dev/<branch>`
-   ref and run `rc ask --brain-ref dev/<branch>`. Capture run id, status, trace URL, and
-   `rc run brain-diff <id>` when relevant.
+## Manual fallback
 
-5. **Re-run step 2 immediately before publishing** and replace `$SHA` from the fresh receipt — this
-   absorbs production-authored journal/consolidation commits and pushes from another computer.
+Use the steps the script automates only when it is unavailable or one step needs isolating.
 
-6. **Templated brains: look before you promote.** `rc dev brain render --project <p> --tenant <slug>
-   --sha "$SHA"` shows what 1–2 representative tenants actually read; `rc dev brain preflight --project
-   <p> --scope project --sha "$SHA" --channel stable` dry-runs the promotion and names the tenants the
-   candidate would break, touching no channel. Fix or consciously accept every degradation.
-   (See [projection.md](../local-brain-work/projection.md) for render vs preflight.)
+- **`--project <p>` explicitly and `--scope project` on every `rc dev brain` call.** In a tenant
+  context status answers about the tenant overlay, not the project channels.
+- Laptop traps: spell interpreters `uv run --no-project … python`, never bare `python3` (inside
+  `brain_git_sync.py` it is a dependency-less venv and the sync aborts after commit+merge); Docker
+  import smoke whenever `docker info` succeeds, else say loudly it was skipped; declare local source
+  checkouts in `.rootcause.toml [mirrors]`; name skipped laptop DB/network checks.
 
-7. **Edge/stable consistency gate** — before every `stable` publish, reconcile an actively used `edge`.
-   This is a consistency rule, not a licence to invent a canary pause after stable was authorized.
-   - `canary.consumers` in project-channel status is the authoritative active-edge-pin count. Never
-     infer use from `canary.checked` (an untemplated brain has consumers but compiles none).
-   - `consumers == 0` → do not create, advance, or align edge. Sync asks the server to GC stale
-     local/origin edge refs; verify status stops reporting edge. A direct edge promote failing with
-     `BRAIN_EDGE_UNUSED` is expected.
-   - edge already at `$SHA` → continue. edge an ancestor of `$SHA` → publish `$SHA` to edge first, and
-     observe it before stable when the risk warrants a canary interval.
-   - edge ahead of `$SHA`, diverged, or ancestry unprovable → never downgrade or overwrite; report the
-     exact channel SHAs and the human decision still needed.
-   - After stable, read status again: never finish with stable ahead of an actively used,
-     fast-forwardable edge — align it and verify both. A divergent edge stays untouched and is called
-     out as the next action.
-
-8. **Publish.** `rc dev brain publish --project <p> --scope project --channel stable --sha "$SHA"` does
-   sync → promote → verify in one guarded call and exits non-zero on any mismatch (`-o json` for the
-   receipt). Never omit `--sha`. A non-zero exit is a failed publish — do not report the change live.
-   Only when `publish` is unavailable or a step needs isolating, fall back to the choreography it
-   automates: `rc dev brain sync`, then `rc dev brain promote --channel … --sha "$SHA"`, then status.
-   Promote is idempotent; treat an unknown/unreachable SHA, unsafe channel, push failure, or
-   tenant-scoped/wrong-project denial as a failed publish.
-
-9. **Prove the ref, not the exit code.** In `rc dev brain status --project <p> --scope project -o json`,
-   select `.status.channels[]` by channel and confirm `resolved_sha == $SHA`. Reading a mismatch:
-   `origin_sha` is `origin/<channel>` (the channel branch on GitHub, **not** `origin/main`), `main_sha`
-   is `origin/main`; `matches_origin` only says the box's channel ref equals the pushed channel branch,
-   `matches_main` says the channel sits at the `main` tip. So `matches_origin: true` beside an old
-   `origin_sha` and a newer `main_sha` is the normal "not promoted yet" picture (`state: behind_main`).
-   A `main` state of `current` never proves a channel-backed project is live.
-
-   Stronger proof when warranted: a safe `rc ask` **without** `--brain-ref`, then `rc run debug <id>`
-   showing `brain_resolved` = `channel:<channel> @ $SHA`. For direct-`main` projects, confirm the on-box
-   and origin `main` SHAs and use a normal run or `rc dev console bash list`.
+1. Local checks from `local-brain-work`, passed as `--verify-command`s to the sync.
+2. `brain_git_sync.py --json`; take `$SHA` only when `ancestry_verified` is true and `origin/main`
+   resolves to it. No `rc dev brain` mutation before this.
+3. `rc dev brain preflight --project <p> --scope project --sha "$SHA" --channel stable` names the
+   tenants the candidate would break, touching no channel; `canary.ok` is the verdict (a
+   `preexisting` data fault is excused). See [projection.md](../local-brain-work/projection.md).
+4. **Edge/stable gate** before every `stable` publish (a consistency rule, not a licence for a canary
+   pause after stable was authorized). Edge consumers = `canary.consumers` of a `--channel edge`
+   preflight (never `checked`: an untemplated brain compiles none).
+   - `0` → never create, advance or align edge; sync asks the server to GC stale edge refs
+     (`BRAIN_EDGE_UNUSED` on a direct edge promote is expected).
+   - edge at `$SHA` → continue; edge an ancestor of `$SHA` (or absent) → publish edge first.
+   - edge ahead, diverged or unprovable → never downgrade or overwrite; report the channel SHAs and
+     the decision needed. Never finish with stable ahead of a used, fast-forwardable edge.
+5. `rc dev brain publish --project <p> --scope project --channel <c> --sha "$SHA" -o json` (sync →
+   promote → verify). Never omit `--sha`; non-zero = failed publish. Isolating further: `rc dev brain
+   sync`, then `promote --channel … --sha "$SHA"` (idempotent).
+6. **Prove the ref, not the exit code:** `rc dev brain status --project <p> --scope project -o json`,
+   `.status.channels[] | select(.channel == "<c>") | .resolved_sha == $SHA`. `origin_sha` is
+   `origin/<channel>`, `main_sha` is `origin/main`; `matches_origin: true` beside a newer `main_sha` is
+   the normal not-promoted-yet picture (`behind_main`). A `main` state of `current` never proves a
+   channel-backed project is live.
 
 ## Support handoff
 

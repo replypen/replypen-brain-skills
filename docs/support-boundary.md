@@ -16,7 +16,7 @@ surface or in managed infrastructure.
 | Action plane 404, disabled, or not wired | RootCause support plus the customer app owner for app-side receivers. |
 | Pushed brain commit not mounted | Run `rc dev brain status`; then `rc dev brain sync` if behind/stale. |
 | `rc dev brain sync` reports manual reconcile | RootCause support request with `rc dev brain status -o json`. |
-| Shared project channel points at an old SHA | With a project-maintainer login, run `rc dev brain publish --project <p> --scope project --channel stable\|edge --sha <exact-full-40-character-sha>` (sync + promote + verify). See [`brain-publish`](../skills/brain-publish/SKILL.md). |
+| Shared project channel points at an old SHA | With a project-maintainer login, run `brain_publish.py --project <p>` from the brain checkout (checks, git sync, preflight, exact-SHA publish, proof). See [`brain-publish`](../skills/brain-publish/SKILL.md). |
 | `rc dev brain status` looks fine but the channel is stale | Missing `--scope project`: in a tenant context status answers about the tenant overlay brain. Re-check with `--scope project` and read `.status.channels[]`. |
 | `rc dev brain` command 404s | Old client resolving the project onto retired flat routes. Pass `--project <p>` explicitly and upgrade to rc >= 1.16.5. |
 | Promotion would break some tenants' projections | Not support: run `rc dev brain preflight --project <p> --scope project --sha <sha>` before promoting `stable`, and promote `edge` → observe → `stable`. |

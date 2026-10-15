@@ -166,6 +166,6 @@ Then document it in the brain's `skills/databases/` map and ship. Prerequisites 
 
 ## Finish
 
-Smallest useful checks → `brain-git-sync` to commit/reconcile/push `main` → optionally `brain-ask`
-against a pushed `dev/*` ref → `brain-publish` to make it live. Pushing `main` is **not** the same as
+Smallest useful checks → optionally `brain-ask` against a pushed `dev/*` ref → `brain-publish`
+(`brain_publish.py`: commit/reconcile/push `main`, preflight, publish, proof) to make it live. Pushing `main` is **not** the same as
 making a channel-backed shared brain live.
