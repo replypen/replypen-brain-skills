@@ -31,6 +31,10 @@ the same-kind median), the heaviness signal.
 When the request says "scored" or "reviewed", use `--reviewed`. Substituting `--learning=feedback`
 silently drops the eval set.
 
+"What did users thumb down this week?" → `rc run feedback list --score negative --kind chat --days 7`
+(windowed on the rating time, so a 👎 today on an old conversation shows; comment + answer preview
+inline, drill with `rc run debug <run_id>`).
+
 ## 2. Actions across runs — `rc fleet actions`
 
 Use before drilling individual traces: it returns exact grounded params plus a freshly tokenized

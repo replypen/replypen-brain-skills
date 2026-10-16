@@ -21,6 +21,7 @@ rc run debug <id>
 rc run trace <id> -o json
 rc dev learning evidence --limit 50 -o json
 rc run list [--limit N] [--kind email|prompt|mcp|analysis] [--category ok|timeout|...]
+rc run feedback list [--score negative|positive|any] [--kind chat] [--since YYYY-MM-DD]
 rc status
 rc fleet runs [--days N] [--kind ...]
 rc fleet patterns [--days N]
