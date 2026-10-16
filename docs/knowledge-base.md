@@ -117,6 +117,14 @@ for root in (Path("/kb"), Path("/brain/knowledge")):
 PY'
 ```
 
+## Bulk Copy To The Laptop
+
+For offline analysis of many articles, download the tree instead of paging through `bash run` output:
+
+```bash
+rc dev console file get /kb/<provider> ./kb-<provider>
+```
+
 ## Choosing Evidence
 
 Use KB articles for stable customer-facing guidance: setup steps, policy explanations, documented

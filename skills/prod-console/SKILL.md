@@ -45,6 +45,11 @@ investigations, and customer-style simulations.
    (`python -m lib.cloudwatch …`), not a separate verb. `/kb` holds synced knowledge-base articles,
    `/brain/knowledge` the brain's own — filters in
    [docs/knowledge-base.md](../../docs/knowledge-base.md).
+   Bash stdout is capped at ~64 KiB; a truncated result ends with the exact
+   `rc dev console file get /tmp/rc-console/stdout-<seq>.txt …` that downloads the full stdout
+   (`bash run --out FILE` does it automatically). To copy files or whole directories to the laptop,
+   never base64-chunk through bash: `rc dev console file get <sandbox-path> [local-path]` (any size,
+   byte-exact, directories unpacked locally, any readable path incl. `/kb`, `/brain`, `/mirrors`).
 5. **Actions.** `list` / `show` / `preflight` are read-only; `run` is a real state-changing
    execution on the project's own production. `preflight` runs the brain's Python
    `actions/<id>/preflight.py` in the console workspace first and returns its
