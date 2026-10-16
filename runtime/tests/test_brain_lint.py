@@ -176,6 +176,7 @@ def test_manifest_enum_vocabulary_is_loaded_from_contract() -> None:
 
 def test_lint_brain_flags_python_outside_supported_roots(tmp_path: Path) -> None:
     _seed_brain(tmp_path)
+    _write(tmp_path / ".replypenignore", "/action-authoring/\n")  # hides only that tree
     _write(tmp_path / "notes/faq/scripts/generate_index.py", "print('index')\n")
     _write(tmp_path / "helper.py", "print('helper')\n")
 
@@ -202,7 +203,9 @@ def test_lint_brain_allows_python_in_supported_and_ignored_dirs(tmp_path: Path) 
         ".venv/lib/helper.py",
         "_internal/tools/helper.py",
         "node_modules/package/helper.py",
+        "action-authoring/generate.py",  # run-hidden operator generator
     ]
+    _write(tmp_path / ".replypenignore", "/action-authoring/\n")
     for rel in allowed:
         _write(tmp_path / rel, "# allowed\n")
 

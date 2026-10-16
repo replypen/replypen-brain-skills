@@ -25,6 +25,7 @@ rounds, run independently, then compared). Code review: Sol High.
 | 8 | Stale/flaky tests | brain_lint entrypoint (the script now re-execs via uv); plumbing test checked for a message removed in `b7ca666`; brain_publish race between the fake rc's advance and the parallel `status` call | green suite is real |
 | 9 | Retry-backoff sleeps patched out in the newrelic/mollie tests | 14s of real sleep | |
 | 10 | KampAdmin-private repo paths in `brain-chat-debug`/`brain-helper-devloop` SKILL.md replaced with placeholders | kit audience is external developers | |
+| 11 | brain_lint `script-outside-skills` skips run-hidden code (`.replypenignore`); scope_matrix "Regenerate" prints cwd-relative `--out` (both reported by the KA-common audit lead) | KA-common `action-authoring/` generators (rooted in `.replypenignore`) were a permanent 3 FAIL; committed matrices leaked `/Users/` paths | KA-common lint 3 FAIL → 0; gate trusted again |
 
 Total test wall time **~515s → ~100s**. Measured on a loaded shared Mac, so absolute numbers are noisy;
 the ratios hold.
@@ -68,6 +69,10 @@ the ratios hold.
   surfaces check reads untracked `.rootcause/` scratch (1,262 files read vs 132 tracked on DentAI), so
   it risks WARN false positives. Kept narrow: limiting it to tracked files would miss newly authored
   docs (Astra).
+- **doc-spill stays NOTICE + regression-only** (`brain_hygiene.py:39,100-143`). KA-common saw 7 docs grow
+  back past 6 KB in four days and now runs its own ratchet test. Two open choices, both policy changes that
+  would turn other brains red: make the check strict, or measure the whole file (a run's `cat` also prints
+  the frontmatter). Revisit if a second brain needs the same ratchet.
 - **No test cuts.** The 64 `test_no_token_prefixes_*` and 35 manifest-load clusters look alike, but
   each one guards a different directory or field set. Survivors would not cover them, and each test
   takes milliseconds.

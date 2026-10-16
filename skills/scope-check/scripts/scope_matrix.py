@@ -182,8 +182,9 @@ def build_command(args) -> str:
         parts += ["--tenant", args.tenant]
     for spec in args.audience or []:
         parts += ["--as", spec]
-    if args.out:
-        parts += ["--out", args.out]
+    if args.out:  # cwd-relative: the matrix is committed, a home path would leak into it
+        out, cwd = Path(args.out).resolve(), Path.cwd().resolve()
+        parts += ["--out", str(out.relative_to(cwd) if out.is_relative_to(cwd) else out)]
     return " ".join(parts)
 
 

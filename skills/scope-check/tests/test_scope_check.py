@@ -108,6 +108,7 @@ def test_classify_separates_hidden_row_constrained_and_visible():
 
 def test_matrix_renders_every_audience_and_the_absent_cell(monkeypatch, tmp_path, capsys):
     calls = fake_rc(monkeypatch, matrix_handler)
+    monkeypatch.chdir(tmp_path)
     out = tmp_path / "matrix.md"
     rc = scope_matrix.main(
         [
@@ -127,7 +128,7 @@ def test_matrix_renders_every_audience_and_the_absent_cell(monkeypatch, tmp_path
     # people is unconstrained for the parent too → plain ✓, not rows:2
     assert "| `people` | ✓ | ✓ |" in md
     # header carries the regeneration command and the scope
-    assert "--as parent=kampadmin_parent:abc" in md
+    assert "--as parent=kampadmin_parent:abc --out matrix.md`" in md  # repo-relative, no home path
     assert "`KAMPADMIN_APP_DSN`" in md
     assert "- **parent** — 2 table(s): activities, people" in md
     # column stripping vs the baseline

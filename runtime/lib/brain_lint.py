@@ -969,6 +969,7 @@ def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]
     """
     root = Path(brain_root)
     findings: list[Finding] = []
+    hidden = run_hidden(root)  # operator code a run never sees (e.g. `/action-authoring/`) is not shipped
 
     for dirpath, dirnames, filenames in os.walk(root, topdown=True):
         rel_dir = Path(dirpath).relative_to(root)
@@ -978,6 +979,8 @@ def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]
             if not filename.endswith(".py") or (not rel_dir.parts and filename == "conftest.py"):
                 continue
             rel_path = rel_dir / filename
+            if hidden(rel_path.as_posix()):
+                continue
             findings.append(Finding(
                 rel_path.as_posix(),
                 "FAIL",
