@@ -111,6 +111,8 @@ def rc(args: list[str], root: Path, timeout: int = 180) -> subprocess.CompletedP
                               timeout=timeout, check=False)
     except FileNotFoundError as exc:
         raise DevloopError("`rc` is not on PATH (brain-dev-upgrade)") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise DevloopError(f"rc {' '.join(args[:2])} timed out after {timeout}s") from exc
 
 
 def rc_json(args: list[str], root: Path, timeout: int = 180) -> dict[str, Any]:
@@ -148,6 +150,13 @@ def ask_command(row: dict[str, str], args: argparse.Namespace, principal: tuple[
     return cmd
 
 
+def changed_inputs(submit: dict[str, Any], row: dict[str, str], args: argparse.Namespace) -> list[str]:
+    want = {"question": row["question"], "tenant": row["tenant"] or args.tenant or None,
+            "as": row["as"] or None, "brain_ref": args.brain_ref, "mirror_ref": args.mirror_ref or [],
+            "scenario": args.scenario, "simulation": args.simulation}
+    return [key for key, value in want.items() if key in submit and submit[key] != value]
+
+
 def run_one(row: dict[str, str], args: argparse.Namespace, root: Path, runs: Path,
             principal: tuple[str, str] | None) -> dict[str, Any]:
     submit_path = runs / f"{row['id']}.submit.json"
@@ -161,7 +170,7 @@ def run_one(row: dict[str, str], args: argparse.Namespace, root: Path, runs: Pat
                   "tenant": row["tenant"] or args.tenant or None, "as": row["as"] or None,
                   "principal_kind": principal[0] if principal else None,
                   "brain_ref": args.brain_ref, "mirror_ref": args.mirror_ref or [],
-                  "scenario": args.scenario, "question": row["question"]}
+                  "scenario": args.scenario, "simulation": args.simulation, "question": row["question"]}
         write_json(submit_path, submit)
     deadline = time.monotonic() + args.wait
     while True:
@@ -190,19 +199,26 @@ def cmd_ask(args: argparse.Namespace, root: Path, scratch: Path) -> int:
                 principals[row["id"]] = resolve_principal(row["as"], root, project)
             except RosterError as exc:
                 raise DevloopError(f"{row['id']}: {exc}") from exc
-    write_json(scratch / "questions.json", rows)
     runs = scratch / "runs"
+    forced = {row["id"] for row in rows if args.force and (not only or row["id"] in only)}
+    for row in rows:  # questions.json is rewritten whole: no kept run may meet a changed row
+        submit = runs / f"{row['id']}.submit.json"
+        if row["id"] not in forced and submit.exists():
+            changed = changed_inputs(read_json(submit), row, args)
+            if changed:
+                raise DevloopError(f"{row['id']}: {', '.join(changed)} changed since its run; "
+                                   "use a new --tag, or --force to re-ask")
     todo = []
     for row in rows:
         if only and row["id"] not in only:
             continue
-        final, submit = runs / f"{row['id']}.json", runs / f"{row['id']}.submit.json"
-        if args.force:
+        final = runs / f"{row['id']}.json"
+        if row["id"] in forced:
             final.unlink(missing_ok=True)
-            submit.unlink(missing_ok=True)
-        elif final.exists():
-            continue
-        todo.append(row)
+            (runs / f"{row['id']}.submit.json").unlink(missing_ok=True)
+        if not final.exists():
+            todo.append(row)
+    write_json(scratch / "questions.json", rows)
     print(f"{len(todo)} to ask/poll, {len(rows) - len(todo)} done or filtered; scratch {scratch}",
           file=sys.stderr)
     failed = 0

@@ -1168,8 +1168,8 @@ def load_manifests(*, force: bool = False) -> dict[str, Manifest]:
     connectors_dir = Path(__file__).resolve().parent / "connectors"
     for manifest_path in sorted(connectors_dir.glob("*/manifest.yaml")):
         key_hint = manifest_path.parent.name
-        if not force and key_hint in MANIFESTS and key_hint not in _YAML_LOADED_KEYS:
-            continue  # an explicit register() owns this key — leave it
+        if not force and key_hint in MANIFESTS:
+            continue  # already loaded, or an explicit register() owns this key — leave it
         mani = _parse_manifest_file(manifest_path)
         MANIFESTS[mani.key] = mani
         _YAML_LOADED_KEYS.add(mani.key)
@@ -1189,8 +1189,11 @@ def _parse_manifest_file(path) -> Manifest:
     runtime caller — so an unknown key never breaks loading (forward-compatible)."""
     import yaml
 
+    # libyaml's C loader parses the ~90-manifest catalog ~10x faster (same output); every
+    # `python -m lib.api` call pays this, so fall back to pure Python only when libyaml is absent.
+    loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = yaml.load(path.read_text(encoding="utf-8"), Loader=loader)
     except (OSError, yaml.YAMLError) as e:
         raise ManifestError(f"failed to read/parse manifest {path}: {e}") from e
     if not isinstance(raw, dict):

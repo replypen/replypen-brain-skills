@@ -253,7 +253,9 @@ Use the smallest checks that cover the change:
 uv run --no-project python -m py_compile skills/local-brain-work/scripts/*.py
 # PYTHONPATH is load-bearing here and in uv-mode children: `--with .` can serve a CACHED wheel of an
 # unchanged version, so local runtime source must precede site-packages while iterating on runtime/lib.
-cd runtime && PYTHONPATH=$(pwd) uv run --with '.[test]' --no-project pytest tests -q
+cd runtime && PYTHONPATH=$(pwd) uv run --with '.[test]' --no-project pytest tests -q   # ~40s
+./scripts/test-skills.sh [skill…]   # skill engines, one pytest per skill (~95s all); a bare `pytest skills` collides
+bash tests/test-refresh-brains-release.sh   # after refresh-brains.sh / brain_git_sync.py edits
 ./check-release-coherence.sh
 ```
 

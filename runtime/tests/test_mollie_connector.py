@@ -7,6 +7,7 @@ Mollie is a script connector because list responses put items under a variable H
 import os
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import responses as responses_lib
@@ -18,6 +19,10 @@ from lib.action import mollie as action_mollie  # noqa: E402
 from lib.connectors import mollie  # noqa: E402
 
 API_BASE = "https://api.mollie.com/v2"
+
+# The API-error tests exhaust lib.api's real retry backoff; skip the sleeps, keep the retries.
+_NO_SLEEP = mock.patch.object(api, "_sleep", lambda *_: None)
+setUpModule, tearDownModule = _NO_SLEEP.start, _NO_SLEEP.stop
 
 _PAYMENT_1 = {
     "resource": "payment",

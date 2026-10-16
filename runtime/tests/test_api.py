@@ -734,6 +734,12 @@ class ReadMethodPolicy(unittest.TestCase):
         })
         self.assertTrue(explicit.brokered)
 
+    def test_load_manifests_parses_each_manifest_once(self):
+        """Brain scripts call it per request (DentAI per availability window): the catalog is parsed once."""
+        api.load_manifests(force=True)
+        with mock.patch.object(api, "_parse_manifest_file", side_effect=AssertionError("re-parsed")):
+            self.assertIn("dentai_agenda_preview", api.load_manifests())
+
     def test_dentai_agenda_preview_manifest_is_brokered_at_runtime(self):
         mani = api.load_manifests(force=True)["dentai_agenda_preview"]
         self.assertEqual(mani.base_url, "https://app.dentai.be")

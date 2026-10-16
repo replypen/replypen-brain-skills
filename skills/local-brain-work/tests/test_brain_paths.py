@@ -130,3 +130,13 @@ def test_failed_tenant_blocks_universal_missing(tmp_path: Path, monkeypatch) -> 
     note = brain_paths.resolve_remote(tmp_path, refs, "t1,t2", [None])
     assert [(r.verdict, brain_paths.level(r)) for r in refs] == [("unverified", "NOTICE"), ("ok", "")]
     assert refs[0].verdict == "unverified" and refs[1].verdict == "ok" and "t2" in note
+
+
+def test_siblings_skip_the_temp_dir_but_not_nested_layouts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(brain_paths.tempfile, "gettempdir", lambda: str(tmp_path))
+    org = tmp_path / "x" / "org"
+    for d in (tmp_path / "worktree", tmp_path / "stray", org / "brain", org / "common"):
+        d.mkdir(parents=True)
+        (d / ".rootcause.toml").write_text('project = "p"\n')
+    assert brain_paths._siblings(org / "brain") == [(org / "common").resolve()]
+    assert brain_paths._siblings(tmp_path / "worktree") == []  # git_land's mkdtemp checkout

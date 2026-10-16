@@ -127,10 +127,16 @@ if [ -n "$RELEASE" ]; then
   ROOT="$RELEASE_WT"
 
   # A stale computer must observe an already-cut release before choosing the next version.
-  say "Reconcile main before choosing the release version"
-  run uv run --no-project python "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
-    --repo "$ROOT" --detached-head --max-push-attempts 4 \
-    --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
+  if [ "$NO_PUSH" = 1 ]; then  # brain-git-sync would push local-only commits; merge without publishing
+    say "Merge origin/main locally before choosing the release version (--no-push: no remote writes)"
+    run git -C "$ROOT" fetch -q origin main
+    run git -C "$ROOT" merge -q --no-edit origin/main
+  else
+    say "Reconcile main before choosing the release version"
+    run uv run --no-project python "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
+      --repo "$ROOT" --detached-head --max-push-attempts 4 \
+      --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
+  fi
   CUR="$(grep -E '^VERSION = ' "$ROOT/skills/local-brain-work/scripts/brain_env.py" | sed -E 's/.*"([0-9.]+)".*/\1/')"
 
   case "$RELEASE" in
@@ -187,11 +193,7 @@ if [ -n "$RELEASE" ]; then
   # 1c. local coherence before commit/tag. Image existence is checked after push/build; prod pin drift
   #     is a separate follow-up unless the sibling rootcause checkout is already updated.
   say "Check local release coherence"
-  if [ "$NO_IMAGE" = 1 ]; then
-    run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
-  else
-    run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
-  fi
+  run env SKIP_IMAGE=1 SKIP_PROD=1 "$ROOT/check-release-coherence.sh"
 
   # 1d. One release commit carrying ONLY the files this bump wrote (version literals, RUNTIME_DIGEST,
   #     the lock on --relock). Do not create even a local release tag until brain-git-sync has
@@ -216,13 +218,22 @@ if [ -n "$RELEASE" ]; then
     RUNTIME_CHANGED=1
   fi
 
+  # Test gate on the merged tree before the push: skill engines always, runtime/ when its digest moved.
+  # SKIP_TESTS=1 only for a release whose tree another gate already proved (the plumbing test does).
+  TEST_GATE=()
+  if [ "${SKIP_TESTS:-}" != 1 ]; then
+    TEST_GATE+=(--verify-command ./scripts/test-skills.sh)
+    [ "$RUNTIME_CHANGED" = 1 ] && TEST_GATE+=(--verify-command \
+      "cd runtime && PYTHONPATH=\$PWD uv run --with '.[test]' --no-project pytest tests -q -p no:cacheprovider")
+  fi
+
   if [ "$NO_PUSH" = 1 ]; then
     echo "  (--no-push: no sync, no tag; origin/main is unchanged)"
   else
     say "Reconcile and publish release commit through brain-git-sync"
     run uv run --no-project python "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
       --repo "$ROOT" --detached-head --max-push-attempts 4 \
-      --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
+      --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh' ${TEST_GATE[@]+"${TEST_GATE[@]}"}
     run verify_origin_main
 
     say "Create and publish tag only after verified origin/main"

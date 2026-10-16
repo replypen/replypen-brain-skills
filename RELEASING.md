@@ -38,6 +38,10 @@
 > pin. `--no-prod-bump` opts out; `--no-push` skips it (the tag isn't resolvable yet). Actually
 > *promoting* rootcause stays the operator's call.
 >
+> **Test gate.** The publish sync runs `scripts/test-skills.sh`, plus the `runtime/` suite when the
+> runtime digest moved, on the merged tree before pushing (~1.5–2.5 min). A red test blocks the
+> release: fix it. `SKIP_TESTS=1` is for the plumbing test's fixture kits only.
+>
 > The rest of this file is the manual reference for what that script automates.
 
 Local and prod must install **identical** `lib` bytes, or "green locally" stops meaning "green in
@@ -64,7 +68,8 @@ test "$(git branch --show-current)" = main
 uv run --no-project python scripts/runtime_digest.py --worktree > RUNTIME_DIGEST  # then git add the bumped files + RUNTIME_DIGEST, commit
 uv run --no-project python skills/brain-git-sync/scripts/brain_git_sync.py \
   --repo "$PWD" --max-push-attempts 4 \
-  --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh'
+  --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh' \
+  --verify-command ./scripts/test-skills.sh   # + the runtime/ suite when RUNTIME_DIGEST moved
 test "$(git rev-parse origin/main)" = "$(git rev-parse HEAD)"
 git tag -a -m vX.Y.Z vX.Y.Z  # only after verified origin/main
 git -c push.followTags=false push --atomic origin \

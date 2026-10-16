@@ -31,6 +31,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -167,12 +168,17 @@ def _toml(path: Path) -> dict:
 
 
 def _siblings(root: Path) -> list[Path]:
-    """Checkouts beside this one (`../x`, `../../org/x`), the layout brain mirrors already assume."""
-    if root.parent == root.parent.parent:
+    """Checkouts beside this one (`../x`, `../../org/x`), the layout brain mirrors already assume.
+
+    A checkout directly in the temp dir (git_land's mkdtemp worktree) has no sibling layout, and the
+    temp dir itself is never globbed: thousands of unrelated entries cost seconds per hook run.
+    Declared `[mirrors]` paths still resolve (`_declared_mirrors`)."""
+    tmp = Path(tempfile.gettempdir()).resolve()
+    if root.parent == root.parent.parent or root.parent.resolve() == tmp:
         return []
-    return sorted({c.parent.resolve() for c in [*root.parent.glob("*/.rootcause.toml"),
-                                                *root.parent.parent.glob("*/*/.rootcause.toml")]}
-                  - {root})
+    bases = [(root.parent, "*/.rootcause.toml"), (root.parent.parent, "*/*/.rootcause.toml")]
+    return sorted({c.parent.resolve() for base, pattern in bases if base.resolve() != tmp
+                   for c in base.glob(pattern)} - {root})
 
 
 def _declared_mirrors(brain: Path) -> dict[str, Path]:

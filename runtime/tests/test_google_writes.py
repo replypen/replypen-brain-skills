@@ -203,9 +203,10 @@ class Sheets(unittest.TestCase):
         self.assertEqual(by_letter["matches"][1]["record"]["Seats"], "")
 
     def test_find_rows_unknown_column(self):
-        _, patch = fake(("GET", "values/", {"values": GRID}))
-        with patch, self.assertRaises(LookupError):
-            gsheets.find_rows(SHEET_ID, "Customers", "Phone number", "x")
+        for column in ("Phone number", "SKU"):  # "SKU" also parses as a column letter past the grid
+            _, patch = fake(("GET", "values/", {"values": GRID}))
+            with self.subTest(column), patch, self.assertRaises(LookupError):
+                gsheets.find_rows(SHEET_ID, "Customers", column, "x")
 
     def test_update_is_raw_by_default_and_returns_before_after(self):
         f, patch = fake(

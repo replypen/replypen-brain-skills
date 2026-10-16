@@ -28,6 +28,7 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import responses
@@ -40,6 +41,10 @@ from lib.connectors import newrelic as nr  # noqa: E402
 GRAPHQL_URL = "https://api.newrelic.com/graphql"
 EU_GRAPHQL_URL = "https://api.eu.newrelic.com/graphql"
 ACCOUNT_ID = 1234567
+
+# The API-error tests exhaust the connector's inline retry backoff; skip the sleeps, keep the retries.
+_NO_SLEEP = mock.patch("time.sleep", lambda *_: None)
+setUpModule, tearDownModule = _NO_SLEEP.start, _NO_SLEEP.stop
 
 # ---------------------------------------------------------------------------
 # Documented example payloads (trimmed to support-relevant fields).

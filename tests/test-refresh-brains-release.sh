@@ -66,6 +66,11 @@ test -z "$(git --git-dir="$REMOTE" tag -l 'v*')"
 
 # A normal publish updates main before exposing the tag, and both resolve to the release commit.
 git -C "$CHECKOUT" switch -q main
+# The publish sync carries the skills test gate; the fixture releases below skip it (no full kit here).
+RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump \
+  --dry-run "$TMP/not-a-brain" >"$TMP/dry.out" 2>&1
+grep -q -- "--verify-command ./scripts/test-skills.sh" "$TMP/dry.out"
+export SKIP_TESTS=1
 # Simulate another computer publishing after this checkout's last fetch. The release must merge this
 # commit through the same brain-git-sync primitive before it tags anything.
 PEER="$TMP/peer"
@@ -91,8 +96,10 @@ test "$(cat "$CHECKOUT/peer-note.txt")" = "remote peer work"
 grep -q "verified origin/main == HEAD ($released)" "$TMP/release.out"
 grep -q "Reconcile and publish release commit through brain-git-sync" "$TMP/release.out"
 
-# --no-push creates the next release commit locally but creates no tag and leaves remote refs untouched.
+# --no-push creates the next release commit locally but creates no tag and leaves remote refs untouched,
+# even when local main already carries an unpushed commit.
 remote_main_before="$(git --git-dir="$REMOTE" rev-parse refs/heads/main)"
+git -C "$CHECKOUT" commit -q --allow-empty -m "local-only work"
 if ! RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump --no-push \
     "$TMP/not-a-brain" >"$TMP/no-push.out" 2>&1; then
   cat "$TMP/no-push.out" >&2
@@ -103,7 +110,8 @@ if git -C "$CHECKOUT" describe --tags --exact-match HEAD >/dev/null 2>&1; then
   echo "error: --no-push unexpectedly created a local release tag" >&2
   exit 1
 fi
-grep -q -- "--no-push: release commit remains local; no tag created" "$TMP/no-push.out"
+grep -q -- "--no-push: no sync, no tag; origin/main is unchanged" "$TMP/no-push.out"
+grep -q "kept as local branch release-v" "$TMP/no-push.out"
 
 # A peer advancing main after the release commit was verified but before tag publication must make
 # the atomic main+tag push fail with no remote tag.

@@ -102,7 +102,7 @@ pickup of a wrong answer.
   ```bash
   DL="$PWD/.agents/skills/brain-helper-devloop/scripts/devloop.py"
   uv run --no-project python "$DL" ask --tag <topic> --questions questions.tsv \
-    --brain-ref dev/<branch> --mirror-ref kampadmin-rootcause-common=dev/<branch>
+    --brain-ref dev/<branch> --mirror-ref <mirror>=dev/<branch>
   ```
 
   Results land in `.rootcause/devloop/<topic>/runs/<id>.json`. A single question stays
@@ -119,7 +119,7 @@ pickup of a wrong answer.
 
 ```bash
 uv run --no-project python "$DL" report --tag <topic> --helper <helper>.py \
-  --case skills/cases/<slug>.md --expect-mirror kampadmin-rootcause-common=<sha>
+  --case skills/cases/<slug>.md --expect-mirror <mirror>=<sha>
 ```
 
 Columns: surfaced (grounding pre-step saw the case/helper) · opened (main loop read the case file) ·
@@ -159,7 +159,7 @@ only your files or commit, push `main` + `stable`, then the mirror refresh per c
 ```bash
 uv run --no-project python "$PWD/.agents/skills/brain-git-sync/scripts/git_land.py" \
   --repo <mirror checkout> --paths <your files…> --message "<subject>" --also stable \
-  --refresh-mirror kampadmin-rootcause-common --project kampadmin --project kampadmin-support --project kampadmin-staff
+  --refresh-mirror <mirror> --project <project> [--project <sibling project>…]
 ```
 
 (`--commit <sha>` lands a commit you already made in a worktree.) Then one `rc ask` **without**

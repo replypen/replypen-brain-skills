@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -46,9 +47,11 @@ def test_entrypoint_fails_on_blocking_finding(tmp_path: Path) -> None:
 def test_entrypoint_reports_missing_pyyaml_as_dependency_error(tmp_path: Path) -> None:
     brain = _brain(tmp_path, "x = 1\n")
 
+    # -S hides PyYAML; the flag marks the one `uv --with pyyaml` re-exec as already spent.
     run = subprocess.run(
         [sys.executable, "-S", str(SCRIPT), "--brain", str(brain)],
         text=True, capture_output=True, check=False,
+        env={**os.environ, "RC_BRAIN_LINT_BOOTSTRAPPED": "1"},
     )
 
     assert run.returncode == 1

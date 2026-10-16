@@ -34,12 +34,14 @@ FAKE_RC = textwrap.dedent('''\
     def chans():
         return [{"channel": c, "resolved_sha": s, "matches_origin": True} for c, s in state["channels"].items()]
     if sub == "status":
+        # A concurrent publisher moves stable after the first read: status runs in parallel with
+        # the preflights, so only the publish-recheck (a later status) may see the advance.
+        if state.get("advance_before_recheck") and [c[0] for c in state["calls"]].count("status") > 1:
+            state["channels"]["stable"] = state.pop("advance_before_recheck")
         out = {"project": "demo", "status": {"channels": chans()}}
     elif sub == "preflight":
         tenants = state["tenants"].get(channel, [])
         ok = all(t["status"] == "ok" or t.get("preexisting") for t in tenants)
-        if state.get("advance_after_preflight"):  # a concurrent publisher moves stable meanwhile
-            state["channels"]["stable"] = state.pop("advance_after_preflight")
         out = {"canary": {"channel": channel, "sha": sha, "ok": ok, "templated": True, "tenants": tenants,
                           "consumers": state["consumers"].get(channel, 0), "checked": len(tenants)}}
     elif sub == "publish":
@@ -170,7 +172,7 @@ class BrainPublishTest(unittest.TestCase):
 
     def test_concurrent_advance_during_preflight_is_not_downgraded(self) -> None:
         newer = git(self.repo, "commit-tree", f"{self.head}^{{tree}}", "-p", self.head, "-m", "newer")
-        self.rc_state(channels={"stable": self.old}, advance_after_preflight=newer)
+        self.rc_state(channels={"stable": self.old}, advance_before_recheck=newer)
         code, receipt = self.publish()
         self.assertEqual((code, receipt["stage"], self.published()), (2, "publish-recheck", []))
 

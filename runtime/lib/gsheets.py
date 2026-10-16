@@ -87,6 +87,10 @@ def find_rows(sheet: str, tab: str, column: str, value: str, *, header_row: int 
         return {"header": [], "matches": []}
     header = [str(h) for h in grid[header_row - 1]]
     idx = _column_index(header, column)
+    # A missing short header name ("SKU", "Tel") also parses as a column letter: past every value it
+    # can only be a typo (Sheets trims trailing blanks, so single letters A-Z stay allowed).
+    if len(column.strip()) > 1 and idx >= max(len(row) for row in grid):
+        raise LookupError(f"no column {column!r}; header is {header}")
     want = str(value).strip().casefold()
     matches = []
     for offset, row in enumerate(grid[header_row:], start=header_row + 1):

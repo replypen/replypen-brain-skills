@@ -178,3 +178,28 @@ def test_ask_resumes_submission_after_poll_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(devloop, "rc_json", resumed)
     assert devloop.run_one(row, args, tmp_path, runs, None)["status"] == "done"
     assert sum(command[0] == "ask" for command in calls) == 1
+
+
+def test_ask_refuses_to_resume_a_changed_question(tmp_path, monkeypatch):
+    questions = tmp_path / "q.tsv"
+    questions.write_text("q1\tacme\tSame question\nq2\tacme\tThe new question\n", encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    for qid, question in (("q1", "Same question"), ("q2", "The old question")):
+        devloop.write_json(scratch / "runs" / f"{qid}.submit.json",
+                           {"id": qid, "run_id": f"old-{qid}", "tenant": "acme", "as": None, "brain_ref": None,
+                            "mirror_ref": [], "scenario": "email", "simulation": False, "question": question})
+        devloop.write_json(scratch / "runs" / f"{qid}.json", {"status": "done"})
+    monkeypatch.setattr(devloop, "rc_json", lambda *a, **k: pytest.fail("must not call rc"))
+
+    def ask(*extra):
+        args = devloop.build_parser().parse_args(["ask", "--tag", "t", "--questions", str(questions), *extra])
+        args.scenario = "email"
+        devloop.cmd_ask(args, tmp_path, scratch)
+
+    with pytest.raises(devloop.DevloopError, match="q2: question changed"):  # even when not selected
+        ask("--only", "q1", "--force")
+    assert (scratch / "runs" / "q1.json").exists()  # validated before any forced receipt is deleted
+    (scratch / "runs" / "q2.submit.json").unlink()
+    with pytest.raises(devloop.DevloopError, match="q1: simulation changed"):
+        ask("--simulation")
+    assert not (scratch / "questions.json").exists()

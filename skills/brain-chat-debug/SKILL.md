@@ -56,8 +56,7 @@ Fix at the highest layer that generalizes; nothing lower papers over a higher-la
 | Tone, language, signature; process vs skip | persona / triage settings | `rc` settings, not brain prose |
 | The customer's app computes or shows the wrong thing | the customer's app | report to its developers; the brain explains, never hides it |
 
-KampAdmin: per-repo map in `rootcause-brain-kampadmin/_internal/reply-audit.md` § "Repository and
-settings map". Propose the smallest change, then stop unless the user asked to fix it. Name every
+When the brain keeps a repository/settings map (e.g. under `_internal/`), route through it. Propose the smallest change, then stop unless the user asked to fix it. Name every
 file the change touches as a clickable absolute-path link: an existing file as
 `[skills/cases/x.md](/abs/path/skills/cases/x.md:42)` (line of the anchor when known), a new file as
 its proposed name in its absolute target directory. The user opens it to see where the change lands.
