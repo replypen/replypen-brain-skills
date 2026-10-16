@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain UI Targets"
+  short_description: "Inventory the host app's click targets for chat-widget guidance"
+  default_prompt: "Use $brain-ui-targets to inventory which DOM elements of this project's app the chat widget should be able to point users to."

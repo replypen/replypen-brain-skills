@@ -124,6 +124,9 @@ limits, and public links. Use brain scripts and `rc dev console database` for te
 mirrors for implementation truth. When an article answers the question, cite its frontmatter `url` if
 present; when it conflicts with live data or source, report both and prefer live/source evidence.
 
+Screenshot alt texts that mention arrows or red boxes mark where users needed pointing: the starting
+set for in-app "where to click" guidance ([`brain-ui-targets`](../skills/brain-ui-targets/SKILL.md)).
+
 ## Quoting Notes
 
 `rc dev console bash run` takes one command string. For complex Python snippets, use a quoted heredoc as shown. If

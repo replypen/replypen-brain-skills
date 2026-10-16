@@ -124,6 +124,8 @@ Only these are first-class:
   synthesis into a progressive-disclosure brain; raw pages stay gitignored.
 - `website-kickstart` — operator-laptop provisioning of a chat-editable tenant website (template repo,
   GitHub App access, Workers Builds triggers, first build, `role=website` mirror, screenshots); `--teardown`.
+- `brain-ui-targets` — inventory of the project app's DOM targets for chat-widget "where to click"
+  guidance: KB annotation mining, source map, local crawler, selector rules, minimal `data-rc-guide` hooks.
 - `brain-kb-mirror` — local monthly re-pull of a third-party public help center into a committed
   Markdown + image snapshot under `knowledge/` (source profile in `_internal/kb-sources/`), sub-agent
   image alt text, candidate-tree validation, byte-identical no-op reruns.

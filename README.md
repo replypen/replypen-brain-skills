@@ -57,6 +57,7 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | [`brain-dream-cycle`](skills/brain-dream-cycle/SKILL.md) | Full local dreamcycle pass from a brain checkout: mine feedback/sent deltas/patterns with `rc`, then update brain files plus persona/triage settings. |
 | [`brain-harvest`](skills/brain-harvest/SKILL.md) | Full local harvest pass: trigger a production sent-history export, download the cleaned corpus, fan out per-topic subagents to distil patterns (privacy-linted), decide brain/persona/triage homes, verify, publish, then delete the corpus. |
 | [`brain-website-scout`](skills/brain-website-scout/SKILL.md) | Broad local public-site map and Firecrawl capture, followed by per-topic synthesis into a progressive-disclosure brain; raw pages remain gitignored. |
+| [`brain-ui-targets`](skills/brain-ui-targets/SKILL.md) | Inventory the project app's click targets for chat-widget guidance: annotated help-center screenshots, render-layer source map, local DOM crawl, stable selectors, minimal `data-rc-guide` hooks. |
 | [`brain-kb-mirror`](skills/brain-kb-mirror/SKILL.md) | Re-pull a public help center (Zendesk) into a committed Markdown + image snapshot under `knowledge/` from a per-brain source profile, describe new screenshots and summarize video transcripts with cheap sub-agents, check, publish. |
 | `brain-ask` | Last-mile production-loop `rc ask` validation, usually against a pushed `dev/*` ref. |
 | `rc-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
