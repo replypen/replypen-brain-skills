@@ -63,7 +63,7 @@ def _load_spec(brain_dir: Path) -> dict[str, Any]:
 
 def _fetch_settings(brain_dir: Path, tenant: str) -> dict[str, Any]:
     proc = subprocess.run(
-        ["rc", "project", "tenant", "profile", "get", tenant, "-o", "json"],
+        ["rc", "project", "tenant", "profile", "get", tenant, "-o", "json", "--raw-output"],
         cwd=brain_dir,
         capture_output=True,
         text=True,

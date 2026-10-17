@@ -206,7 +206,7 @@ def _brain_source(repo: Path, project: str, reporter: Reporter) -> dict[str, obj
     """Best-effort `status.brain_source` from `rc dev brain status -o json`. Returns None (never
     blocking) when `rc` is unavailable, fails, or the field is absent — a server that predates
     the read-only brain alias, or a project that owns its own brain, both read as no alias."""
-    cmd = ["rc", "dev", "brain", "status", "-o", "json"]
+    cmd = ["rc", "dev", "brain", "status", "-o", "json", "--raw-output"]
     if project:
         cmd = [cmd[0], "--project", project, *cmd[1:]]
     try:

@@ -75,7 +75,7 @@ def load_evidence(args: argparse.Namespace) -> dict:
         return json.loads(raw)
     plane = "shadow" if getattr(args, "shadow", False) else "deltas"
     cmd = ["rc", "dev", "learning", "evidence", "--plane", plane, "--include-bodies",
-           "--limit", str(args.limit), "-o", "json"]
+           "--limit", str(args.limit), "-o", "json", "--raw-output"]
     if args.project:
         cmd = ["rc", "--project", args.project, *cmd[1:]]
     if args.tenant:

@@ -135,9 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     project = str(read_toml(brain_root / ".rootcause.toml").get("project") or brain_root.name)
-    listed = rc_json(brain_root, ["project", "database", "ls", "-o", "json"])
-    capabilities = rc_json(brain_root, ["dev", "console", "capabilities", "-o", "json"])
-    repos = rc_json(brain_root, ["project", "repo", "ls", "-o", "json"])
+    listed = rc_json(brain_root, ["project", "database", "ls", "-o", "json", "--raw-output"])
+    capabilities = rc_json(brain_root, ["dev", "console", "capabilities", "-o", "json", "--raw-output"])
+    repos = rc_json(brain_root, ["project", "repo", "ls", "-o", "json", "--raw-output"])
     notes = []
     if listed is None:
         notes.append("`rc project database ls` was not available, database descriptions are "
