@@ -86,6 +86,8 @@ SCRATCH_ROOT = ".rootcause/harvest"
 
 # A Markdown inline link/image target: `[text](target)` or `![alt](target "title")`.
 MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)]+?)\s*\)")
+FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+CODE_SPAN_RE = re.compile(r"(`+)(?:(?!\1).)+?\1")
 # A backticked path reference: the documented router convention is a symptom -> path table whose
 # cells carry plain/backticked relative paths (see docs/brain-model.md routing index), not inline
 # Markdown links — those references are reachability edges too.
@@ -215,9 +217,24 @@ def git_history_paths(root: Path, limit: int) -> list[str]:
 
 
 # ── link parsing ────────────────────────────────────────────────────────────────────────────────────
+def code_free_lines(text: str) -> list[str]:
+    """Lines with fenced code blocks blanked and inline code spans removed, numbering kept: what a
+    Markdown renderer treats as prose. A `[title](url)` inside backticks is an example, not a link."""
+    out: list[str] = []
+    fence = ""
+    for line in text.splitlines():
+        m = FENCE_RE.match(line)
+        if m and (not fence or m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)):
+            fence = "" if fence else m.group(1)
+            out.append("")
+        else:
+            out.append("" if fence else CODE_SPAN_RE.sub("", line))
+    return out
+
+
 def iter_links(text: str):
-    """Yield (lineno, raw_target) for every inline Markdown link/image target."""
-    for lineno, line in enumerate(text.splitlines(), start=1):
+    """Yield (lineno, raw_target) for every inline Markdown link/image target outside code."""
+    for lineno, line in enumerate(code_free_lines(text), start=1):
         for m in MD_LINK_RE.finditer(line):
             target = m.group(1).split()[0].strip("<>") if m.group(1).split() else ""
             if target:

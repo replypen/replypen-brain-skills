@@ -356,18 +356,20 @@ def _symlink_findings(root: Path, level: str) -> list[Finding]:
     return [f for f in picker(lint_brain(root)) if f.rule == "symlink-broken"]
 
 
-def test_lint_brain_warns_on_dangling_alias_symlink(tmp_path: Path) -> None:
+def test_lint_brain_silent_on_kit_alias_but_warns_on_other_dangling_symlinks(tmp_path: Path) -> None:
     # The supported layout: a COMMITTED .claude/skills -> ../.agents/skills alias over a gitignored
-    # local kit install. It dangles in a fresh checkout; the host skips it, so this is a WARN.
+    # local kit install. It dangles in a fresh checkout and the host skips it, so it is silent; any
+    # other link onto an untracked target still WARNs.
     _git_brain(tmp_path)
     _write(tmp_path / ".agents/skills/local/SKILL.md", "---\ndescription: local\n---\n")
     (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".claude/skills").symlink_to("../.agents/skills")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "-f", ".claude/skills"], check=True)
+    (tmp_path / "kit-docs").symlink_to(".agents/skills")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-f", ".claude/skills", "kit-docs"], check=True)
 
     assert _symlink_findings(tmp_path, "FAIL") == []
     warns = _symlink_findings(tmp_path, "WARN")
-    assert [f.path for f in warns] == [".claude/skills"]
+    assert [f.path for f in warns] == ["kit-docs"]
     assert "not tracked" in warns[0].message
     assert "dangling in checkouts" in warns[0].message
 
@@ -443,6 +445,35 @@ def test_lint_brain_warns_on_unknown_doc_surfaces(tmp_path: Path) -> None:
 def _doc(tags: str, kb: float) -> str:
     front = f"---\ndescription: D\ninclude_in: {tags}\n---\n" if tags else "---\ndescription: D\n---\n"
     return front + "x" * int(kb * 1024)
+
+
+def test_doc_size_skips_chat_gallery_and_mirrored_corpus(tmp_path: Path) -> None:
+    """The chat gallery is parsed by the host, not read with bash; a mirrored help-centre article or
+    video transcript (`source_url:` / `video_url:`) is generated content the author cannot split."""
+    _seed_brain(tmp_path)
+    _write(tmp_path / "chat_inspiration.md", "---\nsurfaces: [chat]\n---\n" + "x" * 17 * 1024)
+    _write(tmp_path / "knowledge/hc/a.md", "---\nsource_url: https://x/a\n---\n" + "x" * 17 * 1024)
+    _write(tmp_path / "knowledge/hc/_videos/v.md", "---\nvideo_url: https://y/v\n---\n" + "x" * 17 * 1024)
+    _write(tmp_path / "knowledge/own.md", _doc("", 17))
+
+    findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
+
+    assert [f.path for f in findings] == ["knowledge/own.md"]
+
+
+def test_lint_brain_core_skips_run_hidden_paths_except_dead_tags(tmp_path: Path) -> None:
+    """One filter for CLI, pytest tier and publish gate: runtime-audience rules ignore run-hidden and
+    `_internal/` paths; `frontmatter-scope` still says a tag there is never read."""
+    _seed_brain(tmp_path)
+    _write(tmp_path / ".replypenignore", "/maint/\n/skills/old/\n")
+    _write(tmp_path / "skills/old/SKILL.md", "no frontmatter\n")
+    _write(tmp_path / "maint/big.md", _doc("", 17))
+    _write(tmp_path / "_internal/big.md", _doc("", 17))
+    _write(tmp_path / "maint/tagged.md", "---\ninclude_in: [agent]\n---\nx\n")
+
+    found = {(f.path, f.rule) for f in lint_brain(tmp_path)}
+
+    assert found == {("maint/tagged.md", "frontmatter-scope")}
 
 
 def test_lint_brain_warns_on_hard_loads_over_per_file_cap(tmp_path: Path) -> None:

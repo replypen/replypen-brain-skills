@@ -63,3 +63,15 @@ def strip_frontmatter(text: str) -> str:
                 return text[offset + len(line) + 1:].lstrip("\n").rstrip("\n")
             offset += len(line) + 1
     return text.rstrip("\n")
+
+
+# Frontmatter keys a mirrored-corpus page carries (help-centre article, video transcript written by a
+# kit mirror skill): generated, rg-retrieved content whose size the brain author cannot change.
+MIRRORED_CORPUS_KEYS = ("source_url", "video_url")
+
+
+def mirrored_corpus(text: str) -> bool:
+    """True when the frontmatter declares a top-level `source_url:` or `video_url:`."""
+    block = frontmatter_lines(text)
+    return block is not None and any(line.startswith(f"{key}:") for line in block
+                                     for key in MIRRORED_CORPUS_KEYS)

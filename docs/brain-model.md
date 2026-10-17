@@ -200,8 +200,8 @@ Standing rule for every role: **tag sparingly**. Each tagged doc is a per-run to
 the caps are a safety net, not a budget. Past a cap the body is cut ("read the rest with bash") and
 models rarely read on; on-demand docs fare no better — a bash read over 6000 chars shows only a ~3 KB
 preview. Lint WARN `doc-size` flags tagged docs over their cap and `AGENTS.md`/on-demand docs over
-16 KB; the commit/push hygiene gate adds a NOTICE (`doc-spill`) when a change pushes an on-demand doc
-past 6000 bytes. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
+16 KB (not `chat_inspiration.md` or mirrored `source_url:`/`video_url:` pages); the commit/push
+hygiene gate FAILs (`doc-spill`) when a change pushes an on-demand doc's whole file past 6000 bytes. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
 "Open X for Y" line. `AGENTS.md` inclusion depends on its mount:
 
 | Path | Grounding pre-step | Main agent |

@@ -34,6 +34,8 @@ FIXTURES = {
                                                 "display_name: \"Terugbetaling — snel\"\n"},
     "mermaid": {"skills/x/SKILL.md": "```mermaid\ngraph TD\n  A-->>>((B\n```\n"},
     "description": {"skills/cases/x.md": f"---\nname: x\ndescription: \"{'w' * 1025}\"\n---\nBody.\n"},
+    # kampkompas-staff knowledge/, 2026-09: an editing transcript's closing tags left in the doc.
+    "tool-markup": {"knowledge/criteria.md": "Criteria.\n</content>\n</invoke>\n"},
 }
 
 
@@ -79,6 +81,26 @@ def test_each_failure_is_rejected(tmp_path: Path, rule: str) -> None:
     if rule == "mermaid" and any("renderer failed" in f.message for f in findings):
         pytest.skip("mermaid renderer cannot start here")
     assert rule in rules(root)
+
+
+def test_code_is_not_a_link_and_not_markup(tmp_path: Path) -> None:
+    """A `[title](url)` example in backticks or a fence is prose about links, not a link; leaked tags
+    quoted as code are documentation, and run-hidden paths are never judged for them."""
+    root = make_brain(tmp_path, {
+        "skills/records/links.md": "Write `[title](record_url)` and `![alt](/brain/x/<id>.png)`.\n"
+                                   "Quote `</invoke>` when explaining it.\n"
+                                   "```md\n[gone](missing.md)\n<parameter name=\"x\">\n```\n",
+        "_internal/transcript.md": "</content>\n</invoke>\n",
+    })
+    assert rules(root) == set()
+
+
+def test_mermaid_renderer_failure_names_the_install_command() -> None:
+    detail = "Error: Could not find chrome-headless-shell (ver. 155.0.8059.79). This can occur if either"
+    assert brain_hygiene._mermaid_fix(detail) == (
+        "; fix: `pnpm dlx @puppeteer/browsers install chrome-headless-shell@155.0.8059.79 "
+        "--path ~/.cache/puppeteer`")
+    assert brain_hygiene._mermaid_fix("exit 1") == ""
 
 
 def test_changed_scope_keeps_conflicts_whole_tree(tmp_path: Path) -> None:
@@ -132,13 +154,16 @@ def _staged_spill(tmp_path: Path, before: dict[str, str], after: dict[str, str])
                            "--root", str(root)], capture_output=True, text=True)
 
 
-def test_doc_spill_notices_a_crossing_without_failing(tmp_path: Path) -> None:
+def test_doc_spill_fails_a_new_crossing_on_the_whole_file(tmp_path: Path) -> None:
+    """`cat` prints the frontmatter too: a 5980-byte body behind a 40-byte header already spills."""
     fm = "---\ndescription: Open for refunds.\n---\n"
     run = _staged_spill(tmp_path, {"skills/cases/a.md": fm + "x" * 5900},
-                        {"skills/cases/a.md": fm + "x" * 6100, "skills/cases/b.md": "y" * 6001})
-    assert run.returncode == 0, run.stdout
-    assert "NOTICE skills/cases/a.md: hygiene: doc-spill: body 5900→6100 bytes" in run.stdout
-    assert "NOTICE skills/cases/b.md: hygiene: doc-spill: body new→6001 bytes" in run.stdout
+                        {"skills/cases/a.md": fm + "x" * 5980, "skills/cases/b.md": "y" * 6001})
+    assert run.returncode == 1, run.stdout
+    assert "skills/cases/a.md: hygiene: doc-spill: 5939→6019 bytes" in run.stdout
+    assert "skills/cases/b.md: hygiene: doc-spill: new→6001 bytes" in run.stdout
+    assert "split into a lean core + detail file linked by an \"Open X for Y\" line" in run.stdout
+    assert "NOTICE" not in run.stdout
 
 
 def test_doc_spill_silent_when_already_over_tagged_or_exempt(tmp_path: Path) -> None:
@@ -146,10 +171,26 @@ def test_doc_spill_silent_when_already_over_tagged_or_exempt(tmp_path: Path) -> 
     run = _staged_spill(tmp_path, {"skills/cases/big.md": "x" * 7000},
                         {"skills/cases/big.md": "x" * 9000,
                          "skills/cases/tagged.md": tagged + "x" * 7000,
+                         "knowledge/hc/a.md": "---\nsource_url: https://x/a\n---\n" + "x" * 7000,
+                         "knowledge/hc/v.md": "---\nvideo_url: https://y/v\n---\n" + "x" * 7000,
                          "docs/long.md": "x" * 7000, "journal/2026-10.md": "x" * 7000,
                          "AGENTS.md": "x" * 7000})
     assert run.returncode == 0, run.stdout
     assert "doc-spill" not in run.stdout
+
+
+def test_doc_spill_all_mode_compares_against_base_and_needs_one(tmp_path: Path) -> None:
+    """`--all` judges every file against `--base`; with no resolvable base no crossing is provable."""
+    root = make_brain(tmp_path, {"skills/cases/a.md": "x" * 5000, "skills/cases/old.md": "x" * 7000})
+    git(root, "branch", "base")
+    (root / "skills/cases/a.md").write_text("x" * 6500, "utf-8")
+    git(root, "commit", "-qam", "grow")
+
+    spills = lambda base: [f.path for f in brain_hygiene.check(root, None, base)  # noqa: E731
+                           if f.message.startswith("doc-spill")]
+    assert spills("base") == ["skills/cases/a.md"]
+    assert spills("HEAD") == []
+    assert spills("origin/main") == []  # no remote in this fixture
 
 
 # --- chat-inspiration --------------------------------------------------------------------------
@@ -353,3 +394,32 @@ def test_chat_inspiration_duplicate_card_id_fails() -> None:
     _, found = brain_hygiene.parse_chat_inspiration(text)
     errors = [f for f in found if f.severity == "ERROR"]
     assert len(errors) == 1 and "duplicate card id" in errors[0].message and errors[0].line == 7
+
+
+def test_git_sync_gates_a_knowledge_only_brain(tmp_path: Path) -> None:
+    """No skills/ or actions/: `.rootcause.toml` `project =` plus a run journal still makes it a brain,
+    so the push gate runs. A source repo that only scopes `rc` (no journal) stays ungated."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+    brain = tmp_path / "brain"
+    brain.mkdir()
+    git(brain, "init", "-q", "-b", "main")
+    git(brain, "config", "user.email", "t@example.com")
+    git(brain, "config", "user.name", "Test")
+    for rel, text in {".rootcause.toml": 'project = "helpdesk"\n', "journal/.keep": "",
+                      "AGENTS.md": "# Router\n"}.items():
+        (brain / rel).parent.mkdir(parents=True, exist_ok=True)
+        (brain / rel).write_text(text, "utf-8")
+    git(brain, "add", "-A")
+    git(brain, "commit", "-q", "-m", "fixture")
+    git(brain, "remote", "add", "origin", str(origin))
+    git(brain, "push", "-q", "origin", "main")
+    (brain / "knowledge").mkdir()
+    (brain / "knowledge" / "a.md").write_text(CONFLICTED_SKILL, "utf-8")
+    git(brain, "add", "-A")
+
+    run = subprocess.run([sys.executable, str(SYNC), "--repo", str(brain), "--commit-message", "kb"],
+                         capture_output=True, text=True)
+
+    assert run.returncode == 2, run.stderr
+    assert "knowledge/a.md:5: hygiene: conflict" in run.stderr

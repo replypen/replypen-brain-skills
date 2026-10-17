@@ -36,11 +36,14 @@ and dev-tooling dot-dirs are judged for conflict markers only):
   * paths        — NOTICE only: a cited `/brain/…` (`/tenant/…` in an overlay, `/mirrors/<self>/…` in a
                    mirror) this checkout will not ship: absent, gitignored or run-hidden. Local only;
                    `brain_paths.py` also checks `/kb`, `/tenant`, other mirrors in production.
-  * doc-spill    — NOTICE only: an on-demand doc (no `include_in`, not root AGENTS.md /
-                   chat_inspiration.md, not under journal/_internal/tests/docs/dot-dirs) whose body
-                   crosses 6000 bytes in this change (≤6000 or absent at the base: HEAD for --staged,
-                   else `--base`); bash shows such a read as a 2000+1000-char preview. Already-over
-                   docs stay silent.
+  * doc-spill    — an on-demand doc (no `include_in`, no mirrored-corpus `source_url:`/`video_url:`
+                   frontmatter, not root AGENTS.md / chat_inspiration.md, not under
+                   journal/_internal/tests/docs/dot-dirs) whose whole file crosses 6000 bytes in this
+                   change (≤6000 or absent at the base: HEAD for --staged, else `--base`, also for
+                   --all); bash shows such a read as a 2000+1000-char preview. Already-over docs stay
+                   silent; no resolvable base skips the rule.
+  * tool-markup  — tool-call/transcript tags (`</invoke>`, `</content>`, `<parameter name=`, `antml:`)
+                   leaked into run-visible Markdown outside code; a run reads them verbatim.
 
 Everything but `conflict` is scoped to changed files (vs `--base`, default origin/main) so a mature
 tree's legacy debt cannot block an unrelated publish; `--all` judges every tracked file.
@@ -81,6 +84,10 @@ EM_DASH = "\u2014"
 TOOLING_DIRS = (".agents/", ".claude/", ".github/")
 MERMAID_TIMEOUT_S = 30
 DESCRIPTION_MAX = 1024  # agentskills.io limit; lib.brain_lint DESC_FULL_MAX_LEN (publish lint)
+# Tool-call / transcript tags a model wrote into a file it was editing (kampkompas-staff knowledge/,
+# 2026-09): the agent later reads them back verbatim. Matched outside code spans/fences only.
+TOOL_MARKUP_RE = re.compile(r"</(?:content|invoke|parameter|function_calls)>|<invoke\b|<parameter\s+name="
+                            r"|<function_calls>|</?antml:[a-z_]+")
 MERMAID_SYNTAX_RE = re.compile(r"(Parse|Lexical|Syntax) error|No diagram type detected", re.I)
 
 # Mirror of rootcause internal/chatinspiration (library.go): keep caps, regexes and separators in sync.
@@ -114,13 +121,14 @@ def _brain_doc():
 
 
 def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding]:
-    """NOTICE per on-demand doc this change pushes past the bash spill cliff (regression-only)."""
+    """FAIL per on-demand doc this change pushes past the bash spill cliff (regression-only: a doc
+    already over at `base` stays silent). Whole-file bytes, because `cat` prints the frontmatter too."""
     doc = _brain_doc()
     if doc is None:
         return []
-
-    def body(text: str) -> int:
-        return len(doc.strip_frontmatter(text).encode("utf-8"))
+    if subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "-q", f"{base}^{{commit}}"],
+                      capture_output=True).returncode:
+        return []  # no base to compare against, so no crossing can be proven
 
     out: list[bs.Finding] = []
     for rel in sorted(files):
@@ -128,17 +136,18 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
         if (not rel.endswith(".md") or rel in ("AGENTS.md", CHAT_INSPIRATION_FILE)
                 or any(d in SPILL_SKIP_DIRS or d.startswith(".") for d in parts[:-1])):
             continue
-        text = (root / rel).read_text("utf-8", errors="replace")
-        if doc.include_in(text) or (new := body(text)) <= SPILL_BYTES:
+        raw = (root / rel).read_bytes()
+        text = raw.decode("utf-8", errors="replace")
+        if (new := len(raw)) <= SPILL_BYTES or doc.include_in(text) or doc.mirrored_corpus(text):
             continue
-        prev = subprocess.run(["git", "-C", str(root), "show", f"{base}:{rel}"],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace")
-        old = body(prev.stdout) if prev.returncode == 0 else None
+        prev = subprocess.run(["git", "-C", str(root), "cat-file", "-s", f"{base}:{rel}"],
+                              capture_output=True, text=True)
+        old = int(prev.stdout) if prev.returncode == 0 else None
         if old is not None and old > SPILL_BYTES:
             continue
-        out.append(bs.Finding("hygiene", f"doc-spill: body {old if old is not None else 'new'}→{new} "
-                              "bytes; bash shows only a 2000+1000-char preview past 6000 chars: split "
-                              "into a lean core + detail file", path=rel, severity="NOTICE"))
+        out.append(bs.Finding("hygiene", f"doc-spill: {old if old is not None else 'new'}→{new} bytes; a "
+                              f"bash read past {SPILL_BYTES} shows only a 2000+1000-char preview: split into "
+                              "a lean core + detail file linked by an \"Open X for Y\" line", path=rel))
     return out
 
 
@@ -211,6 +220,15 @@ def _mermaid_render(mmdc: list[str], source: str) -> tuple[bool, str]:
         if hit is None:
             return False, lines[0] if lines else f"exit {proc.returncode}"
         return True, " | ".join(lines[hit:hit + 4])
+
+
+def _mermaid_fix(detail: str) -> str:
+    """The install command for the renderer failure seen in practice: mermaid-cli's puppeteer wants a
+    chrome-headless-shell build that was never downloaded (verified 2026-10-17 on macOS arm64)."""
+    if m := re.search(r"chrome-headless-shell \(ver\. ([0-9.]+)\)", detail):
+        return (f"; fix: `pnpm dlx @puppeteer/browsers install chrome-headless-shell@{m.group(1)} "
+                "--path ~/.cache/puppeteer`")
+    return ""
 
 
 def _ci_slug(label: str) -> str:
@@ -509,7 +527,7 @@ def parse_chat_inspiration(text: str, path: str = CHAT_INSPIRATION_FILE, root: P
 
 def check(root: Path, files: list[str] | None = None, base: str | None = None) -> list[bs.Finding]:
     """Hygiene findings for a brain at `root`. `files` scopes every rule but `conflict`;
-    None judges the whole tracked tree. `base` (the ref `files` changed against) enables doc-spill."""
+    None judges the whole tracked tree. `base` (the ref to compare against) enables doc-spill."""
     tracked = bs.git_tracked(root)
     ctx = bs.Ctx(root=root, tracked=tracked, tracked_set=set(tracked),
                  md_files=[p for p in tracked if p.lower().endswith(".md")])
@@ -547,6 +565,10 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
                     if "{{" in (rest := PLACEHOLDER_RE.sub("", line)) or "}}" in rest:
                         add("placeholder", "residual `{{`/`}}` in a projection-templated file",
                             rel, lineno)
+            for lineno, line in enumerate(bs.code_free_lines(text), start=1):
+                if m := TOOL_MARKUP_RE.search(line):
+                    add("tool-markup", f"leaked tool-call markup {m.group(0)!r} a run reads verbatim; "
+                                       "delete it", rel, lineno)
             desc = (bs.parse_frontmatter(text) or {}).get("description", "").strip().strip("\"'")
             if rel.startswith("skills/") and len(desc) > DESCRIPTION_MAX:
                 add("description", f"frontmatter description is {len(desc)} chars (max "
@@ -590,12 +612,13 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
             findings.append(bs.Finding("hygiene", f"links: {f.message}", path=f.path, line=f.line))
     if mermaid_seen and not mmdc:
         findings.append(bs.Finding("hygiene", "mermaid: skipped, no renderer (`mmdc` or `pnpm`) on "
-                                   "PATH; diagrams unchecked",
+                                   "PATH; diagrams unchecked; install pnpm (`mise use -g pnpm`), the "
+                                   "next check fetches @mermaid-js/mermaid-cli itself",
                                    severity="NOTICE"))
     if renderer_failure:
         findings.append(bs.Finding("hygiene", f"mermaid: renderer failed, diagrams unchecked: "
-                                   f"{renderer_failure}", severity="NOTICE"))
-    if base and files is not None:
+                                   f"{renderer_failure}{_mermaid_fix(renderer_failure)}", severity="NOTICE"))
+    if base:
         findings += _spill_crossings(root, sorted(scoped), base)
     return findings
 
@@ -618,7 +641,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "--diff-filter=ACMR"], capture_output=True, text=True).stdout.split()
     else:
         files = None if args.all else bs.git_changed_paths(root, args.base)
-    findings = check(root, files, None if args.all else "HEAD" if args.staged else args.base)
+    findings = check(root, files, "HEAD" if args.staged else args.base)
     for f in findings:
         print(f.render())
     blocking = [f for f in findings if f.severity != "NOTICE"]
