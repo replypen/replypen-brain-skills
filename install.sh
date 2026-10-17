@@ -27,9 +27,9 @@ KIT="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}"
 # installer-owned, and the old path survives as a symlink to the new clone.
 LEGACY_KIT="$HOME/.rootcause-brain-skills"
 LEGACY_REPO="https://github.com/rootcause-org/rootcause-brain-skills"
-TAG="${RC_BRAIN_KIT_TAG:-v0.13.0}"
-REPO="https://github.com/replypen/replypen-brain-skills"
-LATEST_TAG_ENDPOINT="https://api.github.com/repos/replypen/replypen-brain-skills/git/matching-refs/tags/v"
+TAG="${RC_BRAIN_KIT_TAG:-v0.12.7}"  # interim until the replypen org + v0.13.0 exist
+REPO="https://github.com/rootcause-org/replypen-brain-skills"  # interim
+LATEST_TAG_ENDPOINT="https://api.github.com/repos/rootcause-org/replypen-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
