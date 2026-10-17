@@ -88,8 +88,9 @@ SCRATCH_ROOT = ".rootcause/harvest"
 MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)]+?)\s*\)")
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 # CommonMark code span: a backtick run closed by the next run of EXACTLY the same length (an unmatched
-# run is literal text); it may wrap lines inside one paragraph, never across a blank line.
-CODE_SPAN_RE = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.DOTALL)
+# run is literal text). Single-line only: a span that wraps a line is rare and telling it apart from a
+# heading/list boundary needs a block parser, so a wrapped span is judged as prose (fails closed).
+CODE_SPAN_RE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 INDENTED_RE = re.compile(r"^(?: {4}|\t)")
 LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d{1,9}[.)])(?:\s|$)")
 # A backticked path reference: the documented router convention is a symptom -> path table whose
@@ -226,8 +227,8 @@ def code_free_lines(text: str) -> list[str]:
     `[title](url)` or a quoted tag inside code is an example, not a link or leaked markup.
 
     Code = fenced blocks, indented (4-space/tab) blocks that start after a blank line outside a list
-    (inside a list that indentation is item continuation, so it stays prose), and inline code spans,
-    also when one wraps lines."""
+    (inside a list that indentation is item continuation, so it stays prose), and single-line inline
+    code spans."""
     kept: list[str] = []
     fence, indented, blank_before, in_list = "", False, True, False
     for line in text.splitlines():
@@ -256,8 +257,7 @@ def code_free_lines(text: str) -> list[str]:
         if not blank:
             in_list = bool(LIST_ITEM_RE.match(line)) or (in_list and line[:1] in " \t")
         blank_before = blank
-    prose = CODE_SPAN_RE.sub(lambda m: "\n" * m.group(0).count("\n"), "\n".join(kept))
-    return prose.split("\n")
+    return [CODE_SPAN_RE.sub("", line) for line in kept]
 
 
 def iter_links(text: str):

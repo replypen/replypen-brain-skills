@@ -101,17 +101,28 @@ def test_mismatched_backticks_leave_a_rendered_link(tmp_path: Path) -> None:
     assert rules(root) == {"links"}
 
 
-def test_indented_code_and_wrapped_spans_are_code(tmp_path: Path) -> None:
-    """Tags quoted in a 4-space code block or in a code span that wraps a line are documentation;
-    indentation under a list item is item text, so a leaked tag there still FAILs."""
+def test_indented_code_is_code_but_wrapped_spans_are_prose(tmp_path: Path) -> None:
+    """Tags quoted in a 4-space code block are documentation; indentation under a list item is item
+    text. Code spans are single-line: one that wraps a line is judged as prose on purpose (rare, and a
+    multi-line match would swallow headings and list items between two unrelated backticks)."""
     root = make_brain(tmp_path, {
-        "skills/x/doc.md": "Example:\n\n    </invoke>\n    <parameter name=\"a\">\n\n"
-                           "Quote `</content\n>` across a wrap.\n",
+        "skills/x/doc.md": "Example:\n\n    </invoke>\n    <parameter name=\"a\">\n",
         "skills/y/doc.md": "- step\n\n    </invoke>\n",
+        "skills/z/doc.md": "Quote `the\n</content> tag` across a wrap.\n",
     })
     found = [(f.path, f.message.split(":", 1)[0]) for f in brain_hygiene.check(root)
              if f.severity != "NOTICE"]
-    assert found == [("skills/y/doc.md", "tool-markup")]
+    assert found == [("skills/y/doc.md", "tool-markup"), ("skills/z/doc.md", "tool-markup")]
+
+
+@pytest.mark.parametrize("text, rule", [
+    ("`start\n# [bad](missing.md)\nend`\n", "links"),
+    ("- `start\n- </invoke>\n- end`\n", "tool-markup"),
+])
+def test_backticks_on_other_lines_do_not_hide_blocks(tmp_path: Path, text: str, rule: str) -> None:
+    """Sol round 2: a backtick on one line and another two lines down are not one code span."""
+    root = make_brain(tmp_path, {"skills/x/doc.md": text})
+    assert rule in rules(root)
 
 
 def test_mermaid_renderer_failure_names_the_install_command() -> None:
