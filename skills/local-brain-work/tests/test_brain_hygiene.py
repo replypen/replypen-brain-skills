@@ -95,6 +95,25 @@ def test_code_is_not_a_link_and_not_markup(tmp_path: Path) -> None:
     assert rules(root) == set()
 
 
+def test_mismatched_backticks_leave_a_rendered_link(tmp_path: Path) -> None:
+    """CommonMark: a 2-backtick run closes only on another 2-backtick run, so this link renders."""
+    root = make_brain(tmp_path, {"skills/records/links.md": "``[bad](missing.md)`\n"})
+    assert rules(root) == {"links"}
+
+
+def test_indented_code_and_wrapped_spans_are_code(tmp_path: Path) -> None:
+    """Tags quoted in a 4-space code block or in a code span that wraps a line are documentation;
+    indentation under a list item is item text, so a leaked tag there still FAILs."""
+    root = make_brain(tmp_path, {
+        "skills/x/doc.md": "Example:\n\n    </invoke>\n    <parameter name=\"a\">\n\n"
+                           "Quote `</content\n>` across a wrap.\n",
+        "skills/y/doc.md": "- step\n\n    </invoke>\n",
+    })
+    found = [(f.path, f.message.split(":", 1)[0]) for f in brain_hygiene.check(root)
+             if f.severity != "NOTICE"]
+    assert found == [("skills/y/doc.md", "tool-markup")]
+
+
 def test_mermaid_renderer_failure_names_the_install_command() -> None:
     detail = "Error: Could not find chrome-headless-shell (ver. 155.0.8059.79). This can occur if either"
     assert brain_hygiene._mermaid_fix(detail) == (
@@ -175,6 +194,16 @@ def test_doc_spill_silent_when_already_over_tagged_or_exempt(tmp_path: Path) -> 
                          "knowledge/hc/v.md": "---\nvideo_url: https://y/v\n---\n" + "x" * 7000,
                          "docs/long.md": "x" * 7000, "journal/2026-10.md": "x" * 7000,
                          "AGENTS.md": "x" * 7000})
+    assert run.returncode == 0, run.stdout
+    assert "doc-spill" not in run.stdout
+
+
+def test_doc_spill_follows_renames(tmp_path: Path) -> None:
+    """Moving an unchanged legacy 7000-byte doc is not a new crossing."""
+    root = make_brain(tmp_path, {"skills/cases/legacy.md": "x" * 7000})
+    git(root, "mv", "skills/cases/legacy.md", "skills/cases/renamed.md")
+    run = subprocess.run([sys.executable, str(SCRIPTS / "brain_hygiene.py"), "--staged",
+                          "--root", str(root)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout
     assert "doc-spill" not in run.stdout
 

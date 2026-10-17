@@ -462,18 +462,29 @@ def test_doc_size_skips_chat_gallery_and_mirrored_corpus(tmp_path: Path) -> None
 
 
 def test_lint_brain_core_skips_run_hidden_paths_except_dead_tags(tmp_path: Path) -> None:
-    """One filter for CLI, pytest tier and publish gate: runtime-audience rules ignore run-hidden and
-    `_internal/` paths; `frontmatter-scope` still says a tag there is never read."""
+    """One filter for CLI, pytest tier and publish gate: runtime-audience rules ignore run-hidden
+    paths; `frontmatter-scope` still says a tag there is never read."""
     _seed_brain(tmp_path)
     _write(tmp_path / ".replypenignore", "/maint/\n/skills/old/\n")
     _write(tmp_path / "skills/old/SKILL.md", "no frontmatter\n")
     _write(tmp_path / "maint/big.md", _doc("", 17))
-    _write(tmp_path / "_internal/big.md", _doc("", 17))
     _write(tmp_path / "maint/tagged.md", "---\ninclude_in: [agent]\n---\nx\n")
 
     found = {(f.path, f.rule) for f in lint_brain(tmp_path)}
 
     assert found == {("maint/tagged.md", "frontmatter-scope")}
+
+
+def test_lint_brain_judges_internal_dir_without_an_ignore_rule(tmp_path: Path) -> None:
+    """`_internal/` is hidden only when an ignore rule says so; otherwise the host materializes it and
+    rejects an absolute symlink there (treeview visible.go), so the lint must still FAIL it."""
+    _seed_brain(tmp_path)
+    (tmp_path / "_internal").mkdir()
+    (tmp_path / "_internal/unsafe").symlink_to("/tmp/missing")
+
+    fails = [(f.path, f.rule) for f in _fails(lint_brain(tmp_path))]
+
+    assert fails == [("_internal/unsafe", "symlink-broken")]
 
 
 def test_lint_brain_warns_on_hard_loads_over_per_file_cap(tmp_path: Path) -> None:

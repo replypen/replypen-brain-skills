@@ -1025,21 +1025,16 @@ def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]
     # Bind the sibling lint when this plugin loads, before collected brain tests can replace the
     # top-level ``lib`` module in ``sys.modules`` with a test double.
     findings += [Finding(f.path, f.level, f.message, f.rule) for f in lint_actions(root)]
-    # One run-hidden filter for every caller (CLI, pytest tier, publish gate): operator-only paths are
-    # not judged by runtime-audience rules. `_HIDDEN_REPORTED` rules exist to say a declaration there is
-    # never read, so they keep reporting. Conflict markers are judged in hidden paths by brain_hygiene.
-    return [f for f in findings if f.rule in _HIDDEN_REPORTED or not _hidden_or_internal(hidden, f.path)]
+    # One run-hidden filter for every caller (CLI, pytest tier, publish gate): paths the host drops from
+    # every run view (`run_hidden`: root .replypenignore/.rcignore + always-hidden names) are operator-only,
+    # and the host skips them before it inspects anything, symlinks included (treeview visible.go). A path
+    # merely named `_internal/` is NOT hidden unless an ignore rule says so, so it is still judged.
+    # `_HIDDEN_REPORTED` rules exist to say a declaration there is never read, so they keep reporting.
+    return [f for f in findings if f.rule in _HIDDEN_REPORTED or not hidden(f.path.split(":", 1)[0])]
 
 
 # Rules that still report on run-hidden paths (see the filter at the end of `lint_brain`).
 _HIDDEN_REPORTED = frozenset({"frontmatter-scope"})
-
-
-def _hidden_or_internal(hidden: Callable[[str], bool], path: str) -> bool:
-    """Run-hidden per `run_hidden`, or under the conventional maintainer-only `_internal/`. Some rules
-    append `:<line>` to the path they report; judge the file part."""
-    rel = path.split(":", 1)[0]
-    return rel.startswith("_internal/") or hidden(rel)
 
 
 def _rel(root: Path, p: Path) -> str:

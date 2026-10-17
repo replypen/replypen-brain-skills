@@ -87,7 +87,11 @@ SCRATCH_ROOT = ".rootcause/harvest"
 # A Markdown inline link/image target: `[text](target)` or `![alt](target "title")`.
 MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)]+?)\s*\)")
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
-CODE_SPAN_RE = re.compile(r"(`+)(?:(?!\1).)+?\1")
+# CommonMark code span: a backtick run closed by the next run of EXACTLY the same length (an unmatched
+# run is literal text); it may wrap lines inside one paragraph, never across a blank line.
+CODE_SPAN_RE = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.DOTALL)
+INDENTED_RE = re.compile(r"^(?: {4}|\t)")
+LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d{1,9}[.)])(?:\s|$)")
 # A backticked path reference: the documented router convention is a symptom -> path table whose
 # cells carry plain/backticked relative paths (see docs/brain-model.md routing index), not inline
 # Markdown links — those references are reachability edges too.
@@ -218,18 +222,42 @@ def git_history_paths(root: Path, limit: int) -> list[str]:
 
 # ── link parsing ────────────────────────────────────────────────────────────────────────────────────
 def code_free_lines(text: str) -> list[str]:
-    """Lines with fenced code blocks blanked and inline code spans removed, numbering kept: what a
-    Markdown renderer treats as prose. A `[title](url)` inside backticks is an example, not a link."""
-    out: list[str] = []
-    fence = ""
+    """Lines with code blanked, numbering kept: what a Markdown renderer treats as prose. A
+    `[title](url)` or a quoted tag inside code is an example, not a link or leaked markup.
+
+    Code = fenced blocks, indented (4-space/tab) blocks that start after a blank line outside a list
+    (inside a list that indentation is item continuation, so it stays prose), and inline code spans,
+    also when one wraps lines."""
+    kept: list[str] = []
+    fence, indented, blank_before, in_list = "", False, True, False
     for line in text.splitlines():
-        m = FENCE_RE.match(line)
-        if m and (not fence or m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)):
-            fence = "" if fence else m.group(1)
-            out.append("")
-        else:
-            out.append("" if fence else CODE_SPAN_RE.sub("", line))
-    return out
+        blank = not line.strip()
+        if fence:
+            m = FENCE_RE.match(line)
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence):
+                fence = ""
+            kept.append("")
+            continue
+        if indented:
+            if blank or INDENTED_RE.match(line):
+                kept.append("")
+                continue
+            indented = False
+        if not blank and blank_before and not in_list and INDENTED_RE.match(line):
+            indented = True
+            kept.append("")
+            continue
+        if m := FENCE_RE.match(line):
+            fence = m.group(1)
+            kept.append("")
+            blank_before = False
+            continue
+        kept.append(line)
+        if not blank:
+            in_list = bool(LIST_ITEM_RE.match(line)) or (in_list and line[:1] in " \t")
+        blank_before = blank
+    prose = CODE_SPAN_RE.sub(lambda m: "\n" * m.group(0).count("\n"), "\n".join(kept))
+    return prose.split("\n")
 
 
 def iter_links(text: str):

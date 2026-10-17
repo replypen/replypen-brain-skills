@@ -131,6 +131,7 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
         return []  # no base to compare against, so no crossing can be proven
 
     out: list[bs.Finding] = []
+    origins = _rename_origins(root, base)
     for rel in sorted(files):
         parts = rel.split("/")
         if (not rel.endswith(".md") or rel in ("AGENTS.md", CHAT_INSPIRATION_FILE)
@@ -140,7 +141,7 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
         text = raw.decode("utf-8", errors="replace")
         if (new := len(raw)) <= SPILL_BYTES or doc.include_in(text) or doc.mirrored_corpus(text):
             continue
-        prev = subprocess.run(["git", "-C", str(root), "cat-file", "-s", f"{base}:{rel}"],
+        prev = subprocess.run(["git", "-C", str(root), "cat-file", "-s", f"{base}:{origins.get(rel, rel)}"],
                               capture_output=True, text=True)
         old = int(prev.stdout) if prev.returncode == 0 else None
         if old is not None and old > SPILL_BYTES:
@@ -149,6 +150,23 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
                               f"bash read past {SPILL_BYTES} shows only a 2000+1000-char preview: split into "
                               "a lean core + detail file linked by an \"Open X for Y\" line", path=rel))
     return out
+
+
+def _rename_origins(root: Path, base: str) -> dict[str, str]:
+    """new path -> its path at `base` for every rename since `base` (index + working tree), so a moved
+    legacy doc is compared with itself instead of counting as new."""
+    out = subprocess.run(["git", "-C", str(root), "diff", "-M", "--name-status", "-z", base],
+                         capture_output=True, text=True).stdout.split("\0")
+    origins: dict[str, str] = {}
+    i = 0
+    while i < len(out):
+        status = out[i]
+        if status.startswith("R") and i + 2 < len(out):
+            origins[out[i + 2]] = out[i + 1]
+            i += 3
+        else:
+            i += 2 if status else 1
+    return origins
 
 
 def _glob_re(glob: str) -> re.Pattern[str]:
