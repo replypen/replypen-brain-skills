@@ -57,9 +57,11 @@ for pass in legacy rename; do
       legacy:*) continue ;;
       rename:replypen|rename:replypen-cli|rename:homebrew-replypen) continue ;;
     esac
+    if [ -L "$BASE/$target" ] && [ "$(readlink "$BASE/$target")" = "$target-legacy" ]; then run rm "$BASE/$target"; fi
     if [ -e "$BASE/$target" ]; then echo "SKIP $name: $target already exists"; continue; fi
     run mv "$d" "$BASE/$target"
-    run ln -s "$target" "$d"
+    # A legacy clone's old name is about to be taken by the current repo: no symlink there.
+    [ "$pass" = rename ] && run ln -s "$target" "$d"
   done
 done
 
