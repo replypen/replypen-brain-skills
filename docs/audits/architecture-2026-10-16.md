@@ -27,6 +27,7 @@ rounds, run independently, then compared). Code review: Sol High.
 | 10 | KampAdmin-private repo paths in `brain-chat-debug`/`brain-helper-devloop` SKILL.md replaced with placeholders | kit audience is external developers | |
 | 11 | brain_lint `script-outside-skills` skips run-hidden code (`.replypenignore`); scope_matrix "Regenerate" prints cwd-relative `--out` (both reported by the KA-common audit lead) | KA-common `action-authoring/` generators (rooted in `.replypenignore`) were a permanent 3 FAIL; committed matrices leaked `/Users/` paths | KA-common lint 3 FAIL → 0; gate trusted again |
 | 12 | `--raw-output` on every `rc … -o json` the kit parses (projection, grounding-intake, simulate, dream-cycle, git-sync) (reported by the rootcause-cli audit lead) | `rc project tenant profile get` spills large profiles to a manifest, so `brain_projection.py` would parse the manifest instead of the profile | big tenant profiles project correctly; immune to future spills |
+| 13 | `docs/brain-model.md`: PII masking of free text is streaming, so select free text in the same row as the person's declared name columns (reported by the DentAI-brain audit lead) | DentAI reminder titles carried the raw patient name on ~99% of 335 lines | rule documented for every brain author |
 
 Total test wall time **~515s → ~100s**. Measured on a loaded shared Mac, so absolute numbers are noisy;
 the ratios hold.

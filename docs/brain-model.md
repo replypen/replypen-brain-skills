@@ -56,6 +56,12 @@ runtime** can still see that literal, so keep boundary code shape-tolerant — n
 (`if isinstance(v, str): ...`) instead of assuming one shape, and never iterate the value blind (a
 literal string iterates as characters).
 
+PII masking of free text is **streaming**: a text cell (an appointment title, a note) is masked only
+with names the run has already seen in a declared PII column, in that row or an earlier one. Select
+free text that may name a person in the **same row** as that person's declared name columns (join
+them in), never first with the name fetched by a later per-row query: DentAI's reminder titles leaked
+the raw patient name on ~99% of lines that way.
+
 If a fact changes with the customer's app state or source code, prefer a grounding script or mirror
 lookup over copying it into prose. If a fact is a stable support policy, product concept, customer
 promise, or decision tree, put it in the brain with tests where practical.
