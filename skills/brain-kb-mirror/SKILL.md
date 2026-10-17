@@ -67,7 +67,7 @@ Run from the brain root. `KIT` is the installed kit; while developing the kit it
 your kit checkout.
 
 ```bash
-KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
+KIT="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}"
 M() { uv run --script "$KIT/skills/brain-kb-mirror/scripts/kb_mirror.py" "$@"; }
 M list                                   # profiles, counts, work left
 M refresh <name>                         # network; ~1 min per 100 images (all revalidated)

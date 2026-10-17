@@ -1,6 +1,6 @@
 """Implementation of the shared run-dump renderer. See the package docstring for the bundle contract.
 
-The renderer is data-source agnostic: public `rc run trace <id>` hands it a normalized **bundle dict**,
+The renderer is data-source agnostic: public `rp run trace <id>` hands it a normalized **bundle dict**,
 and this module owns only formatting/decoration.
 """
 

@@ -6,7 +6,7 @@
 
 The roster is the `[[audience]]` list of `_internal/scopecheck-<project>.toml` (label/kind/id, the
 same file `scope_smoke.py --config` reads). It is looked up in the brain checkout and in every
-`[mirrors]` path of the brain's `.rootcause.toml` (paths relative to the brain root), first hit
+`[mirrors]` path of the brain's `.replypen.toml` (paths relative to the brain root), first hit
 wins per label. A literal `kind:id` or `label=kind:id` bypasses the roster.
 
 Importable by path from any skill dir:
@@ -22,13 +22,19 @@ import tomllib
 from pathlib import Path
 
 
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
+
+
 class RosterError(ValueError):
     """Unknown label or unreadable roster; the message lists what is known and where it looked."""
 
 
 def brain_project(brain_root: Path) -> str | None:
-    """The `project` of the brain checkout's `.rootcause.toml`, or None."""
-    path = Path(brain_root) / ".rootcause.toml"
+    """The `project` of the brain checkout's `.replypen.toml`, or None."""
+    path = _marker(Path(brain_root))
     if not path.is_file():
         return None
     return tomllib.loads(path.read_text()).get("project")
@@ -38,7 +44,7 @@ def roster_paths(brain_root: Path, project: str) -> list[Path]:
     """Candidate roster files: the brain checkout first, then each local mirror checkout."""
     brain_root = Path(brain_root)
     roots = [brain_root]
-    config = brain_root / ".rootcause.toml"
+    config = _marker(brain_root)
     if config.is_file():
         mirrors = tomllib.loads(config.read_text()).get("mirrors") or {}
         for rel in mirrors.values():

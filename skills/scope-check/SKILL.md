@@ -17,7 +17,7 @@ This skill makes that visible and testable with two artifacts:
 | `scripts/scope_matrix.py` | *What does each audience see?* — a committed markdown matrix of tables and stripped columns per identity. |
 | `scripts/scope_smoke.py` | *Do our helpers still work for each audience?* — every helper run in a real sandbox as each identity, as a pass/fail matrix. |
 
-Both are read-only and go through the public `rc` CLI only. They never touch a DSN.
+Both are read-only and go through the public `rp` CLI only. They never touch a DSN.
 
 ## Fidelity Ladder Position
 
@@ -28,7 +28,7 @@ a real principal, with exactly the projection a hosted run for that person gets.
 question is "for whom does this work", not "does this code run".
 
 The cheaper neighbours: `brain_projection.py` (tenant projection, no principal),
-[`prod-console`](../prod-console/SKILL.md) (one primitive, one identity, ad hoc). `rc ask` proves the
+[`prod-console`](../prod-console/SKILL.md) (one primitive, one identity, ad hoc). `rp ask` proves the
 LLM loop but tells you nothing extra about scope.
 
 ## Picking Audiences
@@ -66,7 +66,7 @@ Reading a row:
 | `—` | not in that projection at all |
 
 A second section lists, per audience, the columns stripped relative to `no-principal` (only when the
-installed `rc` can scope a schema read by principal; otherwise it says so and the table matrix still
+installed `rp` can scope a schema read by principal; otherwise it says so and the table matrix still
 stands). Ordering is deterministic, so a regenerated matrix diffs cleanly — that diff is the review
 artifact when an access policy changes.
 
@@ -84,7 +84,7 @@ uv run "$SKILL/scripts/scope_smoke.py" \
   --cmd "python skills/camps/scripts/camp_overview.py --camp-id 42"
 ```
 
-Each cell runs `rc dev console bash run --principal-kind … --principal-id …`. A cell FAILS on a
+Each cell runs `rp dev console bash run --principal-kind … --principal-id …`. A cell FAILS on a
 non-zero exit, a timeout, a missing `expect` substring, or a failure marker in the output
 (`does not exist`, `Traceback`, `QueryError` by default; extend with `--fail-on` or `fail_on`). The
 script exits non-zero if any cell failed; `--json` for CI. Config shape:
@@ -103,11 +103,11 @@ So the fix for a red cell is almost never "widen the policy". It is:
   is not available to them.
 
 `lib.db.visible_tables()` / `hidden_tables()` / `tables()` report the projection at runtime; the env
-vars behind them are documented in [docs/rc-cli.md](../../docs/rc-cli.md#principal-scoping).
+vars behind them are documented in [docs/rp-cli.md](../../docs/rp-cli.md#principal-scoping).
 
 ## Close-Out
 
 Report which audiences ran, the matrix path, the smoke result per audience, and — for every red cell
 — whether the fix is a helper degrading gracefully or a genuine access-policy question for the
-operator (the policy itself is not editable through public `rc`; that is a RootCause support
+operator (the policy itself is not editable through public `rp`; that is a ReplyPen support
 request).

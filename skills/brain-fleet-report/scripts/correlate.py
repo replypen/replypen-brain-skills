@@ -38,7 +38,9 @@ from fr_common import (  # noqa: E402
     tzinfo,
 )
 
-ORG_DIR = Path.home() / "code" / "rootcause-org"
+# New layout first; the pre-rebrand checkout names still resolve until a laptop is migrated.
+ORG_DIRS = (Path.home() / "code" / "replypen", Path.home() / "code" / "rootcause-org")
+BRAIN_PREFIXES = ("replypen-brain-", "rootcause-brain-")
 HOST_PATHS = (
     "internal/run", "internal/agent", "internal/brain", "internal/actionexec", "internal/api/runs",
     "runtime/", "internal/placement", "internal/workspace",
@@ -58,19 +60,22 @@ def default_repos(brain_root: Path, members: Sequence[str]) -> list[dict[str, An
     """Brain checkout + sibling tenant overlays + the host, if they exist on this laptop."""
     repos: list[dict[str, Any]] = [{"id": brain_root.name, "path": str(brain_root), "plane": "brain"}]
     seen = {brain_root.resolve()}
-    for member in members:
-        sibling = ORG_DIR / f"rootcause-brain-{member}"
-        if sibling.exists() and sibling.resolve() not in seen:
-            seen.add(sibling.resolve())
-            repos.append({"id": sibling.name, "path": str(sibling), "plane": "brain"})
-        for overlay in sorted(ORG_DIR.glob(f"rootcause-brain-{member}-tenant-*")):
-            if overlay.resolve() in seen:
-                continue
-            seen.add(overlay.resolve())
-            repos.append({"id": overlay.name, "path": str(overlay), "plane": "tenant_brain"})
-    host = ORG_DIR / "rootcause"
-    if host.exists():
-        repos.append({"id": "rootcause", "path": str(host), "plane": "host",
+    for org_dir in ORG_DIRS:
+        for member in members:
+            for prefix in BRAIN_PREFIXES:
+                sibling = org_dir / f"{prefix}{member}"
+                if sibling.exists() and sibling.resolve() not in seen:
+                    seen.add(sibling.resolve())
+                    repos.append({"id": sibling.name, "path": str(sibling), "plane": "brain"})
+                for overlay in sorted(org_dir.glob(f"{prefix}{member}-tenant-*")):
+                    if overlay.resolve() in seen:
+                        continue
+                    seen.add(overlay.resolve())
+                    repos.append({"id": overlay.name, "path": str(overlay), "plane": "tenant_brain"})
+    host = next((h for org_dir in ORG_DIRS for h in (org_dir / "replypen", org_dir / "rootcause")
+                 if (h / "internal").is_dir()), None)
+    if host is not None:
+        repos.append({"id": "replypen", "path": str(host), "plane": "host",
                       "relevant_paths": list(HOST_PATHS)})
     return repos
 
@@ -189,7 +194,7 @@ DRIFT_HOURS = 24
 def deploy_lines(member: str, state: dict[str, Any], tz) -> list[str]:
     """Explicit per-channel publish state with a loud drift flag.
 
-    `rc fleet deploy-state` reports the managed brain cache (`brain`: on-box main vs origin/main)
+    `rp fleet deploy-state` reports the managed brain cache (`brain`: on-box main vs origin/main)
     and every channel (`channels[]`: resolved vs origin/main, `state` current|behind_main|…) plus
     the promotion history. A stuck sync or a forgotten promote used to hide inside a 200-char
     JSON blob; now it is one flagged line per condition so dashboard and brain logic cannot
@@ -214,7 +219,7 @@ def deploy_lines(member: str, state: dict[str, Any], tz) -> list[str]:
         flags.append(f"managed cache `{cache_state}`"
                      + (" with unpublished on-box commits" if (brain.get("ahead") or 0) > 0 else "")
                      + (" and a dirty tree" if brain.get("dirty") else "")
-                     + " — `rc dev brain sync` will demand a manual reconcile; see brain-publish")
+                     + " — `rp dev brain sync` will demand a manual reconcile; see brain-publish")
     latest_promotion: dict[str, datetime] = {}
     for promo in brain.get("promotions") or []:
         if not isinstance(promo, dict):
@@ -354,8 +359,8 @@ def main() -> int:
     brain_root = find_brain_root()
     overlay = load_overlay(brain_root, args.overlay)
     tz = tzinfo(str(overlay.get("timezone", DEFAULT_TZ)))
-    report_id = args.report_id or str(overlay.get("report_id") or brain_root.name.replace("rootcause-brain-", ""))
-    out_dir = brain_root / ".rootcause" / "fleet-report" / report_id / args.date
+    report_id = args.report_id or str(overlay.get("report_id") or brain_root.name.replace("replypen-brain-", "").replace("rootcause-brain-", ""))
+    out_dir = brain_root / ".replypen" / "fleet-report" / report_id / args.date
     evidence = json.loads((out_dir / "evidence.json").read_text(encoding="utf-8"))
     days = [date.fromisoformat(d) for d in evidence["window"]["context_days"]] + [
         date.fromisoformat(evidence["window"]["focus"])]

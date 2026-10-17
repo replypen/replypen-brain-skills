@@ -26,25 +26,25 @@ below are reweighted accordingly.
 
 A future implementation agent should treat these as established facts:
 
-- **The server now emits corpus format v2 only.** `rootcause/internal/export/harvest_render.go` has
-  both renderers, but `storeHarvest` (`rootcause/internal/export/harvest.go:201-206`) persists only
+- **The server now emits corpus format v2 only.** `replypen/internal/export/harvest_render.go` has
+  both renderers, but `storeHarvest` (`replypen/internal/export/harvest.go:201-206`) persists only
   the v2 `Result`; the v1 body is computed and discarded. The download path renders v2 for all new
-  rows. Released `rc` hard-rejects v2 by design (`rootcause-cli/internal/cli/export_split.go:17`,
+  rows. Released `rp` hard-rejects v2 by design (`replypen-cli/internal/cli/export_split.go:17`,
   with `TestParseCorpusRejectsVersionDrift` asserting rejection). Every future harvest hits this
   break; v2 split support is mandatory, not speculative.
 - **Idempotent re-download after a client parse failure already works server-side.**
-  `ConsumeHarvestExportBody` (`rootcause/db/queries/exports.sql:34`) does not null the body;
+  `ConsumeHarvestExportBody` (`replypen/db/queries/exports.sql:34`) does not null the body;
   eviction scrubs only after done + consumed ≥48h (`exports.sql:63-78`). Consumed ≠ evicted. The
-  only missing piece is client-side: `rc` discards the downloaded bytes on split failure
+  only missing piece is client-side: `rp` discards the downloaded bytes on split failure
   (`export.go:124-134`) and `--out`/`--split` are mutually exclusive, so there is no rescue path.
-- **Settings scopes:** persona is writable at mailbox, tenant, and project scope via public `rc`;
+- **Settings scopes:** persona is writable at mailbox, tenant, and project scope via public `rp`;
   harvest deliberately writes it at the business scope (tenant when bound, otherwise project), while
   mailbox reads detect shadowing overrides
   (`hierarchy_settings.go`, `mailbox.go:30`, `tenant.go:43`, `surface.go:63`). **Triage policy and
   hard rules are project + tenant only; no mailbox scope exists** (`triage.go:149`).
-- **`rc self doctor` exists** (`doctor.go`) with a structured report; advertising supported corpus
+- **`rp self doctor` exists** (`doctor.go`) with a structured report; advertising supported corpus
   formats there is a small, natural addition. No export-format field exists in the API status
-  projection today (`rootcause/internal/api/exports.go:68`).
+  projection today (`replypen/internal/api/exports.go:68`).
 - **`brain_test.py` exits "no tests" for Markdown-only brains** (returns pytest exit 5 verbatim);
   no structural validator exists anywhere in the kit.
 - **The current `skills/brain-harvest/SKILL.md` self-contradicts**: it orders Reduce before Critic
@@ -58,7 +58,7 @@ A future implementation agent should treat these as established facts:
   selection, gitignore preflight, requested→final capture accounting. Reuse its patterns and
   template structure instead of inventing parallel machinery.
 - **An inbound/no-reply decision export is Large.** The export lane deliberately never joins
-  pipeline thread state (`rootcause/internal/export/types.go:13-15`); only inbound enumeration is
+  pipeline thread state (`replypen/internal/export/types.go:13-15`); only inbound enumeration is
   precedented (survey export). Treat as a separate future project, not a v2 dependency.
 
 ## Outcomes
@@ -92,7 +92,7 @@ modeled on `website_scout.py`'s structure and testing style:
    grounding, corpus history, Git state, CLI/corpus-format compatibility, and gitignore coverage.
 2. Parse every supported corpus format into a private normalized manifest. `prepare_harvest.py`
    must parse raw v1 **and** v2 downloads itself (via `--out` bytes), so the local pipeline never
-   blocks on the `rc` splitter; `rc corpus download --split` remains a convenience, not a
+   blocks on the `rp` splitter; `rp corpus download --split` remains a convenience, not a
    dependency.
 3. Assign a content-derived opaque ID (`H` + 32 lowercase hex) to every thread. IDs remain stable
    across full/delta overlap; raw filenames remain internal and never appear in proposals/tracked files.
@@ -123,12 +123,12 @@ Acceptance:
 The previous draft proposed a full cross-repo release contract with CI gates. Scoped down to what
 the verified facts justify:
 
-- **`rootcause-cli` (M, urgent):** support v2 splitting with v1+v2 fixtures. The server already
+- **`replypen-cli` (M, urgent):** support v2 splitting with v1+v2 fixtures. The server already
   ships v2-only, so this is a live break, not future-proofing.
-- **`rootcause-cli` (S):** on split failure, offer a `--out` rescue path instead of discarding the
+- **`replypen-cli` (S):** on split failure, offer a `--out` rescue path instead of discarding the
   downloaded bytes; error output names the 48h re-download window.
 - **Server/API (S):** add the export format to the status projection so clients can see it before
-  download; advertise supported formats in `rc self doctor`.
+  download; advertise supported formats in `rp self doctor`.
 
 Dropped: CI gate blocking server default-format changes, format negotiation machinery. The 48h
 eviction grace window already provides recovery; `prepare_harvest.py` parsing raw v2 removes the
@@ -368,17 +368,17 @@ turning re-runs from a full harvest into a small delta.
 - rewritten `brain-harvest/SKILL.md` using the pipeline above;
 - concise migration note from the current skill and field-notes document.
 
-### RootCause CLI/server
+### ReplyPen CLI/server
 
 - v2 split support and v1+v2 fixtures (M, urgent — server is v2-only today);
 - `--out` rescue on split failure + error text naming the 48h re-download window (S);
-- export format in the API status projection; supported formats in `rc self doctor` (S);
+- export format in the API status projection; supported formats in `rp self doctor` (S);
 - future, out of scope for v2: inbound/no-reply decision export (L — requires a cross-subsystem
   join the export lane deliberately avoids today).
 
 ## Non-goals
 
-- No hosted LLM mining tier or private RootCause operator path.
+- No hosted LLM mining tier or private ReplyPen operator path.
 - No raw correspondence, names, or identifiers committed for traceability.
 - No mailbox-scoped persona writes from harvest; voice targets the reviewed tenant/project business scope.
 - No automatic triage widening beyond the reviewed business scope.
@@ -399,7 +399,7 @@ raw v2 itself.
 2. Update the skill workflow and templates (single-pass stratified reads, cluster resume, early
    critic, post-approval cleanup); keep the existing manual path as fallback for one release.
 3. Add structural validation, review brief, holdout evaluation, and the committed harvest record.
-4. In parallel, ship `rootcause-cli` v2 splitting, `--out` rescue, and format advertising.
+4. In parallel, ship `replypen-cli` v2 splitting, `--out` rescue, and format advertising.
 5. Validate against the synthetic fixtures: coverage and privacy gates must pass, holdout
    scorecard must be generated, turns and wall clock reported and meaningfully under the
    40-minute baseline.

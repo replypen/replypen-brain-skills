@@ -11,7 +11,7 @@ credential_exposure_reason: provider-enforced read-only credential
 #
 # Token only. AppSignal authenticates every API call with a PERSONAL API TOKEN passed as the
 # `?token=` query param. AppSignal's only OAuth surface is its hosted MCP server, which signs you
-# in at the account level and exposes read AND write tools at once — incompatible with rootcause's
+# in at the account level and exposes read AND write tools at once — incompatible with ReplyPen's
 # read-only grounding plane — so it is deliberately NOT offered here.
 connector_module: lib.connectors.appsignal
 env_var: RC_CONN_APPSIGNAL

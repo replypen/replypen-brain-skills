@@ -23,13 +23,13 @@ Rules for the prompts:
 - `brain` → "Add to `skills/<x>.md` under <section>: …" / "Create `knowledge/<y>.md` with …".
   Business facts and playbooks only; never generic support-engineer instructions the host prompt
   already owns.
-- `persona` → the exact key and the new text: `rc project settings behavior set persona.guidance="…"`
+- `persona` → the exact key and the new text: `rp project settings behavior set persona.guidance="…"`
   (or tenant scope when the brain is a tenant checkout). Keep the existing value's intent, change
   the one phrase that failed.
 - `triage` → policy sentence or rule (`effect=`, `match_kind=`, `pattern=`).
-- `grounding` → a RootCause support request through `brain-publish`: which data (table/API/KB),
+- `grounding` → a ReplyPen support request through `brain-publish`: which data (table/API/KB),
   which cases need it, what the draft would do with it. Do not promise a brain fix.
-- `host` → the run link and the observed behaviour; `rc-debug` first if unsure it is the platform.
+- `host` → the run link and the observed behaviour; `rp-debug` first if unsure it is the platform.
 
 Order: highest customer impact first; merge cases that share one fix into one recommendation;
 at most ~6. Every recommendation cites at least one case id. **No cost or token figures.**

@@ -1,4 +1,4 @@
-"""Deterministic dashboard-settings discovery over rootcause's live ``/meta`` API.
+"""Deterministic dashboard-settings discovery over replypen's live ``/meta`` API.
 
 This helper is intentionally read-only. ``find`` maps plain language to registry keys and ``resolve``
 returns the hierarchy responses needed to explain effective value/provenance. Writes are emitted as a

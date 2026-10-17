@@ -3,7 +3,7 @@
 # ///
 """Local IMAP sent-history exporter for brain-harvest.
 
-Reads IMAP credentials from a local env file written by `rc project mailbox imap-env`, connects to the mailbox,
+Reads IMAP credentials from a local env file written by `rp project mailbox imap-env`, connects to the mailbox,
 exports a capped sent-folder corpus, and writes:
 
   <out>/corpus/corpus.md   # v1 harvest blob, parseable by prepare_harvest.py
@@ -11,7 +11,7 @@ exports a capped sent-folder corpus, and writes:
   <out>/threads/*.md       # per-thread split (backward-compat, one release)
 
 The `corpus/corpus.md` blob carries `harvest_format: v1` front-matter and the exact section shape the
-server's canonical renderer emits (rootcause/internal/export/harvest_render.go `render()`), so
+server's canonical renderer emits (replypen/internal/export/harvest_render.go `render()`), so
 `prepare_harvest.py` parses it directly instead of routing deep-IMAP harvests to the manual fallback.
 The blob lives in its own `corpus/` subdir precisely so `prepare --corpus <out>/corpus/` never trips over
 the non-front-mattered `INDEX.md` left at the top level for one deprecation release.
@@ -79,16 +79,16 @@ def parse_env(path: Path) -> dict[str, str]:
     return values
 
 
-def rootcause_root(path: Path) -> Path | None:
+def replypen_root(path: Path) -> Path | None:
     parts = path.parts
     for i, part in enumerate(parts):
-        if part == ".rootcause":
+        if part in (".replypen", ".rootcause"):
             return Path(*parts[: i + 1])
     return None
 
 
-def ensure_rootcause_gitignore(path: Path) -> None:
-    root = rootcause_root(path)
+def ensure_replypen_gitignore(path: Path) -> None:
+    root = replypen_root(path)
     if root is None:
         return
     root.mkdir(parents=True, exist_ok=True)
@@ -313,7 +313,7 @@ def escape_cell(text: str) -> str:
 
 
 # --- v1 corpus blob (parseable by prepare_harvest.py) ---------------------------------------
-# The shape below is a byte-for-byte match of rootcause/internal/export/harvest_render.go `render()`
+# The shape below is a byte-for-byte match of replypen/internal/export/harvest_render.go `render()`
 # (HarvestFormatVersion "v1"), the reference renderer whose output prepare_harvest.py's
 # parse_front_matter/split_sections/parse_section consume. Keep them in lockstep on any change.
 
@@ -402,7 +402,7 @@ def group_messages(messages: Iterable[ParsedMessage]) -> list[list[ParsedMessage
 
 def write_output(out: Path, env: dict[str, str], folder: str, messages: list[ParsedMessage],
                  *, cleaned: bool = False, truncated: bool = False) -> None:
-    ensure_rootcause_gitignore(out)
+    ensure_replypen_gitignore(out)
     threads = out / "threads"
     threads.mkdir(parents=True, exist_ok=True)
     groups = group_messages(messages)
@@ -545,14 +545,14 @@ def selftest() -> int:
             parse_message(*_fixture_message("1", "Re: Invoice question", "Tue, 1 Apr 2025 10:00:00 +0000", "Thanks, here is the invoice."), max_chars=1000),
             parse_message(*_fixture_message("2", "Another subject", "Wed, 2 Apr 2025 10:00:00 +0000", "Second answer."), max_chars=1000),
         ]
-        out = root / ".rootcause" / "exports" / "selftest"
+        out = root / ".replypen" / "exports" / "selftest"
         write_output(out, env, "Sent", messages, cleaned=False, truncated=False)
         index = (out / "INDEX.md").read_text(encoding="utf-8")
         if "Invoice question" not in index or "threads:" not in index:
             print("selftest failed: INDEX.md missing expected content", file=sys.stderr)
             return 1
-        if not (root / ".rootcause" / ".gitignore").exists():
-            print("selftest failed: .rootcause/.gitignore missing", file=sys.stderr)
+        if not (root / ".replypen" / ".gitignore").exists():
+            print("selftest failed: .replypen/.gitignore missing", file=sys.stderr)
             return 1
         thread_files = list((out / "threads").glob("*.md"))
         if len(thread_files) != 2:
@@ -571,8 +571,8 @@ def selftest() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Export a capped local IMAP sent-history corpus.")
-    parser.add_argument("--env", required=False, help="env file from `rc project mailbox imap-env`")
-    parser.add_argument("--out", required=False, help="output dir, usually .rootcause/exports/<run-id>/")
+    parser.add_argument("--env", required=False, help="env file from `rp project mailbox imap-env`")
+    parser.add_argument("--out", required=False, help="output dir, usually .replypen/exports/<run-id>/")
     parser.add_argument("--folder", help="sent folder name override")
     parser.add_argument("--max-messages", type=int, default=200, help="max sent messages to fetch (default 200)")
     parser.add_argument("--max-body-chars", type=int, default=16000, help="max text chars per message")

@@ -45,7 +45,7 @@ from markdownify import MarkdownConverter
 from PIL import Image, ImageSequence
 
 SOURCES = Path("_internal/kb-sources")
-UA = "Mozilla/5.0 (compatible; rootcause-brain-kb-mirror/1; read-only public help-center mirror)"
+UA = "Mozilla/5.0 (compatible; replypen-brain-kb-mirror/1; read-only public help-center mirror)"
 PROMPT_VERSION = "v1"  # image alt text; bump with annotate.md's prompt
 VIDEO_PROMPT_VERSION = "s1"  # video summary + chapters; bump with annotate.md's video prompt
 TRANSCRIPT_VERSION = "t1"  # bump to re-transcribe every video

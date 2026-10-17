@@ -9,7 +9,7 @@ generic across projects into the kit's `runtime/lib/action/` and then adopts the
 benefit.
 
 ## Task
-1. Survey all local brains (`~/code/rootcause-org/rootcause-brain-*`, use `origin/main` in a
+1. Survey all local brains (`~/code/replypen/replypen-brain-*`, use `origin/main` in a
    throwaway `/tmp` worktree per repo) for helpers duplicated across actions/brains. Candidates from
    the dentai corpus: timezone helper (Europe/Brussels parse/format incl. DST `fold`), verify-after-
    mutate pattern (read back, compare expected fields, `action.fail` on mismatch), idempotency-key
@@ -19,7 +19,7 @@ benefit.
 2. Implement in `runtime/lib/action/` (look at existing modules + `docs/actions.md` "Hosted Python
    Harness" for style), with focused tests in `runtime/tests/`. Keep the public surface tiny and
    documented in docstrings.
-3. Document concisely in `rootcause-brain-skills`: a short section in `docs/actions.md` (what
+3. Document concisely in `replypen-brain-skills`: a short section in `docs/actions.md` (what
    exists, when to use, one example) — no god file, no repetition of docstrings.
 4. Adopt in the brains that can use it: replace the local copies in each qualifying brain's
    `actions/*/script.py|preflight.py`, run that brain's offline tier (`brain_test.py`) and

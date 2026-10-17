@@ -3,7 +3,7 @@
 Some brain scripts hardcode the prod mount (``sys.path.insert(0, "/mirrors/<repo>/…")`` then
 ``from ka import …``). On a laptop that path does not exist, so importing them at collection raises
 ``ModuleNotFoundError`` and the whole ``brain_test.py`` run errors out before a single test runs.
-Brains with committed ``.rootcause.toml [mirrors]`` declarations fail earlier in import smoke with
+Brains with committed ``.replypen.toml [mirrors]`` declarations fail earlier in import smoke with
 ``MirrorMissing``; they must not rely on this skip. For undeclared legacy brains, convert such
 collection errors into a skip that names the missing mount. Only fires when ``/mirrors`` is
 absent and the failing module's skill tree references ``/mirrors/`` literally; other import errors

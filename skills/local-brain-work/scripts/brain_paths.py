@@ -9,17 +9,17 @@ Local first, production only for the rest:
     mirror) → the working tree, so new unpublished files pass; gitignored and run-hidden (root
     `.rcignore`/`.replypenignore`, host-hidden names like `.env`) files count as missing; in-repo
     symlinks resolve like the host's run view. Authoritative: WARN.
-  * a mount a sibling checkout serves (`.rootcause.toml [mirrors]`, an overlay's project brain, a
+  * a mount a sibling checkout serves (`.replypen.toml [mirrors]`, an overlay's project brain, a
     mirror's consumer brains) → that checkout; a miss there is re-asked in production (checkouts lag).
   * everything else (`/kb`, `/tenant` from a project brain, undeclared mirrors) → one batched
-    `rc dev console paths` call per tenant. Missing on every tenant → WARN; on some → NOTICE.
+    `rp dev console paths` call per tenant. Missing on every tenant → WARN; on some → NOTICE.
   * `/skills` is scenario/feature-gated and not mounted in the console → listed as unverified.
 Placeholders (`<x>`, `{x}`, `$X`, globs, `...`) and bare mount roots are skipped; `journal/`, `tests/`,
 run-hidden and tooling dirs are not scanned. Never FAILs (exit 1 only with --strict and a WARN).
 
     uv run --no-project python brain_paths.py               # changed files vs origin/main
     uv run --no-project python brain_paths.py --all         # every scanned file
-    uv run --no-project python brain_paths.py --local       # no rc call (brain_hygiene runs this)
+    uv run --no-project python brain_paths.py --local       # no rp call (brain_hygiene runs this)
     uv run --no-project python brain_paths.py --all --tenants yes_events,lbv   # or --tenants all
 """
 
@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -38,6 +39,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import brain_structure as bs  # noqa: E402
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
 
 MOUNTS = ("brain", "tenant", "mirrors", "kb", "skills")
 PATH_RE = re.compile(r"(?<![\w.~/$>})\]-])/(?:" + "|".join(MOUNTS) + r")(?:/[^\s`\"'()\[\],;|]*)?")
@@ -92,7 +104,7 @@ def _git_lines(root: Path, *args: str) -> list[str]:
     return [p for p in proc.stdout.split("\0") if p] if proc.returncode == 0 else []
 
 
-# rootcause internal/treeview visible.go + bootstrap.go: names every run view drops, whatever the rules say.
+# replypen internal/treeview visible.go + bootstrap.go: names every run view drops, whatever the rules say.
 HOST_HIDDEN_NAMES = {".git", ".gitignore", ".replypenignore", "__pycache__", "node_modules", ".venv",
                      "venv", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
 DOTENV_TEMPLATES = (".sample", ".example", ".template", ".dist", ".defaults")
@@ -176,13 +188,14 @@ def _siblings(root: Path) -> list[Path]:
     tmp = Path(tempfile.gettempdir()).resolve()
     if root.parent == root.parent.parent or root.parent.resolve() == tmp:
         return []
-    bases = [(root.parent, "*/.rootcause.toml"), (root.parent.parent, "*/*/.rootcause.toml")]
+    bases = [(base, f"{depth}{name}") for base, depth in ((root.parent, "*/"), (root.parent.parent, "*/*/"))
+             for name in (".replypen.toml", ".rootcause.toml")]
     return sorted({c.parent.resolve() for base, pattern in bases if base.resolve() != tmp
                    for c in base.glob(pattern)} - {root})
 
 
 def _declared_mirrors(brain: Path) -> dict[str, Path]:
-    mirrors = _toml(brain / ".rootcause.toml").get("mirrors")
+    mirrors = _toml(_marker(brain)).get("mirrors")
     if not isinstance(mirrors, dict):
         return {}
     return {name: (brain / rel).resolve() for name, rel in mirrors.items()
@@ -200,7 +213,7 @@ class Layout:
 
 
 def layout(root: Path) -> Layout:
-    cfg = _toml(root / ".rootcause.toml")
+    cfg = _toml(_marker(root))
     project, tenant = cfg.get("project"), cfg.get("tenant")
     local: dict[str, list[Checkout]] = {}
 
@@ -216,7 +229,7 @@ def layout(root: Path) -> Layout:
     if tenant:
         kind, own = "tenant", "/tenant"
         for sib in _siblings(root):
-            sc = _toml(sib / ".rootcause.toml")
+            sc = _toml(_marker(sib))
             if sc.get("project") == project and not sc.get("tenant"):
                 serve_brain(sib)
     else:
@@ -234,7 +247,7 @@ def layout(root: Path) -> Layout:
     lay = Layout(kind, project, tenant, own, local)
     if kind == "mirror":
         lay.consumers = sorted({p for sib, _n in consumers
-                                if (p := _toml(sib / ".rootcause.toml").get("project"))})
+                                if (p := _toml(_marker(sib)).get("project"))})
     return lay
 
 
@@ -265,14 +278,14 @@ def resolve_local(lay: Layout, refs: dict[str, Ref]) -> list[Ref]:
     return remote
 
 
-# ── production: one batched `rc dev console paths` per tenant ──────────────────────────────────────
+# ── production: one batched `rp dev console paths` per tenant ──────────────────────────────────────
 def resolve_remote(root: Path, refs: list[Ref], tenants: str | None,
                    projects: list[str | None], any_ok: bool = False) -> str:
     """Fill verdicts from production; return a one-line note on what was asked. Each project is asked
     once (a tenant-required project with no tenant given: every tenant). `any_ok` (a mirror, whose
     consumers mount different things): present anywhere is enough."""
     def ask(project: str | None, tenant_arg: str | None) -> tuple[dict | None, str]:
-        cmd = ["rc", "dev", "console", "paths", "-o", "json", "--raw-output", "-"]
+        cmd = [_cli(), "dev", "console", "paths", "-o", "json", "--raw-output", "-"]
         if tenant_arg:
             cmd[4:4] = ["--tenants", tenant_arg]
         if project:
@@ -380,7 +393,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--local", action="store_true", help="no production call; unresolved → NOTICE")
     p.add_argument("--tenants", help="production tenants: a,b or all (default: rc scope; overlay: "
                                       "its tenant; tenant-required project: all)")
-    p.add_argument("--project", help="rc project for the production check (default: .rootcause.toml)")
+    p.add_argument("--project", help="rp project for the production check (default: .replypen.toml)")
     p.add_argument("--strict", action="store_true", help="exit 1 on any WARN")
     p.add_argument("-o", "--output", choices=("text", "json"), default="text")
     p.add_argument("files", nargs="*", help="only these files (relative to the root)")

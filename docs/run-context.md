@@ -70,7 +70,7 @@ Four runs, the fields that differ:
 
 - a parent's embedded-chat turn on kampadmin — `plane=run kind=chat mode=chat surface=chat
   principal.kind=kampadmin_person tenant.slug=solhi simulation=false`
-- `rc ask --simulation` — `plane=run kind=prompt mode=prompt surface=prompt_api simulation=true
+- `rp ask --simulation` — `plane=run kind=prompt mode=prompt surface=prompt_api simulation=true
   principal=null`
 - a Gmail email run — `plane=run kind=email mode=email surface=email channel=google origin=email`
 - a hosted action preflight — `plane=action surface=null simulation=null
@@ -84,7 +84,7 @@ first turn. `session_id` is stable; `run_id` names that first turn. Correlate pe
 ## Testing locally
 
 Point at a fixture: `RC_RUN_CONTEXT_PATH=/tmp/run_context.json python your_script.py`. Or fetch a real
-one — a run's document is at the root of the `/brain` view, so `rc dev console bash run --cmd 'cat
+one — a run's document is at the root of the `/brain` view, so `rp dev console bash run --cmd 'cat
 /brain/run_context.json'` shows exactly what production stamped.
 
 Sibling document, same mechanism, different question ("what are this tenant's values?"):

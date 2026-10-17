@@ -21,7 +21,7 @@ help_md: |
   `python /brain/skills/agenda/scripts/agenda_preview.py --operation-json '<JSON>'`; real execution
   belongs only to the confirmed `agenda_apply_operation` action.
 
-  The raw token remains inside rootcause's broker. Ordinary run environments receive only the broker
+  The raw token remains inside ReplyPen's broker. Ordinary run environments receive only the broker
   route and connector roster; call the wrapper rather than constructing a request directly.
 onboarding_md: |
   Ask can the DentAI operator mint the preview credential for this tenant now. Store the minted

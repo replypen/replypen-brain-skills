@@ -6,6 +6,7 @@
 """Prepare a review branch; compare committed helper bytes in the guarded production console."""
 import argparse
 import json
+import shutil
 from pathlib import Path, PurePosixPath
 import re
 import shlex
@@ -17,6 +18,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "mirror-try/scripts
 from mirror_try import snapshot, console_command, run_version
 from prototype_format import prototype_markdown
 from report_schema import Prototype
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 
 def git(repo, *args):
@@ -75,7 +81,7 @@ def capture(state, project, tenant, principal_kind, principal_id, paths, argv):
     before = run_version(before_files, argv, scope, state['base'])
     after_result = run_version(after_files, argv, scope, after)
     prototype = Prototype(repo=str(repo), branch=state['branch'], before=before, after=after_result,
-                          files=len(changed), command=shlex.join(['rc', 'dev', 'console', 'bash', 'run', *scope]) + ' · staged ' + shlex.join(argv))
+                          files=len(changed), command=shlex.join([_cli(), 'dev', 'console', 'bash', 'run', *scope]) + ' · staged ' + shlex.join(argv))
     # Publishing is explicit-ref only; never main or a production channel.
     git(wt, 'push', 'origin', f'{after}:refs/heads/{state["branch"]}')
     if git(wt, 'ls-remote', 'origin', f'refs/heads/{state["branch"]}').split()[0] != after:

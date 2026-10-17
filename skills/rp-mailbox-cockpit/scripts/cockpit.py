@@ -1,17 +1,23 @@
 #!/usr/bin/env -S uv run --no-project python
-"""Local Gmail inventory + public rc evidence; never runs a production agent or sends mail."""
+"""Local Gmail inventory + public rp evidence; never runs a production agent or sends mail."""
 from __future__ import annotations
 import argparse
 import base64
 import hashlib
 import html
 import json
+import shutil
 from pathlib import Path
 import re
 import subprocess
 from datetime import datetime, timezone
 from email.utils import getaddresses
 from urllib.parse import quote, urlsplit, urlunsplit
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me'
 PRIMARY_ACTION_ROWS = 7
@@ -68,7 +74,7 @@ class Client:
                          self.config['gws_config'], '--json', *args])
 
     def rc(self, *args):
-        return cli_json(['rc', '--project', self.config['project'], *args, '-o', 'json', '--raw-output'])
+        return cli_json([_cli(), '--project', self.config['project'], *args, '-o', 'json', '--raw-output'])
 
     def api(self, path, **params):
         args = ['api', 'GET', GMAIL + '/' + path]

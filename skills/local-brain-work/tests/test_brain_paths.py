@@ -27,7 +27,7 @@ def make(tmp: Path) -> Path:
     for d in (brain, common):
         d.mkdir(parents=True)
         git(d, "init", "-q")
-    (brain / ".rootcause.toml").write_text('project = "p"\n[mirrors]\n"common" = "../common"\n')
+    (brain / ".replypen.toml").write_text('project = "p"\n[mirrors]\n"common" = "../common"\n')
     (brain / ".gitignore").write_text("skills/secret.md\n")
     (brain / ".rcignore").write_text("skills/draft.md\n")
     (brain / "skills" / "a").mkdir(parents=True)
@@ -81,7 +81,7 @@ def test_mirror_and_overlay_kinds(tmp_path: Path) -> None:
     overlay = brain.parent / "brain-tenant-t"
     overlay.mkdir()
     git(overlay, "init", "-q")
-    (overlay / ".rootcause.toml").write_text('project = "p"\ntenant = "t"\n')
+    (overlay / ".replypen.toml").write_text('project = "p"\ntenant = "t"\n')
     (overlay / "AGENTS.md").write_text("/tenant/AGENTS.md /brain/skills/a/SKILL.md /tenant/x.md\n")
     lay, refs, _ = brain_paths.check(overlay, None, remote=False)
     assert (lay.kind, lay.tenant) == ("tenant", "t")
@@ -91,7 +91,7 @@ def test_mirror_and_overlay_kinds(tmp_path: Path) -> None:
 
 
 def test_host_visibility_rules(tmp_path: Path) -> None:
-    """Mirrors rootcause treeview: dotenv values, nested control files and dependency dirs are hidden
+    """Mirrors ReplyPen treeview: dotenv values, nested control files and dependency dirs are hidden
     whatever the rules say; `_internal/` only via rules; in-repo aliases follow their target."""
     brain = make(tmp_path)
     (brain / ".rcignore").write_text("skills/draft.md\nskills/hidden.md\n")
@@ -137,6 +137,6 @@ def test_siblings_skip_the_temp_dir_but_not_nested_layouts(tmp_path: Path, monke
     org = tmp_path / "x" / "org"
     for d in (tmp_path / "worktree", tmp_path / "stray", org / "brain", org / "common"):
         d.mkdir(parents=True)
-        (d / ".rootcause.toml").write_text('project = "p"\n')
+        (d / ".replypen.toml").write_text('project = "p"\n')
     assert brain_paths._siblings(org / "brain") == [(org / "common").resolve()]
     assert brain_paths._siblings(tmp_path / "worktree") == []  # git_land's mkdtemp checkout

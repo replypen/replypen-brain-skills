@@ -1,5 +1,5 @@
 {
- "_comment": "Anonymised shape of a `kind: chat` trace header (first `rc run trace --stream` record). Chat turns carry no sender, the session lives in prior_messages, and the clarifier form arrives as an agent `Questions asked (set …)` turn answered by a customer `User selected: …` turn.",
+ "_comment": "Anonymised shape of a `kind: chat` trace header (first `rp run trace --stream` record). Chat turns carry no sender, the session lives in prior_messages, and the clarifier form arrives as an agent `Questions asked (set …)` turn answered by a customer `User selected: …` turn.",
  "kind": "chat",
  "run_id": "3de6cda0-0000-4000-8000-000000000000",
  "session_id": "396553c7-0000-4000-8000-000000000000",

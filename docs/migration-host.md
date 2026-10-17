@@ -1,4 +1,4 @@
-# Migration runbook — cut over `rootcause` to the kit
+# Migration runbook — cut over `replypen` to the kit
 
 These steps are **outward-facing / sequencing-sensitive** and are intentionally NOT applied
 automatically: they push a public tag + image and edit the production repo. Do them **in order** —
@@ -6,29 +6,29 @@ repointing prod before the tag exists breaks prod image builds.
 
 ## Order of operations
 
-1. **Publish this repo** at `v0.12.4` with `./refresh-brains.sh --release patch` (or an explicit
+1. **Publish this repo** at `v0.13.0` with `./refresh-brains.sh --release patch` (or an explicit
    version). The release must be cut on `main`; the publisher pushes and verifies `origin/main` at
    the release commit before it pushes the tag. Never publish the tag first.
    - Bump the whole single version line together first — see [../RELEASING.md](../RELEASING.md)
      (`skills/local-brain-work/scripts/brain_env.py` `VERSION`/`DEFAULT_IMAGE`, `runtime/pyproject.toml`, both
      plugin manifests + marketplaces, the image tag).
-   - Prove the package resolves by tag (no `rootcause` source):
+   - Prove the package resolves by tag (no `replypen` source):
      ```bash
      uv run --no-project \
-       --with "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.12.4#subdirectory=runtime" \
+       --with "replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.13.0#subdirectory=runtime" \
        python -c "import lib.db; print('ok')"
      ```
 
 2. **Publish the workspace image** to ghcr, pinned to the same tag:
    ```bash
-   docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:v0.12.4 .
-   docker push ghcr.io/rootcause-org/workspace:v0.12.4
+   docker build -f docker/Dockerfile -t ghcr.io/replypen/workspace:v0.13.0 .
+   docker push ghcr.io/replypen/workspace:v0.13.0
    ```
    (Already builds + runs locally — see verification in the session that produced this repo.)
 
-3. **Repoint prod** — `rootcause/runtime/Dockerfile`. Replace the inline client-dep install +
+3. **Repoint prod** — `replypen/runtime/Dockerfile`. Replace the inline client-dep install +
    `COPY lib/` + `ENV PYTHONPATH=/opt/rootcause` with a single package install (deps now come from
-   `rootcause-runtime`'s `pyproject.toml`; the import name stays `lib`):
+   `replypen-runtime`'s `pyproject.toml`; the import name stays `lib`):
 
    ```diff
    -RUN uv pip install --system --no-cache \
@@ -40,26 +40,26 @@ repointing prod before the tag exists breaks prod image builds.
    ...
    -COPY lib/ /opt/rootcause/lib/
    -ENV PYTHONPATH=/opt/rootcause
-   +# lib now ships as the pinned rootcause-runtime package (ONE source of truth).
+   +# lib now ships as the pinned replypen-runtime package (ONE source of truth).
    +# subdirectory=runtime is where pyproject.toml lives; the import name stays `lib`.
    +# Needs build-time network + read auth to the (private) repo; pin the tag, never float main.
    +RUN uv pip install --system --no-cache \
-   +        "rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@v0.12.4#subdirectory=runtime"
+   +        "replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.13.0#subdirectory=runtime"
    ```
    **Confirm a real prod run still grounds** before deleting anything (the make-or-break check).
 
-4. **Delete the now-redundant `lib` source in `rootcause`** once step 3 is confirmed:
-   `rootcause/runtime/lib/` and `runtime/tests/` (the package + its tests are canonical here
-   now). Optionally publish the same image from `rootcause/runtime/Dockerfile` instead of this
+4. **Delete the now-redundant `lib` source in `replypen`** once step 3 is confirmed:
+   `replypen/runtime/lib/` and `runtime/tests/` (the package + its tests are canonical here
+   now). Optionally publish the same image from `replypen/runtime/Dockerfile` instead of this
    repo's `docker/Dockerfile` — pick ONE builder to avoid drift; this repo's is recommended since
    `runtime/` lives here.
 
 5. **Delete the bucket-A copies + point the support skill at the kit:** *Already done* — an earlier
-   `rootcause` cleanup removed the engine copies (`brain_run.py`, `brain_test.py`) and the old
+   `replypen` cleanup removed the engine copies (`brain_run.py`, `brain_test.py`) and the old
    `local-brain-scripts.md`. No action.
 
 ## Already done (no action)
 
-- **`.env` standardization.** `rootcause-brain-momentum-tools` already uses a single gitignored `.env`
-  at its root (mode 600). No rename needed. (`rootcause/.env.momentum-tools` is the operator's
+- **`.env` standardization.** `replypen-brain-momentum-tools` already uses a single gitignored `.env`
+  at its root (mode 600). No rename needed. (`replypen/.env.momentum-tools` is the operator's
   own copy — bucket C — leave it.)

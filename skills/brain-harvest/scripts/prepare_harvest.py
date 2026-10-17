@@ -10,15 +10,15 @@ Everything lives under one gitignored scratch root; raw subjects/filenames never
 
 Stdlib only: run with `uv run --no-project python prepare_harvest.py` or plain `python3`.
 
-    prepare_harvest.py preflight --scratch .rootcause/harvest/<tag>
-    prepare_harvest.py prepare --corpus corpus.md --scratch .rootcause/harvest/<tag>
-    prepare_harvest.py verify --scratch .rootcause/harvest/<tag>
-    prepare_harvest.py ledger apply --scratch .rootcause/harvest/<tag> drafts/C01.report.json
-    prepare_harvest.py review --scratch .rootcause/harvest/<tag> --agent-report ... \
+    prepare_harvest.py preflight --scratch .replypen/harvest/<tag>
+    prepare_harvest.py prepare --corpus corpus.md --scratch .replypen/harvest/<tag>
+    prepare_harvest.py verify --scratch .replypen/harvest/<tag>
+    prepare_harvest.py ledger apply --scratch .replypen/harvest/<tag> drafts/C01.report.json
+    prepare_harvest.py review --scratch .replypen/harvest/<tag> --agent-report ... \
       --reduction reduced.json --evaluation evaluation.json --metrics metrics.json
-    prepare_harvest.py record --scratch .rootcause/harvest/<tag> --approved \
+    prepare_harvest.py record --scratch .replypen/harvest/<tag> --approved \
       --out notes/harvest-records/YYYY-MM-DD.json
-    prepare_harvest.py cleanup --scratch .rootcause/harvest/<tag> --yes
+    prepare_harvest.py cleanup --scratch .replypen/harvest/<tag> --yes
 
 Determinism: manifest/clusters/ledger/holdout/replay-cases/run are byte-identical on re-run over the
 same corpus bytes; opaque IDs are content-derived and stable across full/delta overlap; every
@@ -43,6 +43,11 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 
 # All numeric knobs are tunable defaults, not spec constants; override via --config JSON.
@@ -242,14 +247,14 @@ def parse_front_matter(raw: str) -> tuple[dict[str, str], str]:
     if not text.startswith("---\n"):
         raise HarvestError(
             "missing '---' front-matter fence; expected a harvest corpus (harvest_format: v1|v2|v3). "
-            "Re-download with 'rc project corpus download --out <file>' and retry."
+            "Re-download with 'rp project corpus download --out <file>' and retry."
         )
     rest = text[4:]
     close = rest.find("\n---")
     if close == -1:
         raise HarvestError(
             "unterminated front-matter fence; expected a closing '---'. "
-            "Re-download with 'rc project corpus download --out <file>' and retry."
+            "Re-download with 'rp project corpus download --out <file>' and retry."
         )
     front = rest[:close]
     after = rest[close + 4:]
@@ -475,7 +480,7 @@ def load_threads(files: list[Path]) -> tuple[list[Thread], str, list[str], dict[
         if fmt not in ("v1", "v2", "v3"):
             raise HarvestError(
                 f"unsupported harvest_format {fmt or '(missing)'!r} in {path.name}; this parser "
-                "supports v1, v2, and v3 only. Re-download with 'rc project corpus download --out <file>' "
+                "supports v1, v2, and v3 only. Re-download with 'rp project corpus download --out <file>' "
                 "and confirm the server emitted a supported format before retrying (the 48h eviction window "
                 "allows a fresh re-download)."
             )
@@ -2463,7 +2468,7 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
 
 def default_rc_runner(argv: list[str]) -> tuple[int, str, str] | None:
     try:
-        completed = subprocess.run(["rc", *argv], capture_output=True, text=True, timeout=30)
+        completed = subprocess.run([_cli(), *argv], capture_output=True, text=True, timeout=30)
     except FileNotFoundError:
         return None
     except (OSError, subprocess.SubprocessError):
@@ -2519,7 +2524,7 @@ def recursive_strings(value: Any) -> Iterable[str]:
 
 
 def normalize_capabilities(raw: str) -> list[str]:
-    """Normalize JSON or text `rc auth access` output to stable lowercase capability names."""
+    """Normalize JSON or text `rp auth access` output to stable lowercase capability names."""
     try:
         value: Any = json.loads(raw)
     except json.JSONDecodeError:
@@ -2712,54 +2717,54 @@ def cmd_preflight(args: argparse.Namespace,
         add("FAIL", "target provider", "provider must be google, microsoft, or imap")
 
     inventory: list[tuple[str, list[str]]] = [
-        ("rc auth", ["auth", "status"]),
-        ("rc access", ["auth", "access"]),
-        ("rc mailbox inventory", ["project", "mailbox", "ls", "-o", "json"]),
-        ("rc persona settings", ["project", "settings", "behavior", "get", "-o", "json"]),
-        ("rc triage policy", ["project", "triage", "policy", "get", "-o", "json"]),
-        ("rc hard rules", ["project", "triage", "rules", "ls", "-o", "json"]),
-        ("rc grounding databases", ["dev", "console", "database", "list", "-o", "json"]),
-        ("rc capabilities", ["dev", "console", "capabilities"]),
-        ("rc mirror health", ["fleet", "health"]),
-        ("rc corpus history", ["project", "corpus", "ls", "-o", "json"]),
-        ("rc doctor", ["self", "doctor"]),
+        ("rp auth", ["auth", "status"]),
+        ("rp access", ["auth", "access"]),
+        ("rp mailbox inventory", ["project", "mailbox", "ls", "-o", "json"]),
+        ("rp persona settings", ["project", "settings", "behavior", "get", "-o", "json"]),
+        ("rp triage policy", ["project", "triage", "policy", "get", "-o", "json"]),
+        ("rp hard rules", ["project", "triage", "rules", "ls", "-o", "json"]),
+        ("rp grounding databases", ["dev", "console", "database", "list", "-o", "json"]),
+        ("rp capabilities", ["dev", "console", "capabilities"]),
+        ("rp mirror health", ["fleet", "health"]),
+        ("rp corpus history", ["project", "corpus", "ls", "-o", "json"]),
+        ("rp doctor", ["self", "doctor"]),
     ]
     if mailbox:
-        inventory.append(("rc mailbox persona", ["project", "mailbox", "settings", "get",
+        inventory.append(("rp mailbox persona", ["project", "mailbox", "settings", "get",
                                                   mailbox, "-o", "json"]))
     if tenant:
-        inventory.append(("rc tenant settings", ["project", "tenant", "settings", "get",
+        inventory.append(("rp tenant settings", ["project", "tenant", "settings", "get",
                                                  tenant, "-o", "json"]))
     if export_id:
-        inventory.append(("rc export", ["project", "corpus", "get", export_id]))
+        inventory.append(("rp export", ["project", "corpus", "get", export_id]))
 
     project_prefix = ["--project", project] if project else []
     tenant_prefix = [*project_prefix, "--tenant", tenant] if tenant else project_prefix
     inventory_outputs: dict[str, str] = {}
     inventory_codes: dict[str, int | None] = {}
     explicit_target = bool(project or tenant or mailbox or provider or export_id)
-    critical = {"rc auth", "rc access"}
+    critical = {"rp auth", "rp access"}
     if explicit_target:
-        critical.update({"rc persona settings", "rc triage policy", "rc hard rules"})
+        critical.update({"rp persona settings", "rp triage policy", "rp hard rules"})
     if mailbox or provider:
-        critical.add("rc mailbox inventory")
+        critical.add("rp mailbox inventory")
     if mailbox:
-        critical.add("rc mailbox persona")
+        critical.add("rp mailbox persona")
     if tenant:
-        critical.add("rc tenant settings")
+        critical.add("rp tenant settings")
     if export_id:
-        critical.add("rc export")
+        critical.add("rp export")
     for label, argv in inventory:
         scoped_prefix = tenant_prefix if tenant and label in {
-            "rc mailbox inventory", "rc triage policy", "rc hard rules", "rc grounding databases",
-            "rc capabilities", "rc mirror health", "rc corpus history", "rc export",
+            "rp mailbox inventory", "rp triage policy", "rp hard rules", "rp grounding databases",
+            "rp capabilities", "rp mirror health", "rp corpus history", "rp export",
         } else project_prefix
         result = rc_runner([*scoped_prefix, *argv])
         if result is None:
             inventory_codes[label] = None
             add("FAIL" if explicit_target and label in critical else "WARN", label,
-                "rc not available; cannot verify explicit target" if explicit_target and label in critical
-                else "rc not available; complete manually before fan-out")
+                "rp not available; cannot verify explicit target" if explicit_target and label in critical
+                else "rp not available; complete manually before fan-out")
         else:
             code, out, err = result
             inventory_codes[label] = code
@@ -2767,7 +2772,7 @@ def cmd_preflight(args: argparse.Namespace,
             add("OK" if code == 0 else "FAIL" if explicit_target and label in critical else "WARN", label,
                 "read succeeded" if code == 0 else f"read failed (exit {code})", exit_code=code)
 
-    mailbox_output = inventory_outputs.get("rc mailbox inventory", "")
+    mailbox_output = inventory_outputs.get("rp mailbox inventory", "")
     mailbox_record = find_mailbox_inventory_record(mailbox_output, mailbox) if mailbox else None
     if mailbox:
         add("OK" if mailbox_record else "FAIL", "target mailbox",
@@ -2778,8 +2783,8 @@ def cmd_preflight(args: argparse.Namespace,
             "provider matches target mailbox" if provider_matches else
             "provider not confirmed by mailbox inventory")
 
-    capabilities = normalize_capabilities(inventory_outputs.get("rc access", ""))
-    access_verified = inventory_codes.get("rc access") == 0 and bool(capabilities)
+    capabilities = normalize_capabilities(inventory_outputs.get("rp access", ""))
+    access_verified = inventory_codes.get("rp access") == 0 and bool(capabilities)
     if explicit_target and not access_verified:
         add("FAIL", "verified access", "auth access returned no recognized capabilities")
     write_access = {
@@ -2788,15 +2793,15 @@ def cmd_preflight(args: argparse.Namespace,
         "hard_rule": capability_allows(capabilities, "triage:write"),
     }
     persona_scopes = []
-    if inventory_codes.get("rc mailbox persona") == 0:
+    if inventory_codes.get("rp mailbox persona") == 0:
         persona_scopes.append("mailbox")
-    if inventory_codes.get("rc persona settings") == 0:
+    if inventory_codes.get("rp persona settings") == 0:
         persona_scopes.append("project")
-    if inventory_codes.get("rc tenant settings") == 0:
+    if inventory_codes.get("rp tenant settings") == 0:
         persona_scopes.insert(1 if persona_scopes and persona_scopes[0] == "mailbox" else 0, "tenant")
     resolved_settings_scope = "tenant" if tenant else "project"
-    triage_scopes = [resolved_settings_scope] if inventory_codes.get("rc triage policy") == 0 else []
-    hard_rule_scopes = [resolved_settings_scope] if inventory_codes.get("rc hard rules") == 0 else []
+    triage_scopes = [resolved_settings_scope] if inventory_codes.get("rp triage policy") == 0 else []
+    hard_rule_scopes = [resolved_settings_scope] if inventory_codes.get("rp hard rules") == 0 else []
     read_access = {
         "persona": bool(persona_scopes),
         "triage_policy": bool(triage_scopes),
@@ -2804,10 +2809,10 @@ def cmd_preflight(args: argparse.Namespace,
     }
 
     export_verified = False
-    if export_id and inventory_codes.get("rc export") == 0:
+    if export_id and inventory_codes.get("rp export") == 0:
         expected = {"export_id": export_id, "project": project, "tenant": tenant, "mailbox": mailbox,
                     "provider": provider}
-        export_verified = find_object_with_identity(inventory_outputs.get("rc export", ""), expected) is not None
+        export_verified = find_object_with_identity(inventory_outputs.get("rp export", ""), expected) is not None
         add("OK" if export_verified else "FAIL", "target export",
             "export metadata matches exact target" if export_verified else
             "export metadata did not prove export/project/mailbox/provider binding")
@@ -2837,7 +2842,7 @@ def cmd_preflight(args: argparse.Namespace,
                    "read": read_access,
                    "write": write_access},
         "verification": {
-            "auth": inventory_codes.get("rc auth") == 0,
+            "auth": inventory_codes.get("rp auth") == 0,
             "access": access_verified,
             "mailbox": bool(mailbox_record),
             "provider": bool(provider and mailbox_record
@@ -2870,7 +2875,7 @@ def parser() -> argparse.ArgumentParser:
 
     pre = sub.add_parser("preflight", help="local + best-effort rc environment checks")
     pre.add_argument("--scratch", required=True)
-    pre.add_argument("--project", help="explicit rc project context")
+    pre.add_argument("--project", help="explicit rp project context")
     pre.add_argument("--tenant", help="explicit tenant slug for tenant-scoped inventory")
     pre.add_argument("--mailbox", help="explicit mailbox id to validate and scope")
     pre.add_argument("--provider", choices=("google", "microsoft", "imap", "intercom"),

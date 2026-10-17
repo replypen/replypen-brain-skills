@@ -1016,7 +1016,7 @@ def _timeout_sql(conn, timeout_ms: int) -> str:
 
 
 def _raise_connect_failure(e: Exception) -> NoReturn:
-    """Turn any driver connect error into the actionable 'run it on RootCause infra' guidance."""
+    """Turn any driver connect error into the actionable 'run it on ReplyPen infra' guidance."""
     hint = (
         f"Database connection failed before the query could run "
         f"(connect_timeout={DEFAULT_CONNECT_TIMEOUT_SECONDS}s)."
@@ -1024,15 +1024,15 @@ def _raise_connect_failure(e: Exception) -> NoReturn:
     if os.environ.get("RC_LOCAL_BRAIN_RUN"):
         hint += (
             " This was a local brain_run.py live check; project DSNs are often IP/region "
-            "allowlisted for RootCause production. Use `rc dev console database ...` for direct SQL or "
-            "`rc dev console bash run 'python /brain/skills/.../scripts/<script>.py ...'` to run the "
-            "same brain script on RootCause infra."
+            "allowlisted for ReplyPen production. Use `rp dev console database ...` for direct SQL or "
+            "`rp dev console bash run 'python /brain/skills/.../scripts/<script>.py ...'` to run the "
+            "same brain script on ReplyPen infra."
         )
     else:
         hint += (
-            " If this happened from a laptop/local live check, prefer `rc dev console database ...` "
-            "or `rc dev console bash run ...` "
-            "so the read executes on RootCause production infra."
+            " If this happened from a laptop/local live check, prefer `rp dev console database ...` "
+            "or `rp dev console bash run ...` "
+            "so the read executes on ReplyPen production infra."
         )
     raise RuntimeError(f"{hint}\n\nOriginal error: {type(e).__name__}: {e}") from e
 

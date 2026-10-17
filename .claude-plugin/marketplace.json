@@ -1,15 +1,15 @@
 {
-  "name": "rootcause-brain-skills",
-  "owner": { "name": "rootcause" },
+  "name": "replypen-brain-skills",
+  "owner": { "name": "ReplyPen" },
   "metadata": {
-    "description": "Rootcause Brain Dev skills: local checks, safe cross-computer Git sync, rc ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows, distributed alongside the pinned rootcause-runtime package."
+    "description": "ReplyPen Brain Dev skills: local checks, safe cross-computer Git sync, rp ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows, distributed alongside the pinned replypen-runtime package."
   },
   "plugins": [
     {
       "name": "brain-dev",
       "source": ".",
-      "description": "Install the rootcause brain skills: local checks, safe cross-computer Git sync, rc ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows.",
-      "version": "0.12.4"
+      "description": "Install the ReplyPen brain skills: local checks, safe cross-computer Git sync, rp ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows.",
+      "version": "0.13.0"
     }
   ]
 }

@@ -1,8 +1,8 @@
 # Run Trace Model
 
-`rc run debug <id>` writes a markdown index plus JSONL event log for one production run. Read the
+`rp run debug <id>` writes a markdown index plus JSONL event log for one production run. Read the
 markdown index first; use JSONL only for targeted drill-down.
-Use `rc run thread <run-id>` when you need that run's provider thread, session, and neighboring runs.
+Use `rp run thread <run-id>` when you need that run's provider thread, session, and neighboring runs.
 
 | Trace concept | What it means | Where to look |
 |---|---|---|
@@ -15,11 +15,11 @@ Use `rc run thread <run-id>` when you need that run's provider thread, session, 
 | Tenant projection | Deterministic compiled `/brain` view from shared brain plus tenant profile values. | "Projection inputs" and `brain_resolved`. |
 | Data scoping | Per-run DB credentials/views limit what grounding scripts can see. | Commands using `lib.db`; DB errors. |
 | PII masking | Declared DB columns may be tokenized before the model and detokenized later for delivery. | "Data shielded from the model" when the public bundle exposes it; otherwise escalate if needed. |
-| Mirrors/KB | External source/KB snapshots mounted read-only and refreshed independently. | Files read under `/mirrors`/`/kb`, egress, `rc fleet health`. |
+| Mirrors/KB | External source/KB snapshots mounted read-only and refreshed independently. | Files read under `/mirrors`/`/kb`, egress, `rp fleet health`. |
 | Egress | Outbound HTTP goes through production allowlist. | Egress section, blocked-egress flags, command output. |
 | Actions/preflight | Run proposes actions only; schema/preflight can block proposals in-loop. | Outcome actions, action/preflight timeline labels. |
 | Terminal outcome | Reply/raw answer, decline, error, journal/action/PR proposals; byte-free attachment delivery/drop results. | Outcome, `Attachments` header line, reply event `args.attachments`, flags, metadata. |
-| Post-loop | Journal commit, action rows, source PRs, blocked-egress notes, callback delivery. | `rc run brain-diff <id>`, `rc run thread <id>`, `rc fleet health`. |
+| Post-loop | Journal commit, action rows, source PRs, blocked-egress notes, callback delivery. | `rp run brain-diff <id>`, `rp run thread <id>`, `rp fleet health`. |
 
 ## Reading Order
 
@@ -34,6 +34,6 @@ Use `rc run thread <run-id>` when you need that run's provider thread, session, 
 
 ## Debug Discipline
 
-A single failed run is evidence, not permission to oversteer the brain. For `rc-debug`, inspect,
+A single failed run is evidence, not permission to oversteer the brain. For `rp-debug`, inspect,
 state the best hypothesis, cite trace/file evidence, propose the smallest useful brain change, and stop
 before editing unless the user asked for implementation.

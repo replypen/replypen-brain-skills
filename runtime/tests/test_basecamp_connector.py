@@ -116,7 +116,7 @@ class BasecampManifestOnly(unittest.TestCase):
         self.assertEqual(bc.rate_limit_remaining_header, "")  # Basecamp sends none
         # Required User-Agent must be declared (missing it returns 400 from Basecamp).
         self.assertIn("User-Agent", bc.default_headers)
-        self.assertTrue(bc.default_headers["User-Agent"].startswith("rootcause-integration"))
+        self.assertTrue(bc.default_headers["User-Agent"].startswith("replypen-integration"))
 
     @responses.activate
     def test_link_pagination_stitches_two_pages(self):
@@ -183,7 +183,7 @@ class BasecampManifestOnly(unittest.TestCase):
 
         for call in responses.calls:
             ua = call.request.headers.get("User-Agent", "")
-            self.assertIn("rootcause-integration", ua)
+            self.assertIn("replypen-integration", ua)
 
     @responses.activate
     def test_single_page_todos_and_pick_selects_fields(self):

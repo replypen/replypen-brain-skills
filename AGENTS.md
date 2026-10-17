@@ -1,4 +1,4 @@
-# rootcause-brain-skills
+# replypen-brain-skills
 
 Reusable brain-development kit for **external project developers and their AI agents**.
 
@@ -6,17 +6,17 @@ This repo is the kit, not a brain:
 
 - shipped agent skills in `skills/*/SKILL.md`;
 - the Local Brain Work engine in `skills/local-brain-work/scripts/`;
-- the `rootcause-runtime` Python package in `runtime/` (`lib` helpers imported by brain scripts) —
+- the `replypen-runtime` Python package in `runtime/` (`lib` helpers imported by brain scripts) —
   **edits here are release-gated; see [Version Coherence](#version-coherence)**;
 - the workspace image in `docker/`;
 - installer/plugin/release plumbing.
 
-Brains consume this kit from a brain checkout (`rootcause-brain-<project>`). Skills install once and
+Brains consume this kit from a brain checkout (`replypen-brain-<project>`). Skills install once and
 run from inside any brain; never copy this kit into a brain's committed `skills/`.
 
 ## Domain Taxonomy
 
-Use the shared RootCause vocabulary in [Brain Model](docs/brain-model.md) and
+Use the shared ReplyPen vocabulary in [Brain Model](docs/brain-model.md) and
 [Run Trace Model](docs/run-trace-model.md). The distinctions that matter in this kit:
 
 | Term | Meaning / distinction |
@@ -39,16 +39,16 @@ One audience only: project developers and their agents.
 They have:
 
 - a brain checkout;
-- `rc auth login`;
-- maybe Docker and local `.env` via `rc project env pull`.
+- `rp auth login`;
+- maybe Docker and local `.env` via `rp project env pull`.
 
 They do **not** have:
 
-- private RootCause app source;
+- private ReplyPen app source;
 - host shells, SSM, registry DB access, `accounts.yml`;
 - private operator scripts.
 
-If a workflow is not exposed through public `rc`/API, produce a RootCause support request. Do not leak
+If a workflow is not exposed through public `rp`/API, produce a ReplyPen support request. Do not leak
 private mechanics into shipped docs or skills.
 
 Exception: `brain-fleet-report` queue persistence is a laptop operator job. Its DB adapter imports
@@ -60,7 +60,7 @@ without that access can test with `--dsn`, but cannot publish production queues.
 Keep these planes explicit in every skill, template, and brain edit:
 
 - **Local brain development:** a developer or coding agent runs outside production from a brain
-  checkout. After OAuth login, it may use the public `rc` CLI for runs, settings, diagnostics, and
+  checkout. After OAuth login, it may use the public `rp` CLI for runs, settings, diagnostics, and
   guarded production primitives. The CLI skills in this kit serve only this context and install
   locally into the ignored Codex-native `.agents/skills/` tree; `.claude/skills` is a **committed**
   relative symlink to that tree (Claude Code discovers only `.claude/skills`, and git worktrees carry
@@ -68,7 +68,7 @@ Keep these planes explicit in every skill, template, and brain edit:
   fresh checkout — prod skips dangling relative in-repo symlinks and brain lint only WARNs.
   `.worktreeinclude` carries the ignored kit paths into worktrees. They never mount into `/brain`.
 - **Production main loop:** the model has `bash` plus its scenario terminal tool (`reply` for email),
-  not an `rc` binary. The committed brain is mounted read-only at `/brain`. Ground through `/brain`
+  not an `rp` binary. The committed brain is mounted read-only at `/brain`. Ground through `/brain`
   scripts and the injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`,
   `lib.api`, `lib.mcp`, `lib.gsheets`, `lib.gdocs`, `lib.tenant`, `lib.runctx`, `lib.image`, and `lib.transcribe` capabilities available for that project/run.
   (`lib.tenant` — a script that needs a practice/tenant setting reads it itself; never let the
@@ -84,11 +84,11 @@ Keep these planes explicit in every skill, template, and brain edit:
   (`lib.gsheets` — Google Sheets read/edit wrapper over `lib.api`; edits only on an Editor-shared file, host-verified.)
   (`lib.gdocs` — Google Docs read/edit wrapper over `lib.api`; same delegated-write rule.)
 
-Never put `rc ...` command guidance in committed project-brain content. Describe the project-specific
+Never put `rp ...` (or legacy `rc ...`) command guidance in committed project-brain content. Describe the project-specific
 evidence or decision; keep laptop-side control-plane steps in this kit's local skills/docs.
 
-Do not repeat RootCause's generic production prompt in brain docs. `emailPreamble` and capability-gated
-sections in `rootcause/internal/agent/prompt.go` already own the generic support-engineer role,
+Do not repeat ReplyPen's generic production prompt in brain docs. `emailPreamble` and capability-gated
+sections in `replypen/internal/agent/prompt.go` already own the generic support-engineer role,
 draft/note split, read-only workspace, actions/preflight, PII, DB scoping, mirrors, and grounding
 mandate. Persona settings own brand voice, language, formality, and signature at project, tenant, and
 mailbox scope. Brain docs should add project business context, terminology, playbooks, source/KB
@@ -100,14 +100,14 @@ Read these before changing product-facing docs/skills:
 
 - [docs/brain-model.md](docs/brain-model.md) — audience, brain-vs-external context, prompt boundary,
   `include_in` frontmatter (triage/grounding/agent), layout, refs, mounts, tenant/project model.
-- [docs/run-trace-model.md](docs/run-trace-model.md) — how to read `rc run debug`.
+- [docs/run-trace-model.md](docs/run-trace-model.md) — how to read `rp run debug`.
 - [docs/side-effects.md](docs/side-effects.md) — read-only vs explicit side effects.
 - [docs/support-boundary.md](docs/support-boundary.md) — brain fix vs support escalation.
 - [docs/mirrors.md](docs/mirrors.md) — source mirror freshness and local/prod gaps.
-- [docs/secrets.md](docs/secrets.md) — public `rc` flow for adding/rotating grounding env and action
+- [docs/secrets.md](docs/secrets.md) — public `rp` flow for adding/rotating grounding env and action
   credentials, and for [registering a new grounding
-  database](docs/secrets.md#register-a-new-grounding-database) (there is no `rc project database add`:
-  sealing the `<PROJECT>_<DBKEY>_DSN` key creates it, `rc project database set … description=…` surfaces
+  database](docs/secrets.md#register-a-new-grounding-database) (there is no `rp project database add`:
+  sealing the `<PROJECT>_<DBKEY>_DSN` key creates it, `rp project database set … description=…` surfaces
   it in `ls`).
 
 ## Canonical Skills
@@ -115,9 +115,9 @@ Read these before changing product-facing docs/skills:
 Only these are first-class:
 
 - `local-brain-work` — local scripts/tests/projection/action checks; broad router.
-- `brain-dream-cycle` — local consolidation from run feedback/sent deltas/patterns using public `rc`,
+- `brain-dream-cycle` — local consolidation from run feedback/sent deltas/patterns using public `rp`,
   including persona and triage setting updates.
-- `brain-harvest` — local synthesis from a mailbox's harvested sent-history corpus using public `rc`:
+- `brain-harvest` — local synthesis from a mailbox's harvested sent-history corpus using public `rp`:
   trigger export, download, per-topic subagent distillation, privacy/contract lint, brain/persona/triage
   homes.
 - `brain-website-scout` — local broad public-site mapping and Firecrawl capture, then per-topic
@@ -131,18 +131,18 @@ Only these are first-class:
   image alt text, candidate-tree validation, byte-identical no-op reruns.
 - `source-routing` — question digest, trace-backed document usage, provider-neutral routing proposals,
   and reviewed prefer/avoid imports for large document sources.
-- `brain-ask` — last-mile prod/test run validation with `rc ask`.
-- `rc-debug` — one run/thread/session trace; inspect/propose/stop before edits.
+- `brain-ask` — last-mile prod/test run validation with `rp ask`.
+- `rp-debug` — one run/thread/session trace; inspect/propose/stop before edits.
 - `brain-chat-debug` — one bad chat answer (share/run link, session id): case file, ownership
-  decision, replay of the turn on a `dev/*` brain/mirror ref (`rc ask --replay-chat-run` when
+  decision, replay of the turn on a `dev/*` brain/mirror ref (`rp ask --replay-chat-run` when
   available, raw fallback), compare, widen to other tenants via devloop.
-- `rc-mailbox-cockpit` — local Google inbox/draft triage, independent Opus checks, concise cockpit,
+- `rp-mailbox-cockpit` — local Google inbox/draft triage, independent Opus checks, concise cockpit,
   and explicitly authorized guarded draft-body corrections.
-- `rc-health` — stale mirrors and dead-lettered runs.
-- `rc-fleet` — recent fleet and recurring failure patterns.
+- `rp-health` — stale mirrors and dead-lettered runs.
+- `rp-fleet` — recent fleet and recurring failure patterns.
 - `brain-fleet-report` — the daily two-audience fleet report: Python collects a day of evidence;
   the model judges it into persisted owner/technical review queues.
-- `brain-simulate` — replay representative real inbound cases through `rc ask --simulation`, grade
+- `brain-simulate` — replay representative real inbound cases through `rp ask --simulation`, grade
   each draft against the human's historical reply, render an HTML report with run links and
   copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff.
 - `brain-helpcenter-suggestions` — one window of real customer questions (email runs, in-app chat
@@ -160,17 +160,17 @@ Only these are first-class:
   the answers written back as `skills/codebase/` and `skills/databases/<db>.md` plus routing rows
   and the database description line.
 - `brain-helper-devloop` — the helper feedback loop: tickets → read-only verdict-first helper →
-  `mirror-try`/`scope-check` → `rc ask` synthetic questions on a dev ref → `rc run debug` for
+  `mirror-try`/`scope-check` → `rp ask` synthetic questions on a dev ref → `rp run debug` for
   unprompted pickup → DX fixes, never steering → `brain-publish` → live re-ask.
 - `mirror-try` — compare staged mirror helpers and sibling imports on real scoped production data.
-- `prod-console` — direct guarded production primitives through `rc dev console capabilities`,
-  `rc dev console database`, `rc dev console bash`, and `rc dev console action`.
+- `prod-console` — direct guarded production primitives through `rp dev console capabilities`,
+  `rp dev console database`, `rp dev console bash`, and `rp dev console action`.
 - `scope-check` — principal-scoped projects: the per-audience table/column visibility matrix
   (`scope_matrix.py`) and the per-audience helper smoke matrix run in real production sandboxes
   (`scope_smoke.py`). The closest-to-production tier for "for whom does this helper work".
-- `rc-script-wrapper` — deterministic local Python/shell wrappers around `rc`, including complete
+- `rp-script-wrapper` — deterministic local Python/shell wrappers around `rp`, including complete
   exports, typed failures, parameters, and remote artifact fetches.
-- `brain-dev-upgrade` — update kit and `rc`.
+- `brain-dev-upgrade` — update kit and `rp`.
 - `brain-git-sync` — safely reconcile local brain work with cross-computer `origin/main` and push.
 - `brain-publish` — post-edit publish (`scripts/brain_publish.py`, one command)/support-request step.
 
@@ -184,28 +184,28 @@ Ships here:
 - local brain engine: `brain_run.py`, `brain_test.py`, `brain_projection.py`, `brain_action.py`,
   `brain_dump.py`;
 - the fleet-report engine in `skills/brain-fleet-report/scripts/` (read-only collection over public
-  `rc`, plus schema/validate and operator queue publication);
-- the simulate engine in `skills/brain-simulate/scripts/` (case normalization, `rc ask --simulation`
+  `rp`, plus schema/validate and operator queue publication);
+- the simulate engine in `skills/brain-simulate/scripts/` (case normalization, `rp ask --simulation`
   replay, judge bundles, HTML/markdown report);
 - the help-centre engine in `skills/brain-helpcenter-suggestions/scripts/` (corpus normalisers,
-  read-only collection over public `rc`, strict suggestion schema, HTML report);
+  read-only collection over public `rp`, strict suggestion schema, HTML report);
 - the grounding-intake engine in `skills/brain-grounding-intake/scripts/` (run context, bounded
   repo scan, remote schema probe and reduction, guarded read-only drill, question benchmark,
   validator over paths and tables and columns, HTML questionnaire);
-- the scope-check scripts in `skills/scope-check/scripts/` (per-audience `rc project database
-  preview` matrix, per-audience `rc dev console bash run` smoke matrix);
-- public-API skills over `rc`;
-- `rootcause-runtime` (`runtime/lib`);
+- the scope-check scripts in `skills/scope-check/scripts/` (per-audience `rp project database
+  preview` matrix, per-audience `rp dev console bash run` smoke matrix);
+- public-API skills over `rp`;
+- `replypen-runtime` (`runtime/lib`);
 - workspace Dockerfile/image.
 
 Stays out:
 
-- RootCause host/debug/operator mechanics;
+- ReplyPen host/debug/operator mechanics;
 - registry/River/raw SQL/debug scripts;
 - secrets, credentials, private repo paths;
 - fake publish/promote wrappers for capabilities not public yet.
 
-Diagnosis is read-only by default. Exceptions must be explicit: `rc ask` creates runs, action confirm
+Diagnosis is read-only by default. Exceptions must be explicit: `rp ask` creates runs, action confirm
 executes writes, and `brain_action.py --commit` writes to whatever `.env.action` targets.
 
 ## Version Coherence
@@ -214,10 +214,10 @@ executes writes, and `brain_action.py --commit` writes to whatever `.env.action`
 owe a release — a bare merge/push does NOT reach prod.** The box installs the *pinned tag*, not `main`,
 so unreleased lib bytes never ship. Close it out with `./refresh-brains.sh --release <patch|minor>`
 (bumps, publishes main, tags/pushes the whole line below, then bumps + commits the sibling
-**rootcause** pin for you; `--relock` if deps changed) and **promote rootcause** afterwards. Full
+**replypen** pin for you; `--relock` if deps changed) and **promote replypen** afterwards. Full
 steps: [RELEASING.md](RELEASING.md). Three gates back this up: the release exits non-zero if the prod
-bump did not land, rootcause CI (`scripts/check_workspace_pin.py`) goes red on unconsumed drift, and
-rootcause's `promote.py` preflight **FAILs** while lib commits sit past the pin (even unpushed local
+bump did not land, replypen CI (`scripts/check_workspace_pin.py`) goes red on unconsumed drift, and
+replypen's `promote.py` preflight **FAILs** while lib commits sit past the pin (even unpushed local
 ones) — but don't rely on the gates; release as you go.
 
 One version line moves together:
@@ -227,10 +227,10 @@ One version line moves together:
 - `runtime/pyproject.toml`;
 - install docs;
 - workspace image tag;
-- `rootcause/runtime/Dockerfile` pin.
+- `replypen/runtime/Dockerfile` pin.
 
 Run `./check-release-coherence.sh` before trusting a release. Runtime dependency changes require
-`runtime/requirements.lock` and the sibling `rootcause/runtime/requirements.lock` to match.
+`runtime/requirements.lock` and the sibling `replypen/runtime/requirements.lock` to match.
 
 ## Default Close-Out
 
@@ -269,3 +269,19 @@ changes, scan relative links and stale private references.
 - Versions/env: `mise`.
 - Shell search: prefer `rg`.
 - Skill authoring: use the `skill-creator` skill.
+
+## Legacy names kept
+
+Pre-rebrand names that still work on purpose (installed brains, laptops and host contracts):
+
+- `rc` CLI: alias of `rp`; scripts run `rp` when on PATH, else `rc`.
+- `RC_*` env vars (`RC_BRAIN_KIT`, `RC_BRAIN_KIT_TAG`, runtime `RC_CONN_*` …): shared host/CLI/runtime contract.
+- `.rootcause.toml`, `.rootcause/`: read next to `.replypen.toml`/`.replypen/` until every brain migrates; new writes use the new names.
+- `~/.rootcause-brain-skills`: install.sh moves it to `~/.replypen-brain-skills` and leaves a symlink; old links/exclude block/hook stay installer-owned.
+- `rootcause-brain-*` / `rootcause` checkout folders, `ROOTCAUSE_DIR`/`RC_ROOTCAUSE_DIR`: fallbacks until laptops rename local folders.
+- `rootcause-runtime @ git+…rootcause-org/rootcause-brain-skills@vX` pin: coherence check still accepts it on an unmigrated host.
+- `.rcignore`, `rc:branch`, `# rc: no-import-smoke`, `data-rc-guide`: markers committed in brains / customer apps.
+- `lib.rc_client` and its names: public `lib` API imported by brain scripts.
+- `kampadmin-rootcause-common`: customer mirror name (mirror names are immutable).
+- `rootcause-sites.workers.dev`, Cloudflare "Rootcause Sites", GitHub App `rootcause-app`: external infra names.
+- `RootCause` model in brain-fleet-report: the diagnostic "root cause", not the brand.

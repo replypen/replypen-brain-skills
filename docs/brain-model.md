@@ -1,36 +1,36 @@
 # Brain Model
 
-A brain checkout is the project-owned knowledge and tooling tree RootCause mounts read-only for a run.
-It is external-developer facing: no private RootCause source, host credentials, or infrastructure shell
+A brain checkout is the project-owned knowledge and tooling tree ReplyPen mounts read-only for a run.
+It is external-developer facing: no private ReplyPen source, host credentials, or infrastructure shell
 is required to work on it.
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
-| `.rootcause.toml` | Committed non-secret project binding, optional tenant metadata, and optional `[mirrors]` local checkout paths relative to the brain root. `rc` uses the binding and ignores unknown tables. |
-| `.env` | Gitignored grounding secrets for Local Brain Work live checks. Pull with `rc project env pull`. |
+| `.replypen.toml` | Committed non-secret project binding, optional tenant metadata, and optional `[mirrors]` local checkout paths relative to the brain root. `rp` uses the binding and ignores unknown tables. |
+| `.env` | Gitignored grounding secrets for Local Brain Work live checks. Pull with `rp project env pull`. |
 | `.env.action` | Gitignored sealed write credentials for local hosted-Python action tests. Only `brain_action.py` uses it. |
 | `AGENTS.md` | Local instructions for agents working in that brain repo. |
 | `skills/` / `playbooks/` / notes | Durable knowledge and project-specific scripts a run may read. |
-| `skills/<topic>/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `rootcause-runtime`. The offline lint rejects Python outside `skills/`, `actions/`, `actions-drafts/` (Action Studio drafts), and `tests/` (root `conftest.py` is allowed), ensuring import smoke's intentional `skills/**` scope covers every grounding script. Resolve source checkouts with `lib.fs.mirror_path()` / `mirror_scripts()`. |
+| `skills/<topic>/scripts/*.py` | Grounding scripts; import `from lib import db/fs/http/...` from `replypen-runtime`. The offline lint rejects Python outside `skills/`, `actions/`, `actions-drafts/` (Action Studio drafts), and `tests/` (root `conftest.py` is allowed), ensuring import smoke's intentional `skills/**` scope covers every grounding script. Resolve source checkouts with `lib.fs.mirror_path()` / `mirror_scripts()`. |
 | `tests/`, fixtures | Brain-local test fixtures; safe to commit when project-specific. |
 | `actions/<id>/` | Optional action catalog: manifest plus script/preflight. Proposal is in-loop; execution is gated later. |
 | `.replypenignore` | Canonical root run-visibility rules for committed maintainer-only content. |
 | `.rcignore` | Supported internal/legacy alias; its ignored set is unioned with `.replypenignore`. |
-| `.rootcause/` | Gitignored local artifacts: debug dumps, projection previews, run dumps. Never commit. |
+| `.replypen/` | Gitignored local artifacts: debug dumps, projection previews, run dumps. Never commit. |
 
 ## Audience And Ownership
 
 This kit is for project developers and their AI agents working from a brain checkout. It should teach
-enough production context to let them improve the brain and recognize RootCause support boundaries,
-without requiring private RootCause source, host shells, SSM, registry database access, or operator
+enough production context to let them improve the brain and recognize ReplyPen support boundaries,
+without requiring private ReplyPen source, host shells, SSM, registry database access, or operator
 scripts.
 
 The brain is the project's owned instruction layer. Put business context here: product vocabulary,
 support policies, escalation/playbook decisions, grounding scripts, tests, projection templates, and
-action manifests. Do not put private RootCause host mechanics, secrets, generic system-prompt rules, or
-brand voice/language/signature defaults here; rootcause persona settings own those at project, tenant,
+action manifests. Do not put private ReplyPen host mechanics, secrets, generic system-prompt rules, or
+brand voice/language/signature defaults here; ReplyPen persona settings own those at project, tenant,
 and mailbox scope.
 
 ## Brain Versus External Context
@@ -42,9 +42,9 @@ interchangeable.
 |---|---|---|---|
 | Project brain | `/brain` | Durable business context, terminology, routing, playbooks, scripts, fixtures, projection templates, action catalog. | Which brain files/scripts answer which classes of questions, and how to decide in project terms. |
 | Tenant brain/overlay | `/tenant` and/or compiled `/brain` | Tenant-specific labels, local policies, settings-driven substitutions, and domain exceptions. | Shared rules that are safe for all tenants, plus projection templates when the shared brain compiles tenant views. |
-| Source mirrors | `/mirrors/<name>` | Customer application code, schemas, config, runbooks, or other source-controlled repositories mirrored by RootCause. | Which repo/file areas explain behaviors; do not copy code facts that should be read from mirrors. |
+| Source mirrors | `/mirrors/<name>` | Customer application code, schemas, config, runbooks, or other source-controlled repositories mirrored by ReplyPen. | Which repo/file areas explain behaviors; do not copy code facts that should be read from mirrors. |
 | Knowledge base | `/kb` | External support docs or synced knowledge sources, when configured. | When to consult KB material and how it should rank against committed brain playbooks. |
-| Shared file-format skills | `/skills` | RootCause-owned, cross-project xlsx/csv/pdf reading and writing skills; their libraries (openpyxl, pandas, pypdf, pdfplumber, fpdf2) are baked into the workspace image. | Nothing — don't reinvent file parsing in a brain; point at `/skills` and describe only project-specific file layouts. |
+| Shared file-format skills | `/skills` | ReplyPen-owned, cross-project xlsx/csv/pdf reading and writing skills; their libraries (openpyxl, pandas, pypdf, pdfplumber, fpdf2) are baked into the workspace image. | Nothing — don't reinvent file parsing in a brain; point at `/skills` and describe only project-specific file layouts. |
 | Grounding databases/APIs | `lib.db`, `lib.http`, etc. | Live read-only facts: customers, orders, invoices, app state, remote API data. Runtime-owned HTTP attempts emit the [HTTP audit contract](http-audit.md). | How to query safely, which scripts encapsulate repeated lookups, and what findings mean for the customer. |
 | Tenant profile | `lib.tenant` over `/brain/tenant_profile.json` | The tenant's effective onboarding-profile values (stored value, else the `projection.yaml` default); `{}` on a flat project. | Which setting a script reads, and the fallback it degrades to. |
 | Run context | `lib.runctx` over `/brain/run_context.json` | What KIND of run this is: plane, ingress surface, simulation flag, principal-scoped or not ([details](run-context.md)). Descriptive, never authorization. | Which branch a script takes per ingress/audience — never the prompt's prose. |
@@ -75,10 +75,10 @@ Do not mix the local control plane with the production model's workspace:
 
 | Context | Available interface | Brain access | Instruction home |
 |---|---|---|---|
-| Local brain-development agent | Public `rc` CLI after OAuth, local engine scripts, local shell | Writable checkout | This kit's locally installed skills and docs |
+| Local brain-development agent | Public `rp` CLI after OAuth, local engine scripts, local shell | Writable checkout | This kit's locally installed skills and docs |
 | Production main LLM loop | `bash` plus the scenario terminal tool (`reply` for email); `/brain` scripts and injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`, `lib.api`, `lib.mcp`, `lib.tenant`, `lib.runctx`, `lib.image`, `lib.transcribe` as configured | `/brain` read-only | Committed project business context, routing, playbooks, and grounding scripts |
 
-There is no `rc` binary in the production loop. Never put `rc ...` command guidance in committed
+There is no `rp` binary in the production loop. Never put `rp ...` (or legacy `rc ...`) command guidance in committed
 project-brain content: it cannot execute there and competes with the actual grounding path. A brain
 may name required evidence, a `/brain` script, a mirror/KB path, or an injected `lib.*` capability;
 local CLI orchestration stays in this kit.
@@ -140,8 +140,8 @@ one only when it does the former:
 
 ## Production Prompt Boundary
 
-The production loop also sends standing instructions from RootCause itself, currently in
-`rootcause/internal/agent/prompt.go`. Brain docs and shipped skills should stay consistent with that
+The production loop also sends standing instructions from ReplyPen itself, currently in
+`replypen/internal/agent/prompt.go`. Brain docs and shipped skills should stay consistent with that
 mindset instead of restating it.
 
 For email runs, `emailPreamble` already tells the model that it is drafting a grounded customer reply
@@ -233,11 +233,11 @@ brain viewer, triage, and evals always see the full file.
 
 Use a root `.replypenignore` when committed maintainer-only content must be physically absent from a
 production run. `.rcignore` is a supported internal/legacy alias. Both use gitignore syntax; when both
-exist, RootCause unions their ignored sets. Negation only reverses an earlier rule in the same file—it
+exist, ReplyPen unions their ignored sets. Negation only reverses an earlier rule in the same file—it
 cannot reveal a path hidden by the other control.
 
 The boundary applies to every file type in project brains, tenant brains, and source mirrors. When a
-control exists, RootCause materializes a Git-history-free view with ignored paths and both control files
+control exists, ReplyPen materializes a Git-history-free view with ignored paths and both control files
 removed. The mount, auto-rendered trees, `include_in` discovery, grounding selection, baked references,
 evaluation workspace, and customer brain viewer all use that same view. Reads, copies, unsafe symlinks,
 and path-normalization failures abort visibility processing; they never fall back to the raw source.
@@ -246,7 +246,7 @@ Without either control file, the original source remains on the zero-copy path.
 Ignore the canonical source-of-truth path only. A safe relative symlink to ignored in-repo content is
 omitted automatically; do not duplicate the rule for compatibility aliases. Absolute, escaping, broken,
 or otherwise unsafe symlinks still abort visibility processing. This target-aware omission is a
-RootCause visibility extension; ordinary gitignore matching considers the symlink entry path itself.
+ReplyPen visibility extension; ordinary gitignore matching considers the symlink entry path itself.
 
 Use normal Git patterns: comments/blank lines, escaped leading `#` or `!`, rooted paths, directory
 patterns, `**`, and `!` negation. `exclude_in` frontmatter is not a visibility feature and is treated as
@@ -264,7 +264,7 @@ a visible `SKILL.md` whose linked files are hidden is worse than either extreme.
 top-level markdown that gives a high-level view of a subsystem even when it is about implementation;
 "how this feature is built" routinely answers "why did the customer see X". Hide a skill or doc only
 when it would actively mislead the run agent because it documents tooling the run does not have —
-local control-plane guidance (e.g. the `rc` CLI skill), operator-only workflows wired to hidden
+local control-plane guidance (e.g. the `rp` CLI skill), operator-only workflows wired to hidden
 scripts — or internal meta files (harness settings, slash-commands, agent memory, pentest state) that
 read as instructions rather than knowledge. When unsure, keep it visible.
 
@@ -308,8 +308,8 @@ brain root.
 
 **Exact allow/block selectors belong in settings, never in the brain.** A sender address/domain,
 subject/header match, or other deterministic blacklist/whitelist must be configured with
-`rc project triage rules` (`effect=skip|force_process`). Spam allow/block entries use
-`rc project senders`. Do not duplicate these selectors in `AGENTS.md`, `triage.md`, a skill, or a
+`rp project triage rules` (`effect=skip|force_process`). Spam allow/block entries use
+`rp project senders`. Do not duplicate these selectors in `AGENTS.md`, `triage.md`, a skill, or a
 brain test: settings run before brain-guided judgement and are the UI's source of truth.
 
 ### Feeding the grounding pre-step (`include_in: [grounding]`)
@@ -403,7 +403,7 @@ becomes relevant** — the situations, questions and symptoms in the customer's 
 summarise contents: "This file contains…" tells the router nothing it can match on. The offline lint
 FAILs a Markdown description that is missing, not a YAML string, or over 1024 chars, WARNs when its
 first sentence overruns the 150-char tree gloss, and WARNs on contents-style openers. Lint and host
-read it identically: both replay the shared corpus in `runtime/lib/contracts/frontmatter/` (rootcause
+read it identically: both replay the shared corpus in `runtime/lib/contracts/frontmatter/` (ReplyPen
 vendors it and checks it against the pinned kit tag).
 
 ## Production Mounts
@@ -430,7 +430,7 @@ artifacts stay on the laptop.
 - A project/shared brain holds shared grounding scripts, playbooks, projection templates, and the
   shared action catalog.
 - A tenant brain, when present, holds tenant-specific natural-language overlay. Tenant values may live
-  in RootCause settings rather than committed files.
+  in ReplyPen settings rather than committed files.
 - Tenant files reference project-brain material by its runtime path (`/brain/...`), and shared mounts
   (`/kb`, `/mirrors/<name>`) the same way — never by restating them; the overlay carries only tenant
   deltas.
@@ -438,7 +438,7 @@ artifacts stay on the laptop.
   tenant profile values. Any Python that needs a tenant setting reads it itself —
   [reading a tenant setting from Python](tenant-settings.md). Preview locally with
   `brain_projection.py` when present;
-  `rc dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
+  `rp dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
 
 ## Chat example prompts — `chat_inspiration.md`
 
@@ -471,8 +471,8 @@ surfaces: [chat, dashboard_chat]
 
 **Author notes + skill pointers** — hidden from the gallery; reach the agent only on the turn the user
 sent a picked example (even edited), as brain-authored instructions rendered inside that user turn.
-Provenance is the click: text pasted, typed or sent via `rc project chat send` carries no notes. To
-verify on a run: `rc run debug <run>` → `inspiration` in the JSONL header / "Gallery pick" in the index
+Provenance is the click: text pasted, typed or sent via `rp project chat send` carries no notes. To
+verify on a run: `rp run debug <run>` → `inspiration` in the JSONL header / "Gallery pick" in the index
 (it is not a system-prompt section, so the prompt-sections table never shows it; `chat_hidden_context`
 is a different mechanism).
 
@@ -505,7 +505,7 @@ any skill pointer.
 A project can be configured (operator-only settings key `brain_source_project_id`) to run on another
 project's brain repo, read-only, while keeping its own `.env`/DSNs/manifests/mirrors/KB/chat config
 and runs — a **read-only brain alias**. The aliased project must never write that brain or feed
-learning; the source project is the single learning source. `rc dev brain status -o json` reports this
+learning; the source project is the single learning source. `rp dev brain status -o json` reports this
 as `.status.brain_source`: `{"project_id", "project", "read_only", "ref", "sha"}`, present only while
 the alias is active — absent on a project that owns its own brain, or on a server that predates the
 field. Server-side writes (journal, consolidation, decay, prompted/verbatim edits, harvest, website
@@ -521,19 +521,19 @@ alias cache) and `internal/brain/status.go` (`SourceStatus`).
 - Flat projects often read `main` directly.
 - Tenant-enabled shared project brains usually read a channel ref such as `stable` or `edge`, recorded
   in run trace as `brain_resolved`.
-- `rc ask --brain-ref dev/<branch>` tests a pushed dev ref on production infrastructure without moving
+- `rp ask --brain-ref dev/<branch>` tests a pushed dev ref on production infrastructure without moving
   `main` or promoting a channel.
-- `rc dev brain publish --channel stable|edge --sha <exact-full-40-character-sha>` is the one-shot
-  path (sync + promote + verify); `rc dev brain sync` / `promote` are the same steps taken separately.
-  Only a project-level maintainer may move a shared project channel. `rc dev brain preflight` dry-runs
+- `rp dev brain publish --channel stable|edge --sha <exact-full-40-character-sha>` is the one-shot
+  path (sync + promote + verify); `rp dev brain sync` / `promote` are the same steps taken separately.
+  Only a project-level maintainer may move a shared project channel. `rp dev brain preflight` dry-runs
   the promotion per tenant first. See [`brain-publish`](../skills/brain-publish/SKILL.md).
 - Tenant brains typically use their `main` HEAD; shared project brain promotion is separate.
 - A `main` status of `current` does not prove a channel is current. Verify the intended channel's
-  resolved SHA in `rc dev brain status --scope project -o json` (without `--scope project` a tenant
+  resolved SHA in `rp dev brain status --scope project -o json` (without `--scope project` a tenant
   context answers about the tenant overlay brain) or in a normal run's `brain_resolved` trace.
 
 ## Local Engine Boundary
 
 Local Brain Work (`local-brain-work`) reproduces grounding scripts, test tiers, action preflight/local hosted-Python execution,
-and projection previews. It does not run a private copy of the production LLM loop. Use `rc ask` and
-`rc run debug <id>` for full production-loop evidence.
+and projection previews. It does not run a private copy of the production LLM loop. Use `rp ask` and
+`rp run debug <id>` for full production-loop evidence.

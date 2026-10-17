@@ -1,4 +1,4 @@
-# Action/run triage after `rc ask`
+# Action/run triage after `rp ask`
 
 Use when a prod run looks like it booked, moved, deleted, or otherwise changed customer state. Goal:
 decide whether the run only drafted text, *proposed* an action, or actually *executed* one.
@@ -14,8 +14,8 @@ nothing happened: an `action` tool event plus an `action_run` whose `approved_by
 ## Read the evidence
 
 ```bash
-rc run events <run_id>        # look around preflight / policy / action / reply
-rc run brain-diff <run_id>
+rp run events <run_id>        # look around preflight / policy / action / reply
+rp run brain-diff <run_id>
 ```
 
 | What you see | What it means | Report it as |
@@ -26,7 +26,7 @@ rc run brain-diff <run_id>
 | `action` event + `action_run` `approved_by = autonomy:auto` / `policy:<digest>`, `succeeded` | Auto-executed mid-loop; real mutation, no confirm. | "Action auto-executed in-run; result says …" |
 | Action `succeeded` / result note after confirm | Post-loop execution. | "Action executed; result says …" |
 | Action `failed` / error result | Attempted and failed (post-confirm or mid-loop). | "Action execution failed; hold/adapt draft." |
-| `rc dev console action run` output | Dev-trigger executed for real, usually runless. | "Dev-trigger executed; not just a run proposal." |
+| `rp dev console action run` output | Dev-trigger executed for real, usually runless. | "Dev-trigger executed; not just a run proposal." |
 
 ## Optimistic drafts
 
@@ -44,7 +44,7 @@ adapt or escalate, never claim success.
 | `policy.py` (`autonomy: policy`) | host-side one-shot per invocation, fail-closed to `deny` | grounding, read-only | `brain_action.py <id> --params … --policy-only` |
 | `script.py` / `script.rb` | only after confirm or dev-trigger | action plane, write credentials | `brain_action.py` dry-run (Python only) |
 
-Ruby/Embassy bodies have no faithful local dry run — use `rc dev console action preflight` / `run`
+Ruby/Embassy bodies have no faithful local dry run — use `rp dev console action preflight` / `run`
 against a safe target.
 
 Usual root causes: **not proposed** → brain content (action description, playbook altitude, draft logic

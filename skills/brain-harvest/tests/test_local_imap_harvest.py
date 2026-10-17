@@ -134,7 +134,7 @@ class WriteOutputEndToEndTests(unittest.TestCase):
 
     def test_blob_subdir_is_the_only_prepare_corpus_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / ".rootcause" / "imap-export"
+            out = Path(tmp) / ".replypen" / "imap-export"
             lih.write_output(out, self.ENV, "Sent", self._sent_messages(),
                              cleaned=False, truncated=False)
             # INDEX.md and threads/ stay at the top level; corpus_files must pick up only the blob.
@@ -145,10 +145,10 @@ class WriteOutputEndToEndTests(unittest.TestCase):
     def test_written_export_prepares_and_verifies(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            out = root / ".rootcause" / "imap-export"
+            out = root / ".replypen" / "imap-export"
             lih.write_output(out, self.ENV, "Sent", self._sent_messages(),
                              cleaned=False, truncated=False)
-            scratch = root / ".rootcause" / "scratch"
+            scratch = root / ".replypen" / "scratch"
             cfg = dict(ph.DEFAULTS, holdout_count=0)  # sent-only corpus: no external-question holdouts
             summary = ph.prepare_scratch(out / "corpus", scratch, cfg, export_id="exp-test",
                                          preflight=ph.synthetic_preflight("exp-test"))

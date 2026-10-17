@@ -5,9 +5,9 @@ description: "Investigate daily fleet evidence and publish technical/owner revie
 
 Collect → drill → judge → validate → publish in the brain. Read
 `_internal/fleet-report/OVERLAY.md`, [overlay.md](overlay.md), [schema](report_schema.md) and
-[evidence semantics](evidence.md). Requires `rc` login; operator DB uses
-`RC_HOST_CHECKOUT` (default `~/code/rootcause-org/rootcause`); DB scripts accept `--dsn` for tests.
-Investigation never runs actions, sends or `rc ask`. Python helper proposals use isolated
+[evidence semantics](evidence.md). Requires `rp` login; operator DB uses
+`RC_HOST_CHECKOUT` (default `~/code/replypen/replypen`); DB scripts accept `--dsn` for tests.
+Investigation never runs actions, sends or `rp ask`. Python helper proposals use isolated
 [helper prototypes](helper-prototype.md); other implementation waits for a decision.
 
 ```bash

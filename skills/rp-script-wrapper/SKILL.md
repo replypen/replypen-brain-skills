@@ -1,18 +1,18 @@
 ---
-name: rc-script-wrapper
-description: "Drive the public `rc` CLI from a deterministic local Python or shell script — repeatable console queries, complete exports, typed failures, remote artifact fetches. Use when a console read must be reproducible or feed a program; not for code that runs inside a production brain container (no `rc` there — use the injected `lib.*` helpers)."
+name: rp-script-wrapper
+description: "Drive the public `rp` CLI from a deterministic local Python or shell script — repeatable console queries, complete exports, typed failures, remote artifact fetches. Use when a console read must be reproducible or feed a program; not for code that runs inside a production brain container (no `rp` there — use the injected `lib.*` helpers)."
 ---
 
-# rc-script-wrapper — deterministic local wrappers
+# rp-script-wrapper — deterministic local wrappers
 
-Developer machine / brain checkout only. Production brain scripts have no `rc`; they use the injected
+Developer machine / brain checkout only. Production brain scripts have no `rp`; they use the injected
 `lib.db`, `lib.fs`, and friends.
 
 ## Prefer the Python client
 
 `lib.rc_client` ([`runtime/lib/rc_client.py`](../../runtime/lib/rc_client.py)) preserves the CLI's
 JSON contract — column order, duplicate column names, lossless typing — and maps CLI exit codes to
-typed exceptions. Reach for it over parsing `rc` output. Never parse table output, spill manifests, or
+typed exceptions. Reach for it over parsing `rp` output. Never parse table output, spill manifests, or
 shell-quoted JSON.
 
 ```python
@@ -24,12 +24,12 @@ result = rc_client.query(
 )
 rc_client.query_to_csv("select id, state from jobs order by id", "./jobs.csv", all=True)  # streams, no buffering
 res = rc_client.bash("python /brain/skills/reconcile/scripts/check.py", timeout=120)
-rc_client.file_get("/tmp/rootcause-out/jobs-abc123.csv", "./jobs.csv")
+rc_client.file_get("/tmp/replypen-out/jobs-abc123.csv", "./jobs.csv")
 ```
 
 **Install a published, pinned tag — never float `main`, never copy the wrapper into your script.**
 The `uv run --with` / PEP 723 form with the current tag is in
-[README.md](../../README.md) and [docs/migration-rootcause.md](../../docs/migration-rootcause.md)
+[README.md](../../README.md) and [docs/migration-host.md](../../docs/migration-host.md)
 (that runbook also covers moving an existing wrapper). Run `uv lock --script script.py` once and
 commit the `script.py.lock`: it freezes the tag to a commit sha plus the whole transitive closure, so
 later runs resolve from cache instead of re-fetching the tag over the network. Re-run it after a bump.
@@ -47,8 +47,8 @@ exiting non-zero or timing out is **not** an exception: `bash()` still returns a
 
 The machine contract — `-o json` envelope, stable exit codes (0/1/2/3/4/5), `--all` snapshot streaming,
 `--out`/`--out -`/`--out auto`, `@key` + `--param` binding, SQL from an argument / `-` / `@file` — is
-owned by the [rootcause-cli README](https://github.com/rootcause-org/rootcause-cli#readme) and
-[docs/rc-cli.md](../../docs/rc-cli.md). Two rules that scripts get wrong:
+owned by the [replypen-cli README](https://github.com/replypen/replypen-cli#readme) and
+[docs/rp-cli.md](../../docs/rp-cli.md). Two rules that scripts get wrong:
 
 - **Branch on the exit code; never consume a partial response as success.** A truncated inline result
   fails closed (exit 3) precisely so a script cannot silently under-report.
@@ -57,10 +57,10 @@ owned by the [rootcause-cli README](https://github.com/rootcause-org/rootcause-c
 
 ## Remote artifacts
 
-`emit_rows` previews in a production run name a fetchable `/tmp/rootcause-out/…` path:
+`emit_rows` previews in a production run name a fetchable `/tmp/replypen-out/…` path:
 
 ```bash
-rc dev console file get /tmp/rootcause-out/report-abc123.csv --out ./report.csv
+rp dev console file get /tmp/replypen-out/report-abc123.csv --out ./report.csv
 ```
 
 Preview for shape/orientation; the file for complete machine processing. The console only exposes its

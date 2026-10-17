@@ -27,7 +27,7 @@ help_md: |
   preferred path; Billit issues bearer access/refresh tokens after an initial user login.
 
   Billit has two different PartyID concepts in this flow:
-  - The OAuth client is a central ReplyPen/rootcause integrator app. Its registration PartyID belongs to
+  - The OAuth client is a central ReplyPen integrator app. Its registration PartyID belongs to
     our Billit developer/integrator account, not to each project/customer.
   - API reads still require a `PartyID` header to select the connected customer's company context. Pass
     that customer/company PartyID on each command, or document the project's fixed PartyID in
@@ -65,7 +65,7 @@ help_md: |
   require PartyID, or when a temporary script passes headers through `lib.api`.
 
   OAuth setup notes:
-  - Billit OAuth clients are requested once for the ReplyPen/rootcause integrator app with our developer
+  - Billit OAuth clients are requested once for the ReplyPen integrator app with our developer
     PartyID, application name, redirect URI, and environment. This is the central "one client" that
     customers use for one-click connection.
   - Sandbox and production clients are separate.

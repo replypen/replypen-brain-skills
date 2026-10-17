@@ -1,4 +1,4 @@
-# Architecture audit: rootcause-brain-skills (2026-10-16)
+# Architecture audit: replypen-brain-skills (2026-10-16)
 
 Intent: `AGENTS.md`, `RELEASING.md`, `docs/brain-model.md`, each `skills/*/SKILL.md`. Scope: churn since
 2026-10-02 (kb-mirror, chat-debug, website-kickstart, cockpit, devloop, brain_lint, gdocs/gsheets,
@@ -21,7 +21,7 @@ rounds, run independently, then compared). Code review: Sol High.
 | 4 | `--no-push` no longer pushes in the initial reconcile | `refresh-brains.sh` called brain_git_sync before checking `NO_PUSH`; the plumbing test proved a local-only commit reached origin | release rehearsals are safe (found by Astra) |
 | 5 | `brain_paths._siblings` skips `$TMPDIR` | globbed 13k temp entries for every git_land worktree and test repo | local-brain-work tests **145s → 7s**, brain-publish 102s → 30s, ~8s off each git_land hook run |
 | 6 | `gsheets.find_rows`: a missing multi-letter header ("SKU") raises `LookupError` | it was parsed as column letter 13150, so the search silently returned `matches: []` | stops "no such row" answers to customers |
-| 7 | devloop: `rc` timeout becomes `DevloopError`; resuming refuses when question/tenant/refs/scenario/simulation changed | a timeout crashed the whole batch; changed inputs got credited to an old run (Astra) | validation evidence stays trustworthy |
+| 7 | devloop: `rp` timeout becomes `DevloopError`; resuming refuses when question/tenant/refs/scenario/simulation changed | a timeout crashed the whole batch; changed inputs got credited to an old run (Astra) | validation evidence stays trustworthy |
 | 8 | Stale/flaky tests | brain_lint entrypoint (the script now re-execs via uv); plumbing test checked for a message removed in `b7ca666`; brain_publish race between the fake rc's advance and the parallel `status` call | green suite is real |
 | 9 | Retry-backoff sleeps patched out in the newrelic/mollie tests | 14s of real sleep | |
 | 10 | KampAdmin-private repo paths in `brain-chat-debug`/`brain-helper-devloop` SKILL.md replaced with placeholders | kit audience is external developers | |
@@ -32,7 +32,7 @@ the ratios hold.
 
 ## Needs PJ's green light (ranked)
 
-1. **Move `website-kickstart` out of the kit** into rootcause `.agents/skills/`.
+1. **Move `website-kickstart` out of the kit** into replypen `.agents/skills/`.
    - Why: it is operator-only but installs into every external brain (`install.sh:319`). It exposes the
      Cloudflare account id (`kickstart_site.py:42`), private host checkout and env paths (`:174`), and
      a DentAI repo path (`SKILL.md:48`).
@@ -55,7 +55,7 @@ the ratios hold.
    - Must preserve: regional URLs, transport retries, audit events, GraphQL error handling.
    - Follow-up: a guardrail banning `time.sleep` under `runtime/lib/connectors/` after the port. All 7
      current hits are true violations.
-4. **Shared local `rc` transport** in `skills/_shared/rc_cli.py`.
+4. **Shared local `rp` transport** in `skills/_shared/rc_cli.py`.
    - Problem: at least 9 copies with divergent timeout and JSON handling (`devloop.py:108`,
      `chat_case.py:276`, `mirror_try.py:76`, `scope_common.py:80`, …). Trace-step parsing is also
      duplicated (`chat_case.py:198` vs `devloop.py:228`).
@@ -66,7 +66,7 @@ the ratios hold.
 <details><summary>Deferred / deliberately not done</summary>
 
 - **brain_lint has three "which markdown files" enumerations** (`brain_lint.py:398/435/816`). The
-  surfaces check reads untracked `.rootcause/` scratch (1,262 files read vs 132 tracked on DentAI), so
+  surfaces check reads untracked `.replypen/` scratch (1,262 files read vs 132 tracked on DentAI), so
   it risks WARN false positives. Kept narrow: limiting it to tracked files would miss newly authored
   docs (Astra).
 - **doc-spill stays NOTICE + regression-only** (`brain_hygiene.py:39,100-143`). KA-common saw 7 docs grow

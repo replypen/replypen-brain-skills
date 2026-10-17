@@ -12,14 +12,14 @@ reused verbatim — never rehosted.
 
 Input is a JSON array / NDJSON / object-with-`items` of message rows, each carrying the raw
 `body_html` (aliases: `body`, `html`). Output is ONE JSON proposal on stdout — a *proposal*, never an
-applied setting: an operator reads `signature_text`, then applies with `rc … settings set`.
+applied setting: an operator reads `signature_text`, then applies with `rp … settings set`.
 
     voice_format_probe.py --print-sql --mailbox info@example.com   # the row export query
     voice_format_probe.py --messages rows.json --out proposal.json
     voice_format_probe.py --messages - --no-network                # skip image HEAD checks
 
-There is no public `rc` surface for a message's raw HTML today (the inbox API returns cleaned text
-only), so the rows come from a RootCause-side export of the query `--print-sql` emits; external brain
+There is no public `rp` surface for a message's raw HTML today (the inbox API returns cleaned text
+only), so the rows come from a ReplyPen-side export of the query `--print-sql` emits; external brain
 developers request it through `brain-publish`. Rows are raw customer mail: keep them under the
 gitignored scratch root and delete them with the rest of scratch.
 """
@@ -217,7 +217,7 @@ def run_checks(proposal: dict[str, Any], *, network: bool) -> None:
 
 def head(url: str) -> dict[str, Any]:
     """HEAD one signature image. A logo that 404s would render as a broken image in every draft."""
-    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "rootcause-voice-format-probe"})
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "replypen-voice-format-probe"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             code = resp.status

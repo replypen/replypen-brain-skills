@@ -66,8 +66,8 @@ def test_local_connect_failure_points_to_rc_primitives(monkeypatch):
     msg = str(excinfo.value)
     assert "connect_timeout=15s" in msg
     assert "local brain_run.py live check" in msg
-    assert "rc dev console database" in msg
-    assert "rc dev console bash run" in msg
+    assert "rp dev console database" in msg
+    assert "rp dev console bash run" in msg
 
 
 def test_host_timeout_is_both_default_and_maximum(monkeypatch):

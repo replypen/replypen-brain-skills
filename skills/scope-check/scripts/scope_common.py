@@ -2,24 +2,30 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Shared plumbing for `scope-check`: audiences and the `rc` invocation.
+"""Shared plumbing for `scope-check`: audiences and the `rp` invocation.
 
 Nothing here knows about a specific project. Both scripts talk to production only through the public
-`rc` CLI — they never see a DSN, never connect to a database, and never write.
+`rp` CLI — they never see a DSN, never connect to a database, and never write.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 DEFAULT_RC_TIMEOUT_S = 180
 
 
 class RcError(RuntimeError):
-    """`rc` exited non-zero, or its stdout was not the JSON we asked for."""
+    """`rp` exited non-zero, or its stdout was not the JSON we asked for."""
 
     def __init__(self, message: str, *, stderr: str = "", returncode: int = 1):
         super().__init__(message)
@@ -78,22 +84,22 @@ def audiences_from_specs(specs) -> list[Audience]:
 
 
 def run_rc(args: list[str], timeout: int = DEFAULT_RC_TIMEOUT_S) -> subprocess.CompletedProcess:
-    """Run `rc <args>` and return the completed process (never raises on a non-zero exit)."""
+    """Run `rp <args>` and return the completed process (never raises on a non-zero exit)."""
     try:
         return subprocess.run(
-            ["rc", *args], capture_output=True, text=True, timeout=timeout, check=False
+            [_cli(), *args], capture_output=True, text=True, timeout=timeout, check=False
         )
     except FileNotFoundError as exc:  # pragma: no cover - environment problem, not logic
-        raise RcError("`rc` is not on PATH — run this from a brain checkout with rc installed") from exc
+        raise RcError("`rp` is not on PATH — run this from a brain checkout with rp installed") from exc
     except subprocess.TimeoutExpired as exc:
-        raise RcError(f"rc {' '.join(args)} timed out after {timeout}s") from exc
+        raise RcError(f"rp {' '.join(args)} timed out after {timeout}s") from exc
 
 
 _JSON_START = re.compile(r"[{\[]")
 
 
 def parse_rc_json(text: str):
-    """The JSON payload inside `rc`'s stdout, or None. Tolerates a leading human line."""
+    """The JSON payload inside `rp`'s stdout, or None. Tolerates a leading human line."""
     match = _JSON_START.search(text or "")
     if not match:
         return None
@@ -105,7 +111,7 @@ def parse_rc_json(text: str):
 
 def _with_json_flags(args: list[str]) -> list[str]:
     """Insert `-o json --raw-output` BEFORE any `--` separator — appended after it they would be
-    handed to the remote bash command instead of to `rc`."""
+    handed to the remote bash command instead of to `rp`."""
     flags = ["-o", "json", "--raw-output"]
     if "--" in args:
         cut = args.index("--")
@@ -114,34 +120,34 @@ def _with_json_flags(args: list[str]) -> list[str]:
 
 
 def rc_json_raw(args: list[str], timeout: int = DEFAULT_RC_TIMEOUT_S):
-    """`rc <args> -o json --raw-output` → (payload|None, completed process), non-zero exits included.
+    """`rp <args> -o json --raw-output` → (payload|None, completed process), non-zero exits included.
 
-    `rc dev console bash run` mirrors the REMOTE exit code, so a legitimately failing command makes
-    `rc` exit non-zero while still printing the full JSON result. That is the case scope_smoke cares
+    `rp dev console bash run` mirrors the REMOTE exit code, so a legitimately failing command makes
+    `rp` exit non-zero while still printing the full JSON result. That is the case scope_smoke cares
     about most, so the payload must survive a non-zero exit."""
     done = run_rc(_with_json_flags(args), timeout=timeout)
     return parse_rc_json(done.stdout), done
 
 
 def rc_json(args: list[str], timeout: int = DEFAULT_RC_TIMEOUT_S):
-    """Run `rc <args> -o json --raw-output` and parse the payload. Raises `RcError` on any failure.
+    """Run `rp <args> -o json --raw-output` and parse the payload. Raises `RcError` on any failure.
 
     `--raw-output` matters: without it a large payload is spilled to an artifact file and stdout
     carries only a preview, which parses as truncated garbage."""
     payload, done = rc_json_raw(args, timeout=timeout)
     if done.returncode != 0:
         raise RcError(
-            f"rc {' '.join(args)} exited {done.returncode}: {(done.stderr or done.stdout).strip()}",
+            f"rp {' '.join(args)} exited {done.returncode}: {(done.stderr or done.stdout).strip()}",
             stderr=done.stderr,
             returncode=done.returncode,
         )
     if payload is None:
-        raise RcError(f"rc {' '.join(args)} produced no usable JSON", stderr=done.stderr)
+        raise RcError(f"rp {' '.join(args)} produced no usable JSON", stderr=done.stderr)
     return payload
 
 
 def unsupported_flag(err: RcError, flag: str) -> bool:
-    """Is this failure an older `rc` that simply has no `flag` yet? Then the caller degrades."""
+    """Is this failure an older `rp` that simply has no `flag` yet? Then the caller degrades."""
     text = f"{err} {err.stderr}".lower()
     return flag.lower() in text and ("unknown flag" in text or "unknown shorthand" in text)
 

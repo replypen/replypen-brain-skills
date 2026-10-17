@@ -27,7 +27,7 @@ not delete the recovery file or `refs/brain-git-sync/` refs by hand.
 
 Do not push manually. The script refetches, merges the newly observed `origin/main`, and retries up to
 `--max-push-attempts`. If the bound is exhausted, rerun the same workflow; persistent churn or an
-unresolvable managed-cache divergence is a concise RootCause support request, not a force-push.
+unresolvable managed-cache divergence is a concise ReplyPen support request, not a force-push.
 
 ## Evidence
 

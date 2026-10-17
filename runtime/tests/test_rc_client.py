@@ -19,7 +19,7 @@ def _runner(*, payload=None, returncode=0, stderr="", seen=None):
 
 def test_query_builds_machine_safe_command_and_preserves_array_rows(monkeypatch):
     seen = []
-    client = rc_client.Client(runner=_runner(payload={"columns": ["id", "id"], "rows": [[1, 2]], "truncated": False}, seen=seen))
+    client = rc_client.Client(executable="rc", runner=_runner(payload={"columns": ["id", "id"], "rows": [[1, 2]], "truncated": False}, seen=seen))
 
     result = client.query("select * from things where name = @name", {"name": "A,B"}, all=True, database="billing")
 
@@ -63,7 +63,7 @@ def test_exit_codes_map_to_typed_errors():
 
 def test_query_to_csv_delegates_streaming_rendering_to_rc(tmp_path):
     seen = []
-    client = rc_client.Client(runner=_runner(payload={"path": "ignored"}, seen=seen))
+    client = rc_client.Client(executable="rc", runner=_runner(payload={"path": "ignored"}, seen=seen))
     path = tmp_path / "rows.csv"
 
     result = client.query_to_csv("select id from things where state = @state", path, {"state": "queued"}, all=True)
@@ -101,5 +101,12 @@ def test_file_get_returns_destination_after_cli_confirmation(tmp_path):
     destination = tmp_path / "result.csv"
     client = rc_client.Client(runner=_runner(payload={"path": str(destination)}, seen=seen))
 
-    assert client.file_get("/tmp/rootcause-out/rows.csv", destination) == destination
-    assert seen[0][-5:] == ["file", "get", "/tmp/rootcause-out/rows.csv", "--out", str(destination)]
+    assert client.file_get("/tmp/replypen-out/rows.csv", destination) == destination
+    assert seen[0][-5:] == ["file", "get", "/tmp/replypen-out/rows.csv", "--out", str(destination)]
+
+
+def test_default_executable_prefers_rp_and_falls_back_to_rc(monkeypatch):
+    monkeypatch.setattr(rc_client.shutil, "which", lambda name: "/bin/rp" if name == "rp" else None)
+    assert rc_client.Client().executable == "rp"
+    monkeypatch.setattr(rc_client.shutil, "which", lambda name: None)
+    assert rc_client.Client().executable == "rc"

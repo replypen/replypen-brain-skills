@@ -19,19 +19,19 @@ oversized script. Keep it lean; no new frameworks.
    as the step to run after every action-script edit, and into `brain-publish`'s verify step.
 2. **Visible in `brain_test.py`**: replace the pytest-warning spray with one compact hygiene block
    printed at the end of the offline tier (same formatter as 1). Keep FAIL semantics.
-3. **Host-side gate**: in the sibling `rootcause` repo, run the same lint (the runtime is installed
+3. **Host-side gate**: in the sibling `replypen` repo, run the same lint (the runtime is installed
    in the workspace image; call `lib.brain_lint.lint_brain`) during brain publish/promote preflight
-   (`rc dev brain promote`/publish path — find it in `rootcause/internal/brain/`). FAIL blocks,
-   WARN is reported. Tests. Coordinate: `rootcause` pins the kit tag — bump only if you need new lib
+   (`rp dev brain promote`/publish path — find it in `replypen/internal/brain/`). FAIL blocks,
+   WARN is reported. Tests. Coordinate: `replypen` pins the kit tag — bump only if you need new lib
    surface; prefer using what v0.3.17 already ships.
 4. **Optional pre-push hook** installed by the kit's `install.sh` into brain checkouts (opt-in flag,
    documented) that runs (1). Skip if it adds friction; report the decision.
 
 ## Constraints
-- Two other Sol threads touch `rootcause-brain-skills` now (patch release; lint FP/FN eval; generic
+- Two other Sol threads touch `replypen-brain-skills` now (patch release; lint FP/FN eval; generic
   helpers). Rebase on `origin/main` before releasing; expect version bumps.
 - `runtime/lib/**` edits owe a kit release (`./refresh-brains.sh --release patch`, RELEASING.md,
   `./check-release-coherence.sh` first). Docs/skill-only changes still release (brains fetch tags).
-- Verify on `~/code/rootcause-org/rootcause-brain-dentai` via a throwaway `/tmp` worktree on
+- Verify on `~/code/replypen/replypen-brain-dentai` via a throwaway `/tmp` worktree on
   `origin/main` (never checkout/reset shared checkouts). Measure wall-clock of (1).
-- Report tersely: what landed where (kit sha/tag, rootcause sha), measured latency, anything skipped.
+- Report tersely: what landed where (kit sha/tag, replypen sha), measured latency, anything skipped.

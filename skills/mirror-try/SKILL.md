@@ -3,7 +3,7 @@ name: mirror-try
 description: Try a read-only Python helper change from a mirror checkout against real scoped production data, comparing base and proposed bytes without changing the live mirror ref.
 ---
 
-Run from a brain checkout with `rc` login. Inspect the helper and its imports for read-only behavior
+Run from a brain checkout with `rp` login. Inspect the helper and its imports for read-only behavior
 first: no actions, sends, customer writes or write credentials.
 
 ```bash
@@ -19,7 +19,7 @@ add new files to the index first. On a shared checkout add `--only PATH` (repeat
 paths use working-tree bytes, their imports come from HEAD, other agents' edits stay out. `--json` emits reduced stdout/stderr, exit codes, exact revisions,
 staged paths and console run IDs. A working-tree result uses a content hash, not a commit claim.
 For principal scope, `--as LABEL` resolves an audience from `_internal/scopecheck-<project>.toml` (this brain
-or its `.rootcause.toml` `[mirrors]`; a miss lists known labels), or supply `--principal-kind KIND --principal-id ID`.
+or its `.replypen.toml` `[mirrors]`; a miss lists known labels), or supply `--principal-kind KIND --principal-id ID`.
 Omitting `--tenant` explicitly selects project scope.
 
 Changed non-test grounding files (excluding hidden/action paths), the command's Python script and recursively resolved static sibling/root

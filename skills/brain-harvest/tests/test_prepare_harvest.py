@@ -219,7 +219,7 @@ class ParseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             corpus = write_corpus(Path(tmp), V2_CORPUS.replace("harvest_format: v2",
                                                                "harvest_format: v4"))
-            with self.assertRaisesRegex(ph.HarvestError, r"v4.*rc project corpus download") as ctx:
+            with self.assertRaisesRegex(ph.HarvestError, r"v4.*rp project corpus download") as ctx:
                 ph.load_threads([corpus])
             self.assertIn("48h", str(ctx.exception))
 
@@ -268,7 +268,7 @@ class ParseTests(unittest.TestCase):
     def test_missing_front_matter_fails_with_recovery_hint(self):
         with tempfile.TemporaryDirectory() as tmp:
             corpus = write_corpus(Path(tmp), "## Hello — #1\n\n**external (2024-01-01):**\nhi\n")
-            with self.assertRaisesRegex(ph.HarvestError, "front-matter.*rc project corpus download"):
+            with self.assertRaisesRegex(ph.HarvestError, "front-matter.*rp project corpus download"):
                 ph.load_threads([corpus])
 
     def test_empty_corpus_fails(self):
@@ -1270,7 +1270,7 @@ class SafetyAndCLITests(unittest.TestCase):
         self.assertTrue(ph.capability_allows(["admin:*"], "triage:write"))
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
-            scratch = root / ".rootcause" / "harvest" / "x"
+            scratch = root / ".replypen" / "harvest" / "x"
             output = root / "notes" / "record.json"
             def git(cmd, **kwargs):
                 if cmd[1] == "rev-parse":
@@ -1329,11 +1329,11 @@ class SafetyAndCLITests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout="/repo\n")
             return SimpleNamespace(returncode=1)  # check-ignore: NOT ignored
         with self.assertRaisesRegex(ph.HarvestError, "refusing stageable scratch root"):
-            ph.check_safe_output(Path("/repo/.rootcause/harvest/x"), git_runner=fake_git)
+            ph.check_safe_output(Path("/repo/.replypen/harvest/x"), git_runner=fake_git)
 
         def fake_git_ok(cmd, **kwargs):
             return SimpleNamespace(returncode=0, stdout="/repo\n")
-        ph.check_safe_output(Path("/repo/.rootcause/harvest/x"), git_runner=fake_git_ok)
+        ph.check_safe_output(Path("/repo/.replypen/harvest/x"), git_runner=fake_git_ok)
         with self.assertRaisesRegex(ph.HarvestError, "inside the current git checkout"):
             ph.check_safe_output(Path("/elsewhere/scratch"), git_runner=fake_git_ok)
         def fake_git_norepo(cmd, **kwargs):
@@ -1359,7 +1359,7 @@ class SafetyAndCLITests(unittest.TestCase):
                 code = ph.cmd_preflight(args, rc_runner=lambda argv: None, git_runner=git)
             output = stdout.getvalue()
             self.assertEqual(code, 0, "missing rc degrades to WARN, not failure")
-            self.assertEqual(output.count("rc not available"), 11)
+            self.assertEqual(output.count("rp not available"), 11)
             self.assertIn("formats ['v2']", output)
             artifact = json.loads((scratch / "preflight.json").read_text(encoding="utf-8"))
             self.assertEqual(artifact["corpus"], {"files": 1, "formats": ["v2"]})
@@ -1467,7 +1467,7 @@ class SafetyAndCLITests(unittest.TestCase):
                                    provider="google", export_id="exp-safe")
             with contextlib.redirect_stdout(io.StringIO()) as stdout:
                 self.assertEqual(ph.cmd_preflight(args, rc_runner=rc, git_runner=git), 1)
-            self.assertIn("[FAIL] rc triage policy", stdout.getvalue())
+            self.assertIn("[FAIL] rp triage policy", stdout.getvalue())
             artifact = json.loads((scratch / "preflight.json").read_text())
             self.assertEqual(artifact["result"], "fail")
             self.assertEqual(artifact["scope_matrix"]["triage_policy"]["available_scopes"], [])

@@ -107,7 +107,7 @@ def main():
     parser.add_argument('--write', action='store_true')
     parser.add_argument('--dsn')
     args = parser.parse_args()
-    project = args.project or args.brain.resolve().name.removeprefix('rootcause-brain-')
+    project = args.project or args.brain.resolve().name.removeprefix('replypen-brain-').removeprefix('rootcause-brain-')
     rows = parse_ledger(args.brain / '_internal/fleet-report/ledger.md', mapping=json.loads(args.mapping.read_text()) if args.mapping else None)
     with connect(args.dsn, write=args.write) as conn:
         result = import_rows(conn, project, rows, write=args.write)

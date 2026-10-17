@@ -127,7 +127,7 @@ def test_roster_resolution(tmp_path):
     brain, mirror = tmp_path / "brain", tmp_path / "mirror"
     (mirror / "_internal").mkdir(parents=True)
     brain.mkdir()
-    (brain / ".rootcause.toml").write_text('project = "acme-support"\n[mirrors]\n"acme-common" = "../mirror"\n')
+    (brain / ".replypen.toml").write_text('project = "acme-support"\n[mirrors]\n"acme-common" = "../mirror"\n')
     (mirror / "_internal" / "scopecheck-acme-support.toml").write_text(
         '[[audience]]\nlabel = "regular-admin"\nkind = "acme_admin"\nid = "a-1"\n')
     assert resolve_principal("regular-admin", brain, "acme-support") == ("acme_admin", "a-1")

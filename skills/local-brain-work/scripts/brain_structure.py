@@ -18,9 +18,9 @@ content is judged. Checks (each independently reported, skippable with `--skip <
   * hygiene      — `brain_hygiene.py`: conflict markers, unresolved `{{ }}`, `/Users/` paths, dead
                    links, em dashes in customer copy, unrenderable mermaid, a `chat_inspiration.md`
                    the host would silently mangle (changed-file scope).
-  * raw-tracked  — no raw-harvest path is tracked now (`.rootcause/` fragments or split-file shapes).
+  * raw-tracked  — no raw-harvest path is tracked now (`.replypen/` fragments or split-file shapes).
   * raw-history  — no raw-harvest path appears in git history (deleted-but-still-in-history case).
-  * scratch      — (`--expect-clean` only) no `.rootcause/harvest/` scratch root remains on disk.
+  * scratch      — (`--expect-clean` only) no `.replypen/harvest/` scratch root remains on disk.
 
 Scope (`--scope new|full`, default `new`): a publish gate must judge the work being published, not
 re-litigate a mature tree's legacy debt on every push — a gate that always fails gets bypassed.
@@ -75,14 +75,14 @@ AUDIT_DIRS = {"harvest-records"}
 # Infrastructure/entry-surface trees that have their own discovery path, so they never need routing
 # from the project router. `skills/` are their own entry surface; `docs/`, `actions/`, `tests/`,
 # `agents/`, and dot-trees are tooling, not run-routed brain leaves.
-EXEMPT_DIRS = {"skills", "docs", "actions", "tests", "agents", ".git", ".claude", ".rootcause",
-               ".github", "node_modules"}
+EXEMPT_DIRS = {"skills", "docs", "actions", "tests", "agents", ".git", ".claude", ".replypen",
+               ".rootcause", ".github", "node_modules"}
 
 # Raw-harvest fingerprints. A split corpus lands as `<dir>/threads/<yyyy-mm>--<slug>--<idx>.md` under
-# the gitignored `.rootcause/`; either shape appearing as a tracked path is a privacy leak.
-RAW_ROOTCAUSE_RE = re.compile(r"(?:^|/)\.rootcause/")
+# the gitignored `.replypen/`; either shape appearing as a tracked path is a privacy leak.
+RAW_LOCAL_DIR_RE = re.compile(r"(?:^|/)\.(?:replypen|rootcause)/")
 RAW_SPLIT_RE = re.compile(r"(?:^|/)\d{4}-\d{2}--.+?--\d+\.md$")
-SCRATCH_ROOT = ".rootcause/harvest"
+SCRATCH_ROOTS = (".replypen/harvest", ".rootcause/harvest")  # current, pre-rebrand
 
 # A Markdown inline link/image target: `[text](target)` or `![alt](target "title")`.
 MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)]+?)\s*\)")
@@ -401,7 +401,7 @@ def _line_resolved_targets(ctx: Ctx, rel: str, line: str) -> set[str]:
 
 def check_ignored_refs(ctx: Ctx) -> list[Finding]:
     """Notice references from run-visible text to paths the production run cannot open."""
-    if ".rootcause.toml" not in ctx.tracked_set and not any(c in ctx.tracked_set for c in IGNORE_CONTROLS):
+    if not {".replypen.toml", ".rootcause.toml"} & ctx.tracked_set and not any(c in ctx.tracked_set for c in IGNORE_CONTROLS):
         return []
     hidden = _ignored_tracked_paths(ctx)
     visible = [p for p in ctx.tracked if p not in hidden and (ctx.root / p).is_file()]
@@ -489,13 +489,13 @@ def check_hygiene(ctx: Ctx) -> list[Finding]:
 
 def check_raw_tracked(ctx: Ctx) -> list[Finding]:
     return [Finding("raw-tracked", "raw-harvest path is tracked; it must never be committed", path=p)
-            for p in ctx.tracked if RAW_ROOTCAUSE_RE.search(p) or RAW_SPLIT_RE.search(p)]
+            for p in ctx.tracked if RAW_LOCAL_DIR_RE.search(p) or RAW_SPLIT_RE.search(p)]
 
 
 def check_raw_history(ctx: Ctx) -> list[Finding]:
     findings: list[Finding] = []
     for p in git_history_paths(ctx.root, ctx.history_limit):
-        if RAW_ROOTCAUSE_RE.search(p) or RAW_SPLIT_RE.search(p):
+        if RAW_LOCAL_DIR_RE.search(p) or RAW_SPLIT_RE.search(p):
             findings.append(Finding(
                 "raw-history",
                 "raw-harvest path exists in git history (deleted from the tree but still recoverable); "
@@ -505,10 +505,9 @@ def check_raw_history(ctx: Ctx) -> list[Finding]:
 
 
 def check_scratch(ctx: Ctx) -> list[Finding]:
-    if (ctx.root / SCRATCH_ROOT).exists():
-        return [Finding("scratch", "sensitive harvest scratch root still exists on disk; delete it "
-                                   "before publishing", path=SCRATCH_ROOT)]
-    return []
+    return [Finding("scratch", "sensitive harvest scratch root still exists on disk; delete it "
+                               "before publishing", path=root)
+            for root in SCRATCH_ROOTS if (ctx.root / root).exists()]
 
 
 CHECKS: list[tuple[str, Callable[[Ctx], list[Finding]]]] = [
@@ -597,7 +596,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--skip", action="append", default=[], choices=ALL_CHECK_NAMES, metavar="CHECK",
                    help=f"skip a check by name ({', '.join(ALL_CHECK_NAMES)}); repeatable")
     p.add_argument("--expect-clean", action="store_true",
-                   help="also require no .rootcause/harvest/ scratch root remains (post-cleanup gate)")
+                   help="also require no .replypen/harvest/ scratch root remains (post-cleanup gate)")
     p.add_argument("--lint-script", help="override path to brain_lint.py (default: sibling in the kit)")
     p.add_argument("--strict-lint", action="store_true",
                    help="run the tree lint pass with --strict (SOFT findings fatal too); "

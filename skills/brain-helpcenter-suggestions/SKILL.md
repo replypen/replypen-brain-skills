@@ -1,6 +1,6 @@
 ---
 name: brain-helpcenter-suggestions
-description: "Turn a window of real customer questions (email runs, in-app chat runs, Help Scout) into a short, evidence-backed edit list for a public help centre, each edit anchored in the existing article and written in the help centre's own voice. Python collects the corpus and every article body from a brain checkout with public rc; you classify in a tsv and write one small markdown file per suggestion; Python validates every quote and anchor and renders report.html for the owner plus a bot-readable block per card. Use for 'help centre gaps', 'which articles are missing', 'KB suggestions for the owner', 'wat vragen klanten dat niet in de kennisbank staat'."
+description: "Turn a window of real customer questions (email runs, in-app chat runs, Help Scout) into a short, evidence-backed edit list for a public help centre, each edit anchored in the existing article and written in the help centre's own voice. Python collects the corpus and every article body from a brain checkout with public rp; you classify in a tsv and write one small markdown file per suggestion; Python validates every quote and anchor and renders report.html for the owner plus a bot-readable block per card. Use for 'help centre gaps', 'which articles are missing', 'KB suggestions for the owner', 'wat vragen klanten dat niet in de kennisbank staat'."
 ---
 
 # brain-helpcenter-suggestions: what customers asked vs what the help centre says
@@ -18,20 +18,20 @@ founder, not a developer). **One report = one help centre**: the mount decides, 
 tenant KB at `/kb/tenant/**` gives a per-tenant report (`--tenant`); a project KB serves every tenant
 in one report with tenant as a column.
 
-Read-only: every `rc` call lists, traces or reads. Never `rc ask`, never edit the brain or the help
+Read-only: every `rp` call lists, traces or reads. Never `rp ask`, never edit the brain or the help
 centre from here ([docs/side-effects.md](../../docs/side-effects.md)). Scratch stays under the
-gitignored `.rootcause/`: the report carries customer snippets and tokenized run links.
+gitignored `.replypen/`: the report carries customer snippets and tokenized run links.
 
 ## Pipeline
 
 ```bash
-cd ~/code/rootcause-org/rootcause-brain-<project>
+cd ~/code/replypen/replypen-brain-<project>
 HC="$PWD/.agents/skills/brain-helpcenter-suggestions"
 
 uv run "$HC/scripts/collect.py" --days 60                       # default 60, max 120 · --tenant SLUG · --out DIR
 uv run "$HC/scripts/collect.py" --days 90 --skip-tenant demo    # chat project: pre-tag operator tenants as noise
 uv run "$HC/scripts/collect.py" --days 90 --kind analysis        # one channel only (default: email + chat + analysis); repeatable
-OUT="$PWD/.rootcause/helpcenter/<window-end-date>[-<tenant>]"    # last line of the collect summary
+OUT="$PWD/.replypen/helpcenter/<window-end-date>[-<tenant>]"    # last line of the collect summary
 
 cat "$OUT/conversations.tsv"                    # pass 1 reads this whole (one line per conversation, ≤ 200 chars)
 cat "$OUT/articles.tsv"                         # and this whole (one line per article)
@@ -55,7 +55,7 @@ validator's error prints the current one).
 
 | Source | When | Corpus | Link | Reply provenance |
 |---|---|---|---|---|
-| `runs` (email + chat) | the project has `email` or `chat` runs in the window | one `rc run trace --stream` header per session (the last run: its `prior_messages[]` is the whole thread); roles from sender vs mailbox domains, `unknown` when neither; chat: inbound = customer | tokenized run URL | email: `draft` unless a mailbox reply precedes it (`human`); chat: always `draft` (the agent answered live) |
+| `runs` (email + chat) | the project has `email` or `chat` runs in the window | one `rp run trace --stream` header per session (the last run: its `prior_messages[]` is the whole thread); roles from sender vs mailbox domains, `unknown` when neither; chat: inbound = customer | tokenized run URL | email: `draft` unless a mailbox reply precedes it (`human`); chat: always `draft` (the agent answered live) |
 | `runs` (analysis = Embassy support tickets) | the project has `analysis` runs in the window | the header `question` is a markdown ticket (`# Support Ticket:` / `## Metadata` / `## Discussion`); the discussion is the customer turn (split on dated name headers), tags `ticket_type:` + `priority:` | tokenized run URL | always `draft`; `ticket_type:feedback` and `ticket_type:request` are pre-tagged noise (feature wishes) |
 | `helpscout` | no runs, a Help Scout mailbox is watched | `lib.api get helpscout /conversations?embed=threads` paged in the prod workspace, spilled to a file | `secure.helpscout.net/conversation/<id>/<number>/` | `human` (`bot` when the mailbox AI assistant answered) |
 
@@ -151,11 +151,11 @@ read in this order before writing any edit; the earlier one wins on conflict:
 
 1. **A help-centre voice file in the brain**, when it exists: `notes/helpcenter-tone-of-voice.md`
    at the root of the checkout you run from (project brain for a project KB, tenant brain
-   `rootcause-brain-<project>-tenant-<slug>` for a tenant KB). It is the owner's own description of
+   `replypen-brain-<project>-tenant-<slug>` for a tenant KB). It is the owner's own description of
    how their docs read and it beats everything below. Keep it out of runs (`.replypenignore`): docs
    voice is not mail voice.
-2. **The persona of the level you report on**, via `rc`: `rc project settings behavior get -o json`
-   (`persona.*`) for a project KB, `rc project tenant settings get <slug>` for a tenant KB. It
+2. **The persona of the level you report on**, via `rp`: `rp project settings behavior get -o json`
+   (`persona.*`) for a project KB, `rp project tenant settings get <slug>` for a tenant KB. It
    describes mail, not articles, so take vocabulary, je/u, forbidden words and product names from
    it, never its length, greeting or sign-off rules.
 3. **Two or three live articles** of that help centre, read in full, always: je/u, sentence length,
@@ -219,8 +219,8 @@ iteration log and the code; project quirks stay in the brain's notes.
 ## More
 
 [suggestions_schema.md](suggestions_schema.md) the files you write · [`brain-helpcenter-publish`](../brain-helpcenter-publish/SKILL.md)
-applies a card's bot block through `rc project knowledge article apply` · [`brain-fleet-report`](../brain-fleet-report/SKILL.md)
-the same collect → judge → render pattern for a day of runs · [`rc-debug`](../rc-debug/SKILL.md) one run in full ·
+applies a card's bot block through `rp project knowledge article apply` · [`brain-fleet-report`](../brain-fleet-report/SKILL.md)
+the same collect → judge → render pattern for a day of runs · [`rp-debug`](../rp-debug/SKILL.md) one run in full ·
 [`prod-console`](../prod-console/SKILL.md) `/kb` and connector reads · [docs/knowledge-base.md](../../docs/knowledge-base.md).
 
 ## Iteration log
@@ -228,8 +228,8 @@ the same collect → judge → render pattern for a day of runs · [`rc-debug`](
 - **2026-09-08 voice sources.** iBeauty handed over their docs tone-of-voice (docs write
   `Instellingen → Werkschema's` and Goed-om-te-weten blocks; their mail persona writes lowercase
   slash paths and never uses blocks). Voice now has three ranked sources: brain file
-  `notes/helpcenter-tone-of-voice.md` (run-hidden) · persona of the reported level via `rc` ·
-  mirrored articles. First instance: rootcause-brain-ibeauty.
+  `notes/helpcenter-tone-of-voice.md` (run-hidden) · persona of the reported level via `rp` ·
+  mirrored articles. First instance: replypen-brain-ibeauty.
 - **2026-09-08 round 3** (PJ feedback + kampadmin-support 90-day pull). Chat recipe: one trace per
   session (last run), inbound = customer, provenance `draft`, clarifier forms folded; `runs` source
   covers email + chat; `--days` 60/120; header-only cache (`raw/hdr-*.json`, 9 scaffolding keys

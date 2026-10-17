@@ -1,15 +1,15 @@
 # The workspace image — the SAME image prod runs, published so a client reproduces the
-# box with NO rootcause source. Build context is the repo root:
+# box with NO replypen source. Build context is the repo root:
 #
-#     docker build -f docker/Dockerfile -t ghcr.io/rootcause-org/workspace:vX.Y.Z .
-#     docker push   ghcr.io/rootcause-org/workspace:vX.Y.Z
+#     docker build -f docker/Dockerfile -t ghcr.io/replypen/workspace:vX.Y.Z .
+#     docker push   ghcr.io/replypen/workspace:vX.Y.Z
 #
-# Pin the image tag to the rootcause-runtime / plugin tag (see RELEASING.md): the bytes installed below ARE
-# `rootcause-runtime@vX.Y.Z` (we install the in-repo runtime/ package), and prod's
-# rootcause/runtime/Dockerfile installs the same package by the same pin — so "tested in this
+# Pin the image tag to the replypen-runtime / plugin tag (see RELEASING.md): the bytes installed below ARE
+# `replypen-runtime@vX.Y.Z` (we install the in-repo runtime/ package), and prod's
+# replypen/runtime/Dockerfile installs the same package by the same pin — so "tested in this
 # image" provably equals "runs in prod".
 #
-# Faithful to rootcause's runtime/Dockerfile: the host starts ONE container per run
+# Faithful to replypen's runtime/Dockerfile: the host starts ONE container per run
 # (`docker run -d <image> sleep infinity`) driven by many `docker exec`; files/installs/tmp persist.
 # The kit's docker mode runs it one-shot (`docker run --rm`) for the pre-push check, same image.
 FROM python:3.12-slim
@@ -32,7 +32,7 @@ RUN git config --system safe.directory '*'
 # uv is the only Python package manager (CLAUDE.md). Pinned by digest-tagged version, never :latest.
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 
-# Install the helper library as the `rootcause-runtime` PACKAGE (NOT a bare `COPY lib`) — its pinned
+# Install the helper library as the `replypen-runtime` PACKAGE (NOT a bare `COPY lib`) — its pinned
 # client deps (psycopg/stripe/boto3/requests/markdownify) come from runtime/pyproject.toml, the ONE
 # dependency source of truth. The import name stays `lib` (`from lib import db`), so brain scripts and
 # prod agree. `--system` (no venv): the workspace is single-purpose.
@@ -40,8 +40,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 # offline — the image is self-sufficient, no in-container network/uv-resolve needed at test time.
 # `-c requirements.lock`: constrain the transitive closure to the SAME committed lock uv mode installs
 # from, so the image's import surface is byte-identical to a local uv run (no build-time PyPI drift).
-COPY runtime/ /opt/rootcause-runtime/
-RUN uv pip install --system --no-cache -c /opt/rootcause-runtime/requirements.lock "/opt/rootcause-runtime[test]"
+COPY runtime/ /opt/replypen-runtime/
+RUN uv pip install --system --no-cache -c /opt/replypen-runtime/requirements.lock "/opt/replypen-runtime[test]"
 
 # Unbuffered so stdout/stderr reach the host promptly even on a killed (timed-out) container.
 ENV PYTHONUNBUFFERED=1

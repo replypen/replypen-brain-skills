@@ -12,12 +12,24 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tomllib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import NoReturn, Sequence
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
 
 
 EXIT_BLOCKED = 2
@@ -192,7 +204,7 @@ def _selected_project(repo: Path, explicit: str) -> str:
     (same pattern as sent_delta_report.py's local_scope)."""
     if explicit:
         return explicit
-    marker = repo / ".rootcause.toml"
+    marker = _marker(repo)
     if not marker.is_file():
         return ""
     try:
@@ -203,27 +215,27 @@ def _selected_project(repo: Path, explicit: str) -> str:
 
 
 def _brain_source(repo: Path, project: str, reporter: Reporter) -> dict[str, object] | None:
-    """Best-effort `status.brain_source` from `rc dev brain status -o json`. Returns None (never
-    blocking) when `rc` is unavailable, fails, or the field is absent — a server that predates
+    """Best-effort `status.brain_source` from `rp dev brain status -o json`. Returns None (never
+    blocking) when `rp` is unavailable, fails, or the field is absent — a server that predates
     the read-only brain alias, or a project that owns its own brain, both read as no alias."""
-    cmd = ["rc", "dev", "brain", "status", "-o", "json"]
+    cmd = [_cli(), "dev", "brain", "status", "-o", "json"]
     if project:
         cmd = [cmd[0], "--project", project, *cmd[1:]]
     try:
         proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as error:
-        reporter.note(f"brain-alias check skipped: cannot run rc dev brain status: {error}")
+        reporter.note(f"brain-alias check skipped: cannot run rp dev brain status: {error}")
         return None
     if proc.returncode != 0:
         reporter.note(
-            "brain-alias check skipped: rc dev brain status failed: "
+            "brain-alias check skipped: rp dev brain status failed: "
             + (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}")
         )
         return None
     try:
         data = json.loads(proc.stdout)
     except json.JSONDecodeError:
-        reporter.note("brain-alias check skipped: rc dev brain status returned non-JSON output")
+        reporter.note("brain-alias check skipped: rp dev brain status returned non-JSON output")
         return None
     status = data.get("status") if isinstance(data, dict) else None
     source = status.get("brain_source") if isinstance(status, dict) else None
@@ -948,8 +960,8 @@ def _parser() -> argparse.ArgumentParser:
         "--project",
         default="",
         help=(
-            "project slug for the read-only brain alias check (rc dev brain status); "
-            "defaults to the checkout's .rootcause.toml"
+            "project slug for the read-only brain alias check (rp dev brain status); "
+            "defaults to the checkout's .replypen.toml"
         ),
     )
     parser.add_argument(

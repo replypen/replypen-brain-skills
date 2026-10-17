@@ -9,7 +9,7 @@ and dev-tooling dot-dirs are judged for conflict markers only):
 
   * conflict     — `<<<<<<<` / `|||||||` / `>>>>>>>` line markers. Whole tree, always.
   * placeholder  — in a file `projection.yaml` templates: a `{{ key }}` it does not declare, or a
-                   residual `{{`/`}}` (rootcause's projection fails the whole run on both).
+                   residual `{{`/`}}` (ReplyPen's projection fails the whole run on both).
                    Untemplated files may quote `{{ }}` (customer merge fields, journals).
   * abs-path     — a `/Users/<name>` laptop path.
   * links        — a relative Markdown link that resolves to no tracked path.
@@ -71,11 +71,11 @@ import brain_paths  # noqa: E402
 import brain_structure as bs  # noqa: E402
 
 CONFLICT_RE = re.compile(r"^(<{7}|\|{7}|>{7})(?: |$)")
-PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")  # rootcause internal/projection
+PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")  # replypen internal/projection
 ABS_PATH_RE = re.compile(r"/Users/[A-Za-z0-9._-]+")
 MANIFEST_COPY_RE = re.compile(r"^\s*(display_name|customer_[a-z_]+)\s*:(.*)$")
 DEFAULT_VALUE_RE = re.compile(r"\bdefault:\s*(\"[^\"]*\"|'[^']*'|[^#,}]*)")
-DEFAULT_TEMPLATED_GLOBS = ["**/*.md"]  # rootcause internal/projection DefaultTemplatedGlobs
+DEFAULT_TEMPLATED_GLOBS = ["**/*.md"]  # replypen internal/projection DefaultTemplatedGlobs
 TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".json", ".toml", ".sh", ".rb", ".txt", ".sql"}
 EM_DASH = "\u2014"
 TOOLING_DIRS = (".agents/", ".claude/", ".github/")
@@ -83,7 +83,7 @@ MERMAID_TIMEOUT_S = 30
 DESCRIPTION_MAX = 1024  # agentskills.io limit; lib.brain_lint DESC_FULL_MAX_LEN (publish lint)
 MERMAID_SYNTAX_RE = re.compile(r"(Parse|Lexical|Syntax) error|No diagram type detected", re.I)
 
-# Mirror of rootcause internal/chatinspiration (library.go): keep caps, regexes and separators in sync.
+# Mirror of replypen internal/chatinspiration (library.go): keep caps, regexes and separators in sync.
 CHAT_INSPIRATION_FILE = "chat_inspiration.md"
 CI_MAX_CATEGORIES, CI_MAX_PROMPTS, CI_MAX_PROMPT_RUNES, CI_MAX_TITLE_RUNES = 20, 50, 500, 80
 CI_DERIVED_TITLE_RUNES = 60
@@ -97,7 +97,7 @@ CI_SKILL_NAME_RE = re.compile(r"[A-Za-z0-9_-]+", re.ASCII)
 CI_SKILL_ROOTS = ("/brain/", "/tenant/", "/skills/", "/mirrors/")
 CI_SKILL_TYPOS = ("skill:", "skils:", "skillz:")
 
-SPILL_BYTES = 6000  # rootcause internal/tool/tool.go defaultBashSpillThreshold (Go len = bytes)
+SPILL_BYTES = 6000  # replypen internal/tool/tool.go defaultBashSpillThreshold (Go len = bytes)
 SPILL_SKIP_DIRS = {"journal", "_internal", "tests", "docs"}
 BRAIN_DOC = Path(__file__).resolve().parents[3] / "runtime" / "lib" / "brain_doc.py"
 

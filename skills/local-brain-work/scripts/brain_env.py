@@ -5,12 +5,12 @@
 
 `brain_run.py` and `brain_test.py` are thin front-ends over this module. Everything here is
 **brain-dir-relative and `accounts.yml`-free**: the brain is just the cwd (or an explicit path), its
-env is the gitignored plaintext `./.env`, and `lib` comes from `rootcause-runtime` — the exact bytes
+env is the gitignored plaintext `./.env`, and `lib` comes from `replypen-runtime` — the exact bytes
 the prod workspace image installs at a clean release tag. A sibling `runtime/` source tree takes
 precedence during development so unreleased edits are testable; see `UV_MODE_CAVEATS`.
 
 Two run modes:
-  * **uv**     — fast inner loop: `uv run` with `rootcause-runtime` + its pinned deps, env from `./.env`.
+  * **uv**     — fast inner loop: `uv run` with `replypen-runtime` + its pinned deps, env from `./.env`.
   * **docker** — faithful pre-push gate: `docker run` the published workspace image, brain + mirrors
                  mounted `:ro`, env injected, isolation matching prod.
 """
@@ -24,11 +24,17 @@ import sys
 import tomllib
 from pathlib import Path
 
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
+
 # ── version line ────────────────────────────────────────────────────────────────────────────────
-# The single version line: plugin tag == rootcause-runtime pin == workspace image tag == prod
+# The single version line: plugin tag == replypen-runtime pin == workspace image tag == prod
 # Dockerfile pin. Bump all together (see RELEASING.md) so local and prod cannot diverge.
-VERSION = "0.12.4"
-REPO_URL = "https://github.com/rootcause-org/rootcause-brain-skills"
+VERSION = "0.13.0"
+REPO_URL = "https://github.com/replypen/replypen-brain-skills"
 
 # The interpreter prod runs (docker/Dockerfile `FROM python:3.12-slim`). uv mode pins to it with
 # `uv run --python` — uv fetches a managed CPython if the host lacks it, so this needs NO mise/pyenv
@@ -47,9 +53,9 @@ RUNTIME = (Path(__file__).resolve().parents[3] / "runtime").resolve()
 RUNTIME_LOCK = (RUNTIME / "requirements.lock").resolve()
 
 # The published workspace image prod uses. Overridable for a local build or a fork.
-DEFAULT_IMAGE = os.environ.get("RC_WORKSPACE_IMAGE", f"ghcr.io/rootcause-org/workspace:v{VERSION}")
+DEFAULT_IMAGE = os.environ.get("RC_WORKSPACE_IMAGE", f"ghcr.io/replypen/workspace:v{VERSION}")
 
-# Container constants, mirrored from rootcause internal/workspace/docker.go so docker mode is
+# Container constants, mirrored from replypen internal/workspace/docker.go so docker mode is
 # byte-faithful to a real run.
 CONTAINER_UID = 10001
 CONTAINER_GID = 10001
@@ -83,7 +89,7 @@ def runtime_spec() -> str:
         return override
     if RUNTIME.is_dir():
         return str(RUNTIME)
-    return f"rootcause-runtime @ git+{REPO_URL}@v{VERSION}#subdirectory=runtime"
+    return f"replypen-runtime @ git+{REPO_URL}@v{VERSION}#subdirectory=runtime"
 
 
 # ── env parsing (mirrors the Go host's secret.parseEnv, plus shell-quote tolerance) ───────────────
@@ -131,7 +137,7 @@ def brain_secrets(brain_dir: Path, *, required: bool) -> dict[str, str] | None:
     if required:
         print(
             f"error: no .env at {env_file} — the live tier / a real run needs the project secrets. "
-            "Run `rc project env pull` from this brain checkout.",
+            "Run `rp project env pull` from this brain checkout.",
             file=sys.stderr,
         )
         return None
@@ -175,8 +181,8 @@ def _validate_mirror_names(mirrors: dict[str, Path]) -> None:
 
 
 def declared_mirrors(brain_dir: Path) -> dict[str, Path]:
-    """Read committed laptop paths from ``.rootcause.toml [mirrors]``."""
-    marker = brain_dir / ".rootcause.toml"
+    """Read committed laptop paths from ``.replypen.toml [mirrors]``."""
+    marker = _marker(brain_dir)
     if not marker.is_file():
         return {}
     with marker.open("rb") as fh:
@@ -317,7 +323,7 @@ def docker_run_args(
     workdir: str = BRAIN_MOUNT,
     command: list[str],
 ) -> list[str]:
-    """`docker run` argv mirroring rootcause internal/workspace/docker.go: read-only rootfs,
+    """`docker run` argv mirroring replypen internal/workspace/docker.go: read-only rootfs,
     all caps dropped, no-new-privileges, tmpfs /tmp + writable agent home, brain + mirrors `:ro`
     (kernel-enforced EROFS), env by `-e KEY` (values ride the docker client's own env, off the argv,
     exactly as prod keeps secrets off argv). One-shot `--rm` — no detached keep-alive needed for the

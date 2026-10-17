@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Instant dependency-light lint for a rootcause brain checkout.
+"""Instant dependency-light lint for a ReplyPen brain checkout.
 
     brain_lint.py                      # whole tree (default)
     brain_lint.py --all                # whole tree, explicitly
@@ -8,7 +8,7 @@
     brain_lint.py --as mirror          # lint a repo the way the host reads it as /mirrors/<name>
 
 The repo kind (brain / tenant overlay / mirror) decides which frontmatter the host reads; it is
-auto-detected (`.rootcause.toml` project/tenant, else a sibling brain's `[mirrors]` entry) and printed
+auto-detected (`.replypen.toml` project/tenant, else a sibling brain's `[mirrors]` entry) and printed
 when it is not `brain`.
 """
 

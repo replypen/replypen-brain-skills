@@ -136,7 +136,7 @@ def surface() -> str | None:
 
 
 def is_simulation() -> bool:
-    """True for a dress rehearsal (`rc ask --simulation`): every side-effecting credential was stripped,
+    """True for a dress rehearsal (`rp ask --simulation`): every side-effecting credential was stripped,
     so the script must not claim it changed anything. False when unknown."""
     return get("simulation") is True
 

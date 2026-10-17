@@ -22,13 +22,13 @@ descriptions, the mirror trees and `lib.db`; it must answer "where would I look 
 run would get wrong today and asks the developer only about that. Everything you infer stays
 `(?)` until the developer confirms.
 
-Read-only: metadata, bounded samples and file reads; no `rc ask`, no writes, no brain edits before
+Read-only: metadata, bounded samples and file reads; no `rp ask`, no writes, no brain edits before
 step 4 ([docs/side-effects.md](../../docs/side-effects.md)). Scratch lives in the gitignored
-`.rootcause/`.
+`.replypen/`.
 
 ## When to use
 
-- A source mirror or a grounding database appeared for the project (`rc dev console capabilities`
+- A source mirror or a grounding database appeared for the project (`rp dev console capabilities`
   lists both), or the developer handed over a clone.
 - The brain answers "check your settings" or "please check in your account" where the code could
   name the setting or a row could state the fact.
@@ -41,16 +41,16 @@ Not for: reviewing code, hunting bugs, writing one run's query (that is
 ## Pipeline
 
 ```bash
-cd ~/code/rootcause-org/rootcause-brain-<project>
+cd ~/code/replypen/replypen-brain-<project>
 GI="$PWD/.agents/skills/brain-grounding-intake"
-OUT="$PWD/.rootcause/grounding-intake/$(date +%F)"
+OUT="$PWD/.replypen/grounding-intake/$(date +%F)"
 
 uv run "$GI/scripts/context.py"                                  # context.md: what a run receives
-uv run "$GI/scripts/collect.py" --db staging                     # schema probe on the box (rc dev console database list for the key)
+uv run "$GI/scripts/collect.py" --db staging                     # schema probe on the box (rp dev console database list for the key)
 uv run "$GI/scripts/scan.py" --repo app=~/code/customer/app      # local clone; tables come from schema.json
 # repo only readable as a production mirror: fetch a listing (paths) or a tarball through the console
-rc dev console bash run 'mkdir -p /tmp/rootcause-out; find /mirrors/app -type f -not -path "*/.git/*" > /tmp/rootcause-out/listing.txt'
-rc dev console file get /tmp/rootcause-out/listing.txt --out /tmp/listing-app.txt
+rp dev console bash run 'mkdir -p /tmp/replypen-out; find /mirrors/app -type f -not -path "*/.git/*" > /tmp/replypen-out/listing.txt'
+rp dev console file get /tmp/replypen-out/listing.txt --out /tmp/listing-app.txt
 uv run "$GI/scripts/scan.py" --listing app=/tmp/listing-app.txt
 uv run "$GI/scripts/questions.py" --days 60                      # or --from questions.txt (one per line)
 
@@ -65,8 +65,8 @@ open "$OUT/report.html"                                          # hand over the
 
 Either half may be absent (code without a database, a database without code); say which in
 `headline.txt`. Local clone beats listing: line counts, manifests and the table mapping need file
-contents. `rc dev console database query` refuses MySQL, so `collect.py` and `query.py` run
-Python on the box through `rc dev console bash run -` and fetch the result; a freshly sealed DSN
+contents. `rp dev console database query` refuses MySQL, so `collect.py` and `query.py` run
+Python on the box through `rp dev console bash run -` and fetch the result; a freshly sealed DSN
 can need one retry (console sessions cache their env for about two minutes).
 
 ## Step 0: sit in the chair
@@ -177,7 +177,7 @@ Paste the copied markdown into this thread. Then, for the project brain:
 3. Fix the first hop: rewrite the database description with the helicopter facts a run needs
    before it reads anything (tenant table, the five tables a ticket touches, freshness, the
    expensive tables):
-   `rc project database set <key> description="…"` ([docs/secrets.md](../../docs/secrets.md)).
+   `rp project database set <key> description="…"` ([docs/secrets.md](../../docs/secrets.md)).
 4. Re-run the benchmark in your head against the brain alone: for three `grounded` questions and
    every answered one, can a run name the file or the table and column without opening the code
    or `schema.md`? If not, the map is missing a hop.
@@ -229,7 +229,7 @@ The tally is in the brain's notes with a date, so the next intake measures progr
   kept from those runs: a manifest under `libraries/`, `third_party/`, `lib/`, `plugins/` is a
   vendored package, not an app root; `system/` and dot directories are never candidates; table
   declarations include the CodeIgniter query builder and raw `FROM t`; Doctrine entities live per
-  module (`src/<Module>/Entity/`); `rc dev console database query` refuses MySQL, `lib.db` on the
+  module (`src/<Module>/Entity/`); `rp dev console database query` refuses MySQL, `lib.db` on the
   box does not; a mirror view carries no `.git`, so ages come from a local clone only; never
   sample id-shaped string columns or tables under 20 rows (a payment provider customer id leaked
   into a profile); spend the exact-count budget on tables the size of the tenant table, that is

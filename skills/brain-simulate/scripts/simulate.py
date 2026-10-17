@@ -5,10 +5,10 @@
 """Replay representative real inbound cases through a production brain and report on the result.
 
 Six subcommands over one gitignored scratch dir. Real customer mail never leaves that dir.
-Every `rc ask` carries `--simulation`: no action executes, no journal commit, nothing is placed
+Every `rp ask` carries `--simulation`: no action executes, no journal commit, nothing is placed
 in a mailbox (see docs/side-effects.md).
 
-    simulate.py acquire --source helpscout --pages .rootcause/simulate/raw/'page*.json'
+    simulate.py acquire --source helpscout --pages .replypen/simulate/raw/'page*.json'
     simulate.py acquire --source harvest --corpus corpus.md [--append]
     simulate.py acquire --source manual --cases my-cases.json
     simulate.py plan [--seed 7] [--target 10] [--force]
@@ -36,11 +36,17 @@ import importlib.util
 import json
 import random
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 
 class SimError(Exception):
@@ -138,7 +144,7 @@ def ensure_safe_scratch(scratch: Path, root: Path) -> None:
     if not ignored:
         raise SimError(
             f"refusing stageable scratch root {scratch}; real customer mail lands here. "
-            "Add '.rootcause/' to .gitignore first.")
+            "Add '.replypen/' to .gitignore first.")
 
 
 def preview(text: str, limit: int) -> str:
@@ -595,7 +601,7 @@ def build_subject(case: dict[str, Any]) -> str:
 
 def build_command(case: dict[str, Any], ref: str, timeout: str, sender: str | None) -> list[str]:
     frm = sender or f"simulate-{case['id'][:8].lower()}@example.test"
-    command = ["rc", "ask", build_question(case),
+    command = [_cli(), "ask", build_question(case),
                "--scenario", "email", "--simulation",
                "--subject", build_subject(case), "--from", frm,
                "--timeout", timeout, "-o", "json"]
@@ -609,7 +615,7 @@ def elide_command(command: list[str]) -> list[str]:
 
 
 def snapshot_persona(scratch: Path, root: Path) -> None:
-    command = ["rc", "project", "settings", "behavior", "get", "-o", "json"]
+    command = [_cli(), "project", "settings", "behavior", "get", "-o", "json"]
     try:
         done = subprocess.run(command, cwd=str(root), capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -752,7 +758,7 @@ def cmd_run(args: argparse.Namespace, scratch: Path, root: Path) -> int:
 def persona_lines(scratch: Path) -> list[str]:
     path = scratch / "persona.json"
     if not path.exists():
-        return ["(no persona snapshot; run `simulate.py run` or `rc project settings behavior get`)"]
+        return ["(no persona snapshot; run `simulate.py run` or `rp project settings behavior get`)"]
     persona = read_json(path, "persona.json").get("persona") or {}
     lines = []
     for key in sorted(persona):
@@ -1392,7 +1398,7 @@ def build_parser() -> argparse.ArgumentParser:
         target.add_argument("--brain", default=d("."), help="brain checkout root (default: cwd)")
         target.add_argument("--tag", default=d("default"), help="scratch tag (default: default)")
         target.add_argument("--scratch", default=d(None),
-                            help="scratch dir (default: <brain>/.rootcause/simulate/<tag>)")
+                            help="scratch dir (default: <brain>/.replypen/simulate/<tag>)")
 
     add_common(parser, top=True)
     common = argparse.ArgumentParser(add_help=False)
@@ -1419,7 +1425,7 @@ def build_parser() -> argparse.ArgumentParser:
     select.add_argument("--seed", type=int, default=DEFAULT_SEED)
     select.add_argument("--target", type=int, default=DEFAULT_TARGET)
 
-    run = sub.add_parser("run", help="replay the selected cases through `rc ask --simulation`")
+    run = sub.add_parser("run", help="replay the selected cases through `rp ask --simulation`")
     run.add_argument("--ref", default="main", help="main (default) or dev/<branch>")
     run.add_argument("--parallel", type=int, default=2, help=f"workers, capped at {MAX_PARALLEL}")
     run.add_argument("--retries", type=int, default=2)
@@ -1445,7 +1451,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     root = Path(args.brain).resolve()
     scratch = Path(args.scratch).resolve() if args.scratch else (
-        root / ".rootcause" / "simulate" / args.tag)
+        root / ".replypen" / "simulate" / args.tag)
     try:
         ensure_safe_scratch(scratch, root)
         scratch.mkdir(parents=True, exist_ok=True)

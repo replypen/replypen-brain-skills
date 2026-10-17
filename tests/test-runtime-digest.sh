@@ -18,9 +18,9 @@ git -C "$REPO" config user.email "digest-test@example.com"
 write_version() {  # $1 = version
   cat >"$REPO/runtime/pyproject.toml" <<TOML
 [project]
-name = "rootcause-runtime"
+name = "replypen-runtime"
 version = "$1"
-# uv add "rootcause-runtime @ git+https://example.invalid/kit@v$1#subdirectory=runtime"
+# uv add "replypen-runtime @ git+https://example.invalid/kit@v$1#subdirectory=runtime"
 TOML
 }
 
@@ -29,7 +29,7 @@ digest() { uv run --no-project python "$REPO/scripts/runtime_digest.py" --worktr
 write_version 0.7.0
 printf 'x = 1\n' >"$REPO/runtime/lib/db.py"
 # A pin that will collide with the NEXT version, plus one that never does.
-printf 'defusedxml==0.7.1\n    # via rootcause-runtime\nbackoff==2.2.1\n' >"$REPO/runtime/requirements.lock"
+printf 'defusedxml==0.7.1\n    # via replypen-runtime\nbackoff==2.2.1\n' >"$REPO/runtime/requirements.lock"
 git -C "$REPO" add -A
 git -C "$REPO" commit -q -m "init"
 

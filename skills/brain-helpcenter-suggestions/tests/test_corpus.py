@@ -494,7 +494,7 @@ def test_inventory_tenant_scope_paths_and_bodies(monkeypatch, tmp_path):
     body = (tmp_path / "articles" / "A1.md").read_text(encoding="utf-8")
     assert body.startswith("---\ntitle: Gaat het kamp") and "officiele feestdag" in body
     # --tenant rides on every console call, and only on console calls
-    console_calls = [a for a in seen if a[:3] == ["rc", "dev", "console"]]
+    console_calls = [a for a in seen if a[:3] == ["rp", "dev", "console"]]
     assert console_calls and all(a[3:5] == ["--tenant", "yes_events"] for a in console_calls)
     assert not any("fleet" in a or "trace" in a for a in seen)
 
@@ -528,7 +528,7 @@ def test_console_tenant_is_inferred_when_the_project_refuses_tenantless_calls(mo
     _, kb = collect.inventory(tmp_path, tmp_path, None, "lbv")
     assert kb["scope"] == "project" and "console scoped to tenant lbv" in kb["reason"]
     assert kb["status"] == "complete"  # an inferred tenant is a note, not missing coverage
-    assert ["rc", "dev", "console", "--tenant", "lbv"] == seen[1][:5]
+    assert ["rp", "dev", "console", "--tenant", "lbv"] == seen[1][:5]
 
 
 def test_empty_inventory_is_a_hard_exit(monkeypatch, tmp_path):

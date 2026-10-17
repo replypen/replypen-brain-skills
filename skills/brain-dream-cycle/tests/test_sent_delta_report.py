@@ -172,7 +172,7 @@ class RenderTest(unittest.TestCase):
 
     def test_html_drops_the_technical_labels_the_human_does_not_want(self):
         page, diff = self.page()
-        for noise in ("thread t1", "session s1", "rc run debug", "server similarity", "word similarity"):
+        for noise in ("thread t1", "session s1", "rp run debug", "server similarity", "word similarity"):
             self.assertNotIn(noise, page)
         # The one plain-language verdict stays, and the run stays reachable but muted.
         self.assertIn(f'class="tag shape">{diff.shape}<', page)
@@ -356,7 +356,7 @@ class ShadowReportTest(unittest.TestCase):
             self.assertEqual(hashlib.sha256(baseline_html.encode()).hexdigest(),
                              "932af26746645cac966c2f152c155b33d8a4d8df7b83063a549e7a8bde81bb45")
             self.assertEqual(hashlib.sha256(baseline_md.encode()).hexdigest(),
-                             "6cbbc6148d230c02b0bf5b8b923de1a6222dabbcca53b3f03da19309b3c986c1")
+                             "d85a2daa21d1a14a0aee65e1d80f1566e29894d3be8a37e5077a6ccc5e1a92b9")
 
 
 if __name__ == "__main__":

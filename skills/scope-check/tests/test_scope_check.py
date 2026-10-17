@@ -1,4 +1,4 @@
-"""scope-check unit tests — a fake `rc` at the subprocess boundary, no network, no production."""
+"""scope-check unit tests — a fake `rp` at the subprocess boundary, no network, no production."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def fake_rc(monkeypatch, handler):
     calls = []
 
     def run(cmd, **kwargs):
-        assert cmd[0] == "rc"
+        assert cmd[0] == "rp"
         calls.append(cmd)
         code, out, err = handler(cmd[1:])
         return subprocess.CompletedProcess(cmd, code, out, err)
@@ -223,7 +223,7 @@ def test_smoke_json_output_and_clean_pass(monkeypatch, capsys):
 def test_smoke_flags_an_rc_without_principal_support(monkeypatch, capsys):
     fake_rc(monkeypatch, lambda args: (1, "", "Error: unknown flag: --principal-kind"))
     assert scope_smoke.main(["--project", "p", "--as", "parent=k:1", "--cmd", "x"]) == 1
-    assert "upgrade rc" in capsys.readouterr().out
+    assert "upgrade rp" in capsys.readouterr().out
 
 
 def test_config_parsing(tmp_path, monkeypatch, capsys):

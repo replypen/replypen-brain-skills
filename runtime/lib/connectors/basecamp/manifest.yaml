@@ -22,7 +22,7 @@ pagination:
   page_size: 100          # advisory; Basecamp uses geared paging (15→30→50→100+), pass page=N
 default_headers:
   # Basecamp requires a descriptive User-Agent — omitting it returns 400 Bad Request.
-  User-Agent: "rootcause-integration (https://rootcause.app)"
+  User-Agent: "replypen-integration (https://replypen.com)"
   Content-Type: "application/json; charset=utf-8"
 rate_limit:
   remaining_header: ""    # Basecamp sends no remaining-count header; 429 + Retry-After in seconds

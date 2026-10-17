@@ -52,8 +52,8 @@ TILES = [
 ]
 BOT_INSTRUCTION = (
     "Apply this edit to the help centre. Use the MCP or API connection available in your project, "
-    "or the rc CLI (`rc project knowledge article apply --from this.md --dry-run`, then without "
-    "`--dry-run`; `rc project knowledge article get --provider <p> --id <id>` shows the current "
+    "or the rp CLI (`rp project knowledge article apply --from this.md --dry-run`, then without "
+    "`--dry-run`; `rp project knowledge article get --provider <p> --id <id>` shows the current "
     "article; recipes in the kit skill `brain-helpcenter-publish`). The body is markdown in the "
     "help-centre canon: '- ' bullets, **bold**, ATX headings, one line per paragraph, no tables, "
     "no strikethrough, no raw HTML. Anchors are verbatim lines of the current article."

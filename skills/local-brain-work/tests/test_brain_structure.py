@@ -243,7 +243,7 @@ class BrainStructureTests(unittest.TestCase):
             root = Path(tmp) / "brain"
             init_repo(root)
             good_brain(root)
-            write(root, ".rootcause/exports/e1/threads/2024-01--refund--3.md", "raw thread text\n")
+            write(root, ".replypen/exports/e1/threads/2024-01--refund--3.md", "raw thread text\n")
             commit_all(root)
             code, output = run_main(root, "--skip", "lint")
             self.assertEqual(code, 1, output)
@@ -274,7 +274,7 @@ class BrainStructureTests(unittest.TestCase):
             init_repo(root)
             good_brain(root)
             commit_all(root)
-            (root / ".rootcause" / "harvest").mkdir(parents=True)
+            (root / ".replypen" / "harvest").mkdir(parents=True)
             stub = str(lint_stub(Path(tmp)))
             # Without --expect-clean the scratch check does not run.
             code_default, out_default = run_main(root, "--lint-script", stub)
@@ -342,11 +342,11 @@ class BrainStructureTests(unittest.TestCase):
             write(root, ".replypenignore", "/.agents/\n")
             write(root, ".agents/skills/local/SKILL.md",
                   "---\nname: local\ndescription: Maintainer-only skill.\n---\n\n"
-                  "See [rc-debug](../rc-debug/SKILL.md); run `rc dev console --project x`.\n")
+                  "See [rp-debug](../rp-debug/SKILL.md); run `rp dev console --project x`.\n")
             commit_all(root)
             code, output = run_main(root, "--skip", "lint", "--scope", "full")
             self.assertEqual(code, 0, output)
-            self.assertNotIn("rc-debug", output)
+            self.assertNotIn("rp-debug", output)
             self.assertIn("failed_checks=-", output)
 
 

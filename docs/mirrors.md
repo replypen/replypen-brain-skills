@@ -6,22 +6,22 @@ A source mirror is a read-only snapshot of an external source repo or knowledge 
 
 ## Mental Model
 
-- Brain freshness and mirror freshness are independent. `rc ask --brain-ref dev/x` changes which brain
+- Brain freshness and mirror freshness are independent. `rp ask --brain-ref dev/x` changes which brain
   ref production mounts, but it does not refresh mirrors or knowledge-base sync state.
-- In production, mirrors refresh periodically from the repo's tracked branch (`rc project repo ls` →
+- In production, mirrors refresh periodically from the repo's tracked branch (`rp project repo ls` →
   `default_branch`; may be a promoted `stable`, not `main`). After pushing to that branch, a project
   admin can request immediate exact-commit feedback:
 
 ```bash
-rc dev mirror refresh --repo <name> --expect-sha "$(git rev-parse HEAD)"
+rp dev mirror refresh --repo <name> --expect-sha "$(git rev-parse HEAD)"
 ```
 
   The command waits for the existing refresh worker, verifies the mirror worktree reached that full
-  SHA, and expires warm console workspaces. It does not restart RootCause or Docker images. Others
+  SHA, and expires warm console workspaces. It does not restart ReplyPen or Docker images. Others
   pushing meanwhile → add `--accept-descendant` (accepts a newer tip that contains your SHA, ancestry
   checked in your checkout) instead of retrying a 409.
-- Declare each required local checkout once in committed `.rootcause.toml`; values are relative to
-  the brain root and ignored by `rc`:
+- Declare each required local checkout once in committed `.replypen.toml`; values are relative to
+  the brain root and ignored by `rp`:
 
 ```toml
 [mirrors]
@@ -38,13 +38,13 @@ uv run "$SKILL/scripts/brain_run.py" --mirror app=~/code/customer-app ...
 ```
 
 - `brain_run.py --brief` shows resolved and missing declared mirrors.
-- `rc fleet health` reports stale/failed mirrors and dead-lettered runs from the public API.
+- `rp fleet health` reports stale/failed mirrors and dead-lettered runs from the public API.
 
 ## Triage
 
 | Evidence | Interpretation |
 |---|---|
 | `MirrorMissing` locally | Fix the `[mirrors]` path or override it with `--mirror name=path`; declared mirrors never skip silently. |
-| `rc fleet health` reports a stale/failed mirror | Retry `rc dev mirror refresh` with the pushed SHA; if it fails, escalate with the command error and mirror name. |
-| A prod run read old source content | Check run trace "Files the run read" and `rc fleet health`; mirror freshness may lag brain deploy. |
+| `rp fleet health` reports a stale/failed mirror | Retry `rp dev mirror refresh` with the pushed SHA; if it fails, escalate with the command error and mirror name. |
+| A prod run read old source content | Check run trace "Files the run read" and `rp fleet health`; mirror freshness may lag brain deploy. |
 | A dev-ref run still sees old source content | Expected if only the brain changed. Dev refs do not change mirror snapshots. |

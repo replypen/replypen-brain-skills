@@ -8,7 +8,7 @@
     uv run skills/brain-grounding-intake/scripts/questions.py [--days 60] [--out DIR]
     uv run skills/brain-grounding-intake/scripts/questions.py --from FILE [--out DIR]
 
-`--days` runs the `brain-helpcenter-suggestions` collector (read-only `rc`) into
+`--days` runs the `brain-helpcenter-suggestions` collector (read-only `rp`) into
 `$OUT/raw/helpcenter/` and reduces its `evidence.json`. `--from` takes either such an
 `evidence.json` or a plain text file with one question per line.
 
@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     brain_root = find_brain_root()
-    out_dir = Path(args.out or brain_root / ".rootcause" / "grounding-intake"
+    out_dir = Path(args.out or brain_root / ".replypen" / "grounding-intake"
                    / date.today().isoformat())
     out_dir.mkdir(parents=True, exist_ok=True)
 

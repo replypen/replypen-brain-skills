@@ -1,6 +1,6 @@
 # Image generation — cost model and the ladder decisions
 
-`lib.image` (runtime/lib/image.py) owns the preview → final ladder; the rootcause host owns the
+`lib.image` (runtime/lib/image.py) owns the preview → final ladder; the ReplyPen host owns the
 model choice (`internal/imagegen`, `ModelFor`). Both calibrated against OpenAI GPT Image 2.5,
 vetted live 2026-09-08. Re-vet with a one-off curl on `/v1/images/generations`; images are not on
 OpenRouter, so the model-picker cannot see them.
@@ -42,7 +42,7 @@ xhigh 3122 $0.094 · max 7024 $0.21. An edit adds ~1024 input tokens for the bas
    preview only has to confirm composition, wording and style.
 3. **Flare** — same price, fastest; the preview is a decision point, not the deliverable.
 4. **Words before pixels** — the skill ideates in text and shows free style examples first; one
-   preview, never a stack of guesses (`skills/image/SKILL.md` in rootcause).
+   preview, never a stack of guesses (`skills/image/SKILL.md` in replypen).
 
 Result: $0.003–0.006 per preview. There is nothing left to squeeze here.
 

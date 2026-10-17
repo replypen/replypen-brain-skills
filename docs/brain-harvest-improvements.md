@@ -12,30 +12,30 @@ Severity: **P1** = caused real friction / a correctness or privacy risk; **P2** 
 
 ## P1 — Step 1 breaks on an all-projects token (NO_PROJECT_SCOPE)
 
-**Observed:** `rc auth status` returned `login_all_projects: true`, `project: "—"`. Then
-`rc project mailbox ls` and `rc project corpus ls` (exactly the step-1 / step-2 commands) failed:
+**Observed:** `rp auth status` returned `login_all_projects: true`, `project: "—"`. Then
+`rp project mailbox ls` and `rp project corpus ls` (exactly the step-1 / step-2 commands) failed:
 `NO_PROJECT_SCOPE: this all-projects token names no project; pass ?project=<id-or-name>`.
 Every subsequent command needed `--project bollen-klara`.
 
 **Proposed change:** Step 1 should detect this and branch:
 ```bash
-rc auth status -o json   # if login_all_projects == true and project is empty:
-rc project list          #   list projects, pick the one matching this brain dir
+rp auth status -o json   # if login_all_projects == true and project is empty:
+rp project list          #   list projects, pick the one matching this brain dir
 export RC_PROJECT=<slug> #   then pass --project $RC_PROJECT on every call
 ```
-Add a one-liner to the skill: "If `rc auth status` shows an all-projects token with no bound project,
-every scoped `rc` call in this skill needs `--project <slug>`; resolve it from `rc project list` matching
-the checkout name." Current `rc` also reads the committed `.rootcause.toml` project automatically when
+Add a one-liner to the skill: "If `rp auth status` shows an all-projects token with no bound project,
+every scoped `rp` call in this skill needs `--project <slug>`; resolve it from `rp project list` matching
+the checkout name." Current `rp` also reads the committed `.replypen.toml` project automatically when
 the checkout uses the default all-projects profile.
 
 ## P1 — Add a write-scope preflight before proposing persona/triage homes
 
-**Observed:** The decision table (step 4) routes signal to persona (`rc project settings behavior`), triage policy,
-and triage rules. But whether *this token* can write those is unknown until you try. I ran `rc auth access` and
+**Observed:** The decision table (step 4) routes signal to persona (`rp project settings behavior`), triage policy,
+and triage rules. But whether *this token* can write those is unknown until you try. I ran `rp auth access` and
 confirmed `config:write`, `runs:trigger`, `admin:*`, `secrets:write` — but a narrower token would only be
 able to touch brain files and would have to route everything else to a `brain-publish` support request.
 
-**Proposed change:** Add `rc auth access` to the step-1 inventory, and note: "If the
+**Proposed change:** Add `rp auth access` to the step-1 inventory, and note: "If the
 token lacks `config:write` / triage write scopes, persona/triage distillations become `brain-publish`
 support-request items, not direct writes." Prevents discovering this only at push time.
 
@@ -97,7 +97,7 @@ since voice is what makes drafts land).
 used, greeting, sign-off/signature, formality, typical length)" a **required section** in the per-cluster
 return template, feeding a dedicated persona-synthesis step. Add a row to step 4's flow: "Synthesize a
 persona proposal (language policy, tone, signature) from the aggregated voice sections; apply via
-`rc project settings behavior set persona.*`."
+`rp project settings behavior set persona.*`."
 
 ## P2 — Multilingual mailboxes: capture language-by-context as a durable persona fact
 
@@ -121,34 +121,34 @@ corrections, gaps) rather than a from-scratch proposal. Keeps the diff reviewabl
 
 ## P2 — Decouple trigger from download so long jobs / short tokens don't strand the run
 
-**Observed:** The OAuth access token had a short lifetime (~minutes to expiry when I started). `rc project mailbox
+**Observed:** The OAuth access token had a short lifetime (~minutes to expiry when I started). `rp project mailbox
 harvest --wait` blocks the local process for the whole sweep; if the token lapses mid-wait the local wait
 dies even though the server job continues. I triggered **without `--wait`** (fast, returns `export_id`
-immediately, job runs server-side), then polled `rc project corpus ls` separately. This fully de-risked token
+immediately, job runs server-side), then polled `rp project corpus ls` separately. This fully de-risked token
 expiry and is also friendlier to the 5-min `--wait` default on large mailboxes.
 
 **Proposed change:** Step 2 should present the decoupled pattern as the default for large/old mailboxes:
-trigger without `--wait`, capture `export_id`, poll `rc project corpus ls` until terminal, then
-`rc project corpus download`. Mention that the server job survives local token expiry. Keep `--wait` as the convenience path
+trigger without `--wait`, capture `export_id`, poll `rp project corpus ls` until terminal, then
+`rp project corpus download`. Mention that the server job survives local token expiry. Keep `--wait` as the convenience path
 for small mailboxes.
 
 ## P2 — `--max-threads` guidance + check the `truncated` flag
 
 **Observed:** Skill example uses `--max-threads 1000`. For "go a long time back" I used 2000; the mailbox's
-real sent history was 1334, and `rc project corpus ls` reported `"truncated": false` — confirming I reached the
+real sent history was 1334, and `rp project corpus ls` reported `"truncated": false` — confirming I reached the
 bottom. If it had been `true`, history goes further and the cap needs raising.
 
 **Proposed change:** Step 2: recommend sizing `--max-threads` generously for a deep harvest (or `0` =
-server default) and then **verifying `truncated: false`** in `rc project corpus ls` to confirm the full history was
+server default) and then **verifying `truncated: false`** in `rp project corpus ls` to confirm the full history was
 captured; if `true`, re-harvest with a higher cap. One sentence.
 
-## P2 — Pure-noise automated senders: point at `rc project senders`, not only triage rules
+## P2 — Pure-noise automated senders: point at `rp project senders`, not only triage rules
 
 **Observed:** ~18% of the corpus is automated notifications / newsletters / receipts — deterministic
-always-skip material. The skill routes always-skip to `rc project triage rules`, but `rc project senders`
+always-skip material. The skill routes always-skip to `rp project triage rules`, but `rp project senders`
 (never-spam/always-spam lists) exists and may be the more precise home for "this sender is pure noise."
 
-**Proposed change:** In the decision table's "deterministic always-skip" row, mention `rc project senders block`
+**Proposed change:** In the decision table's "deterministic always-skip" row, mention `rp project senders block`
 as an alternative home for pure-noise senders, and let the operator pick between a triage hard rule and a
 spam-list entry.
 
@@ -182,8 +182,8 @@ proportional to signal."
 
 ## P2 — Triage `match_kind` enum is undiscoverable + docs are stale
 
-**Observed:** `rc project triage rules add` requires `match_kind=<...>` but neither `--help`, the
-validation error, nor `rc dev api openapi` reveals the allowed values. I had to brute-probe. The audited
+**Observed:** `rp project triage rules add` requires `match_kind=<...>` but neither `--help`, the
+validation error, nor `rp dev api openapi` reveals the allowed values. I had to brute-probe. The audited
 deployment accepted only a subset; the current closed set is **`sender_address`, `sender_domain`,
 `sender_prefix`, `subject_contains`, `body_contains`, `header_exists`, `header_equals`**. The old
 skill/CLI example used **`sender_email`**, which the server rejects
@@ -191,7 +191,7 @@ skill/CLI example used **`sender_email`**, which the server rejects
 of validating, which I then had to delete — so "probe to discover the enum" is not even side-effect-free.
 
 **Proposed change:** (1) Keep examples on the accepted names above (never `sender_email`). (2) Ask the
-CLI to list the full enum in `rc project triage rules add --help` and in the
+CLI to list the full enum in `rp project triage rules add --help` and in the
 `INVALID_RULE` error message. (3) In the skill, give the confirmed enum inline so an agent doesn't probe
 (and accidentally create rules). Minor CLI bug worth filing: `add` with an invalid sibling field still
 persisted a rule in some cases.
@@ -223,7 +223,7 @@ improves precision, already emergent behavior.
 
 ## What worked well (keep as-is)
 - **Gitignore preflight** (`git check-ignore` on the split dir) — mechanical, caught nothing to fix here
-  because `/.rootcause/` is wholesale-ignored, but the check is cheap and correct. Keep.
+  because `/.replypen/` is wholesale-ignored, but the check is cheap and correct. Keep.
 - **Privacy-first framing + `brain_lint.py`** — the hard/soft split and the "distilled patterns only"
   discipline are the right spine. (Effectiveness verified below once proposals land.)
 - **Critic-on-first-draft** guidance — correct and non-obvious; keep prominent.
@@ -287,8 +287,8 @@ the approval-sense of "sign-off" should pass. Low effort, removes the only frict
 ## P1 — Local IMAP harvest path must fail closed when tooling is absent
 
 **Observed (Orthodusart first-run check, 2026-07-09):** The design docs mention a future deep/local IMAP
-path (`rc project mailbox imap-env` + `scripts/local_imap_harvest.py`), but the installed `rc` command tree and
-brain-skill checkout did not expose either piece. Hosted `rc project mailbox harvest` exists, but IMAP may be
+path (`rp project mailbox imap-env` + `scripts/local_imap_harvest.py`), but the installed `rp` command tree and
+brain-skill checkout did not expose either piece. Hosted `rp project mailbox harvest` exists, but IMAP may be
 capped to a shallow 100-ref smoke export and production auth was unavailable in the test session.
 
 The current CLI and kit now expose both canonical surfaces; this observation only explains why the

@@ -32,7 +32,7 @@ Then one **verdict** class:
 
 `lever` = which knob fixes it: `brain` (skills/knowledge/playbook text), `persona` (project or
 tenant persona settings), `triage` (policy/rules), `grounding` (a DB/KB/write path the project
-must provide — a RootCause support request, not a brain edit), `host` (platform bug), `none`.
+must provide — a ReplyPen support request, not a brain edit), `host` (platform bug), `none`.
 
 Write `scores/<ref>/<case>.json`:
 

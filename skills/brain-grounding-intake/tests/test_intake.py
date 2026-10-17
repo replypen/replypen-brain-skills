@@ -156,10 +156,10 @@ def test_scan_takes_tables_from_a_probed_schema(tmp_path: Path) -> None:
 
 def copy_fixture(tmp_path: Path) -> Path:
     """The fixture inside a fake brain checkout, so `brain:` locators resolve."""
-    write(tmp_path / ".rootcause.toml", 'project = "salonx"\n')
+    write(tmp_path / ".replypen.toml", 'project = "salonx"\n')
     write(tmp_path / "skills" / "tenant-model.md",
           "---\ndescription: who sees what\n---\n\nOne salon sees one agenda.\n")
-    out = tmp_path / ".rootcause" / "grounding-intake" / "2026-09-08"
+    out = tmp_path / ".replypen" / "grounding-intake" / "2026-09-08"
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(FIXTURES / "out", out)
     return out
@@ -483,7 +483,7 @@ def test_context_markdown() -> None:
 def test_context_survives_missing_keys() -> None:
     context = load("context.py", "context_under_test")
     text = context.build("salonx", None, {"databases": []}, [], [],
-                         ["`rc project database ls` was not available."])
+                         ["`rp project database ls` was not available."])
     assert "was not available" in text
     assert "- none: a run has no database" in text
     assert "- none: a run reads no source code" in text

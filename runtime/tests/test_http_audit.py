@@ -287,7 +287,7 @@ def test_cloudwatch_client_installs_botocore_attempt_hooks():
         "before-send.cloudwatch-logs.*",
         "needs-retry.cloudwatch-logs.*",
     ]
-    assert isinstance(fake_client._rootcause_http_auditor, cloudwatch._BotocoreHTTPAuditor)
+    assert isinstance(fake_client._replypen_http_auditor, cloudwatch._BotocoreHTTPAuditor)
 
 
 @responses.activate
@@ -341,7 +341,7 @@ def test_runtime_has_no_raw_python_http_bypass():
 
     SDK-owned transports are deliberately outside this AST check. ``lib.cloudwatch`` bridges
     botocore's before-send/needs-retry hooks into the same contract. ``lib.telemetry`` (PostHog) is
-    the sole exemption because it is rootcause-owned best-effort internal telemetry, not project
+    the sole exemption because it is ReplyPen-owned best-effort internal telemetry, not project
     grounding/customer traffic.
     """
     lib_root = Path(__file__).resolve().parents[1] / "lib"

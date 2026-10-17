@@ -14,7 +14,7 @@ cross-tenant join bug). Scripts only use 8 `lib` symbols. Single-file is mandate
 into project-level shared code; do not do that here.
 
 ## Goal
-Cheap, low-false-positive guardrails in the kit (`rootcause-brain-skills`) so brains keep action
+Cheap, low-false-positive guardrails in the kit (`replypen-brain-skills`) so brains keep action
 scripts small and conventions followed — applied automatically via the existing offline test/lint
 tier (`lib.brain_lint`, `brain_test.py`, `local-brain-work` skill). No over-engineering.
 
@@ -31,6 +31,6 @@ tier (`lib.brain_lint`, `brain_test.py`, `local-brain-work` skill). No over-engi
    mutate pattern, idempotency key helper) — propose, don't build unless trivially generic.
 
 ## Verification
-Run the lint against the dentai brain checkout (`~/code/rootcause-org/rootcause-brain-dentai`, use
+Run the lint against the dentai brain checkout (`~/code/replypen/replypen-brain-dentai`, use
 `origin/main`) and report signal/noise. Cut a kit release per RELEASING.md only if the change is
 ready; otherwise land on main and report.

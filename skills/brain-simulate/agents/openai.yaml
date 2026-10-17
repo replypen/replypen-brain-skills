@@ -1,4 +1,4 @@
 interface:
   display_name: "Brain Dev: Simulate"
-  short_description: "Replay real inbound cases through rc ask and grade the drafts"
+  short_description: "Replay real inbound cases through rp ask and grade the drafts"
   default_prompt: "Use $brain-simulate to replay ~10 representative real inbound cases through the production brain in simulation mode, judge each draft against the human's historical reply, and render the HTML report with steering prompts."

@@ -9,7 +9,7 @@
     uv run skills/brain-grounding-intake/scripts/query.py --db staging --file drill.sql
     echo "select 1 limit 1" | uv run .../query.py --db staging
 
-The statement is checked here first, then shipped to the workspace through `rc dev console bash
+The statement is checked here first, then shipped to the workspace through `rp dev console bash
 run -` and run with the injected `lib.db`. Rows come back as TSV, and every statement is
 appended to `$OUT/drills.log`, so the intake carries the audit trail of what you touched.
 
@@ -80,7 +80,7 @@ def guard(sql: str, limit_ok: bool = False) -> tuple[str | None, str | None]:
 
 
 def remote_command(sql: str, db: str) -> str:
-    """The python heredoc `rc dev console bash run -` executes on the box."""
+    """The python heredoc `rp dev console bash run -` executes on the box."""
     payload = json.dumps({"sql": sql, "db": db})
     return ("python3 - <<'RCQUERY'\n"
             "import json\n"
@@ -127,10 +127,10 @@ def read_sql(args: argparse.Namespace) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="One guarded read-only drill on a grounding database")
     parser.add_argument("sql", nargs="?", help="the statement; or --file, or stdin")
-    parser.add_argument("--db", required=True, help="the short database key, as `rc project database ls`")
+    parser.add_argument("--db", required=True, help="the short database key, as `rp project database ls`")
     parser.add_argument("--file", type=Path, help="read the statement from a file")
     parser.add_argument("--out", type=Path,
-                        help="output directory, default .rootcause/grounding-intake/<date>")
+                        help="output directory, default .replypen/grounding-intake/<date>")
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--limit-ok", action="store_true", dest="limit_ok",
                         help="run a select without a small LIMIT, deliberately")
@@ -149,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     brain_root = find_brain_root()
-    out_dir = Path(args.out or brain_root / ".rootcause" / "grounding-intake"
+    out_dir = Path(args.out or brain_root / ".replypen" / "grounding-intake"
                    / date.today().isoformat()).expanduser()
     started = time.monotonic()
     try:

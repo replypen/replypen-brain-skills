@@ -4,10 +4,10 @@
 # ///
 """Inspect the tenant projection inputs for a templated project brain.
 
-Read-only by default: fetches one tenant's profile values through `rc project tenant profile get`, reads
+Read-only by default: fetches one tenant's profile values through `rp project tenant profile get`, reads
 the local `projection.yaml`, and prints the choices prod will make before mounting the ephemeral compiled
 view at `/brain`. It never writes compiled files into the brain tree. With `--write-summary`, it writes
-only debug artifacts under `.rootcause/projection/<tenant>/`.
+only debug artifacts under `.replypen/projection/<tenant>/`.
 
     uv run brain_projection.py --tenant de-kies
     uv run brain_projection.py --tenant de-kies --write-summary
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -25,7 +26,12 @@ from typing import Any
 import brain_env as E
 import yaml
 
-OUT_ROOT = Path(".rootcause") / "projection"
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
+OUT_ROOT = Path(".replypen") / "projection"
 BRANCH_KEYS = (
     "newpatient_method",
     "existingpatient_method",
@@ -63,27 +69,27 @@ def _load_spec(brain_dir: Path) -> dict[str, Any]:
 
 def _fetch_settings(brain_dir: Path, tenant: str) -> dict[str, Any]:
     proc = subprocess.run(
-        ["rc", "project", "tenant", "profile", "get", tenant, "-o", "json"],
+        [_cli(), "project", "tenant", "profile", "get", tenant, "-o", "json"],
         cwd=brain_dir,
         capture_output=True,
         text=True,
     )
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
-        raise RuntimeError(f"`rc project tenant profile get {tenant} -o json` failed: {detail}")
+        raise RuntimeError(f"`rp project tenant profile get {tenant} -o json` failed: {detail}")
     try:
         data = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"`rc project tenant profile get` did not return JSON ({exc}): {proc.stdout[:200]!r}") from exc
+        raise RuntimeError(f"`rp project tenant profile get` did not return JSON ({exc}): {proc.stdout[:200]!r}") from exc
     if not isinstance(data, dict):
-        raise RuntimeError("`rc project tenant profile get` returned non-object JSON")
+        raise RuntimeError("`rp project tenant profile get` returned non-object JSON")
     settings = data.get("settings") or {}
     if not isinstance(settings, dict):
         raise RuntimeError("tenant profile response has non-object `settings`")
     return data
 
 
-# Two reserved variant names, mirroring rootcause `internal/projection`: `unset` (absent, null or a
+# Two reserved variant names, mirroring replypen `internal/projection`: `unset` (absent, null or a
 # blank string) and `present` (any other value — the catch-all a free-text key branches on).
 SELECTOR_UNSET = "unset"
 VARIANT_PRESENT = "present"
@@ -196,7 +202,7 @@ def projection_summary(brain_dir: Path, tenant: str, spec: dict[str, Any], recor
         f"# Projection preview — {tenant}",
         "",
         f"- **Brain:** `{brain_dir}`",
-        f"- **Runtime values:** `rc project tenant profile get {tenant} -o json`",
+        f"- **Runtime values:** `rp project tenant profile get {tenant} -o json`",
         f"- **Tenant ID:** `{record.get('tenant_id') or '?'}`",
         f"- **Version:** `{record.get('version') or '?'}`",
         f"- **Applied at:** `{record.get('applied_at') or '?'}`",
@@ -272,9 +278,9 @@ def _safe_out_dir(brain_dir: Path, tenant: str) -> Path:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="brain_projection.py", description=__doc__.split("\n")[0])
     p.add_argument("--brain", help="project brain dir (default: cwd)")
-    p.add_argument("--tenant", required=True, help="tenant slug passed to `rc project tenant profile get`")
+    p.add_argument("--tenant", required=True, help="tenant slug passed to `rp project tenant profile get`")
     p.add_argument("--write-summary", action="store_true",
-                   help="write summary.md + settings.json under .rootcause/projection/<tenant>/")
+                   help="write summary.md + settings.json under .replypen/projection/<tenant>/")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 
     brain_dir = E.resolve_brain_dir(args.brain)
@@ -295,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
             (out / "settings.json").write_text(json.dumps(record, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
                                                 encoding="utf-8")
         except Exception as exc:  # noqa: BLE001
-            print(f"error: could not write .rootcause projection summary: {exc}", file=sys.stderr)
+            print(f"error: could not write .replypen projection summary: {exc}", file=sys.stderr)
             return 1
         print(f"\nwrote {out / 'summary.md'}")
         print(f"wrote {out / 'settings.json'}")

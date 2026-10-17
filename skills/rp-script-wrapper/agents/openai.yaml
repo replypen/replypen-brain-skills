@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Dev: rp Script Wrapper"
+  short_description: "Write safe deterministic wrappers around rp"
+  default_prompt: "Use $rp-script-wrapper to wrap rp safely in a local deterministic script."

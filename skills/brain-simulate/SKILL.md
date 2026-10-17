@@ -1,6 +1,6 @@
 ---
 name: brain-simulate
-description: "Measure how well a rootcause brain behaves today: replay representative, deliberately hard real inbound cases through the production prompt API (`rc ask --simulation`), grade each draft against the human's historical reply on content and tone, and render a self-contained HTML report with run-trace links and copy-paste steering prompts. Use for 'how good is the brain now', a before/after check of a dev/<branch> brain, or to find which cases are blocked on grounding vs brain/persona gaps."
+description: "Measure how well a ReplyPen brain behaves today: replay representative, deliberately hard real inbound cases through the production prompt API (`rp ask --simulation`), grade each draft against the human's historical reply on content and tone, and render a self-contained HTML report with run-trace links and copy-paste steering prompts. Use for 'how good is the brain now', a before/after check of a dev/<branch> brain, or to find which cases are blocked on grounding vs brain/persona gaps."
 ---
 
 # brain-simulate — replay real cases, grade the drafts, steer the brain
@@ -10,7 +10,7 @@ one question and [`brain-fleet-report`](../brain-fleet-report/SKILL.md) judges y
 traffic, simulate replays a **chosen set of historical cases** so the same cases can be re-run after
 a brain change and diffed. Python replays and renders; **you select, judge and recommend**.
 
-Public `rc` only. Every replay is a real production run: always `--simulation` (real brain and
+Public `rp` only. Every replay is a real production run: always `--simulation` (real brain and
 grounding, no action executes, no journal commit, nothing placed in a mailbox —
 [docs/side-effects.md](../../docs/side-effects.md)). A `--brain-ref dev/<branch>` run is a test run
 on top of that.
@@ -29,11 +29,11 @@ brain edit fixes and what needs a grounding request.
 
 ```
 SKILL=<absolute path to skills/brain-simulate>
-SCRATCH=.rootcause/simulate/<tag>            # <tag> = local label, e.g. hs-2026-09
+SCRATCH=.replypen/simulate/<tag>            # <tag> = local label, e.g. hs-2026-09
   cases.json acquire.json candidates.{md,json} selection.json persona.json
   runs/<ref>/<case>.json  judge/<ref>/<case>.md  scores/<ref>/<case>.json
   recommendations.json  report[-<ref>].{html,md}
-.rootcause/simulate/history.jsonl            # one line per (tag, ref) — trend
+.replypen/simulate/history.jsonl            # one line per (tag, ref) — trend
 ```
 
 Templates: [`templates/selection-prompt.md`](templates/selection-prompt.md) ·
@@ -49,9 +49,9 @@ metadata, content-derived id). Sources:
 
 ```bash
 # Help Scout pages already pulled for a harvest (see brain-harvest/acquire.md for the pull itself)
-uv run "$SKILL/scripts/simulate.py" acquire --scratch "$SCRATCH" --source helpscout --pages .rootcause/harvest/<tag>/corpus
-# a v3 harvest corpus from `rc project corpus download` (Gmail / IMAP / Intercom — brain-harvest/acquire.md)
-uv run "$SKILL/scripts/simulate.py" acquire --scratch "$SCRATCH" --source harvest --corpus .rootcause/harvest/<tag>/corpus --append
+uv run "$SKILL/scripts/simulate.py" acquire --scratch "$SCRATCH" --source helpscout --pages .replypen/harvest/<tag>/corpus
+# a v3 harvest corpus from `rp project corpus download` (Gmail / IMAP / Intercom — brain-harvest/acquire.md)
+uv run "$SKILL/scripts/simulate.py" acquire --scratch "$SCRATCH" --source harvest --corpus .replypen/harvest/<tag>/corpus --append
 # hand-written what-ifs in the case schema
 uv run "$SKILL/scripts/simulate.py" acquire --scratch "$SCRATCH" --source manual --cases what-ifs.json --append
 ```
@@ -78,11 +78,11 @@ uv run "$SKILL/scripts/simulate.py" run --scratch "$SCRATCH" --ref dev/<branch> 
 # --parallel 2 (max 3) --retries 2 --only ID,ID --force --dry-run --timeout 5m
 ```
 
-Per case: `rc ask <inbound> --scenario email --simulation --subject … --from simulate-<id>@example.test -o json`.
+Per case: `rp ask <inbound> --scenario email --simulation --subject … --from simulate-<id>@example.test -o json`.
 Multi-turn inbound is embedded oldest-first in one question — `--session` is **not** used, it does
 not replay prior turns ([brain-ask](../brain-ask/SKILL.md#simulating-a-customers-follow-up-reply)).
 Results are re-entrant per case; a persona snapshot (`persona.json`) is taken for the judge. Runs
-show up in `rc run list` as simulation prompt runs.
+show up in `rp run list` as simulation prompt runs.
 
 ### 4. Score → `scores/<ref>/`
 
@@ -122,6 +122,6 @@ per project. Grounding recommendations become a support request, not a brain edi
 
 ## Related
 
-[`rc-debug`](../rc-debug/SKILL.md) on any run link that looks like a host issue ·
+[`rp-debug`](../rp-debug/SKILL.md) on any run link that looks like a host issue ·
 [`brain-dream-cycle`](../brain-dream-cycle/SKILL.md) for feedback-driven consolidation ·
 [`local-brain-work`](../local-brain-work/SKILL.md) for the edits the prompts ask for.

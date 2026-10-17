@@ -208,7 +208,7 @@ high-risk floor silently.
 means "always auto":
 
 - `projects.action_autonomy_max` — an operator-set ceiling (`human` by default). It can only lower, never
-  raise. Read it with `rc --project <p> project action-settings get -o json` (field `action_autonomy_max`); an
+  raise. Read it with `rp --project <p> project action-settings get -o json` (field `action_autonomy_max`); an
   operator raises it in the console Action settings. Until the operator raises it, every action stays
   `human` no matter what the manifest says.
 - `risk: high` in the manifest → always `human` (risk is now **load-bearing**, not just informational).
@@ -288,24 +288,24 @@ machinery or the action's own refusal — before anyone reads a trace:
 
 | Class | Meaning | Who fixes it |
 |---|---|---|
-| `executor_predispatch` | Provably nothing ran (unbound tenant, missing grant, oversized argv, unresolvable script). Retry-safe: no side effect. | RootCause / wiring |
-| `executor_error` | The executor failed and may have reached the interpreter — side effect uncertain. | RootCause |
+| `executor_predispatch` | Provably nothing ran (unbound tenant, missing grant, oversized argv, unresolvable script). Retry-safe: no side effect. | ReplyPen / wiring |
+| `executor_error` | The executor failed and may have reached the interpreter — side effect uncertain. | ReplyPen |
 | `no_executor`, `no_runner_url` | Hosted mode with no executor, or Embassy mode with no `action_runner_url`. | Project config |
-| `attachment_fetch` | An attachment param could not be materialized before execution. | RootCause / params |
+| `attachment_fetch` | An attachment param could not be materialized before execution. | ReplyPen / params |
 | anything else | Stamped by the action script itself (e.g. `ActionError`) — a domain refusal, i.e. the guard worked. | The brain / the action |
 
 Where to read it:
 
 ```bash
-rc fleet actions --days 7 --status failed          # CLASS column + Error: detail line (message clamped)
-rc fleet actions --days 7 --status failed -o json |
+rp fleet actions --days 7 --status failed          # CLASS column + Error: detail line (message clamped)
+rp fleet actions --days 7 --status failed -o json |
   jq '.items[] | select(.error_class) | {action_id, error_class, error_message}'   # untruncated message
-rc run actions <run-uuid>                          # per-run CLASS column
+rp run actions <run-uuid>                          # per-run CLASS column
 ```
 
-`rc run actions` is the customer-safe projection: its class is narrowed to the host vocabulary above and
+`rp run actions` is the customer-safe projection: its class is narrowed to the host vocabulary above and
 every action-authored class collapses to `action_error`; the message is not exposed there at all. Read
-the raw pair on `rc fleet actions` (operator-only). Repeated infra classes across runs are an outage
+the raw pair on `rp fleet actions` (operator-only). Repeated infra classes across runs are an outage
 signal, not a brain bug — do not "fix" the brain for them.
 
 ## Inspect Access
@@ -314,16 +314,16 @@ Before depending on a connector or write plane, check the project from the same 
 run the action:
 
 ```bash
-rc --project <project> project connection ls -o json
-rc --project <project> dev console capabilities -o json
-rc --project <project> dev console action list -o json
-rc --project <project> project action-settings get -o json
+rp --project <project> project connection ls -o json
+rp --project <project> dev console capabilities -o json
+rp --project <project> dev console action list -o json
+rp --project <project> project action-settings get -o json
 ```
 
 `connection ls` shows connected OAuth/API grants. `capabilities` shows console planes such as
 `planes.action`. `action list` shows the hosted/cataloged actions visible to this login. `action config
 get` shows whether action execution is enabled and wired. For read-plane confidence, smoke-test the
-read connector through `rc dev console bash run 'python -m lib.api get ...'` or the provider's `lib.connectors.*`
+read connector through `rp dev console bash run 'python -m lib.api get ...'` or the provider's `lib.connectors.*`
 module.
 
 ## Hosted Python Harness
@@ -414,8 +414,8 @@ remain read-only and `RC_CONN_*`-backed.
 
 Available provider helpers are intentionally small and grown as actions need them. When adding or
 changing a provider helper, update that provider module's literal `ACTION_HELPER_DOCS` constant in
-`runtime/lib/action/<provider>.py`. The dashboard authoring overlay in the rootcause host repo loads
-those constants from the pinned `rootcause-runtime` tag, parses them with Python AST without importing
+`runtime/lib/action/<provider>.py`. The dashboard authoring overlay in the replypen host repo loads
+those constants from the pinned `replypen-runtime` tag, parses them with Python AST without importing
 the modules, derives helper signatures from real top-level functions, and renders
 `dashboard-overlay/action-integrations*.generated.md`. That constant is model-facing downstream, so keep
 it as the explicit write-plane whitelist inside `lib.action.*`, not under `lib.connectors.*`; connector
@@ -480,10 +480,10 @@ uv run "$SKILL/scripts/brain_action.py" <id> --params '<json>' --preflight-only
 { printf 'lambda do |params|\n'; cat actions/<id>/script.rb; printf '\nend\n'; } | ruby -c -
 
 # deployed brain, prod data: Python preflight, then the Embassy would_execute dry-run
-rc --tenant <slug> dev console action preflight <id> --params '<json>'
+rp --tenant <slug> dev console action preflight <id> --params '<json>'
 
 # real signed path, after pushing/syncing a safe target
-rc dev console action run <id> --params '<json>'
+rp dev console action run <id> --params '<json>'
 ```
 
 For `runtime: ruby`, local body execution is not a substitute for the Embassy path: Rails constants,
@@ -496,7 +496,7 @@ dev-trigger: run the body through the app's installed Embassy executor with non-
 (validation failure, unknown record, default-tenant refusal, or a no-change update). Transport the
 `script.rb` body as Base64 into the runner; JSON or double-quoted Ruby strings can accidentally
 interpolate `#{...}` inside the action source before the executor sees it. Current Ruby Embassies use the
-`rootcause-embassy` entrypoint and `RootCause::Embassy::Executor`.
+`replypen-embassy` entrypoint and `ReplyPen::Embassy::Executor`.
 
 Review checklist for Embassy Ruby bodies:
 
@@ -513,18 +513,18 @@ Review checklist for Embassy Ruby bodies:
 
 Do not author an action blind:
 
-1. Find relevant real runs with `rc run list`, `rc fleet runs`, or `rc fleet patterns`.
-2. Inspect what the agent actually did with `rc run events <id>` or `rc-debug`.
+1. Find relevant real runs with `rp run list`, `rp fleet runs`, or `rp fleet patterns`.
+2. Inspect what the agent actually did with `rp run events <id>` or `rp-debug`.
 3. Shape `description`, params, and preflight from evidence.
 4. Verify with local checks.
-5. Push a dev branch and run `rc ask --brain-ref dev/<branch>` to see whether the agent proposes the
+5. Push a dev branch and run `rp ask --brain-ref dev/<branch>` to see whether the agent proposes the
    action with sane params.
 6. Use `brain-publish` for live publish/promote/support handoff.
-7. For an explicit production action, use `prod-console` / `rc dev console action preflight` /
-   `rc dev console action run`
+7. For an explicit production action, use `prod-console` / `rp dev console action preflight` /
+   `rp dev console action run`
    after params are grounded.
 
-Do not document private RootCause commands here. Use public `rc` surfaces; if a publish/support step is
+Do not document private ReplyPen commands here. Use public `rp` surfaces; if a publish/support step is
 missing, route through `brain-publish`.
 
 ## Triage

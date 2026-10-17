@@ -294,7 +294,7 @@ class HTTP:
                 validator: Callable[[str], tuple[str, ...]] | None = None
                 ) -> tuple[bytes, dict[str, str]]:
         body = None if payload is None else json.dumps(payload).encode()
-        request_headers = {"User-Agent": "rootcause-brain-website-scout/1"}
+        request_headers = {"User-Agent": "replypen-brain-website-scout/1"}
         request_headers.update(headers or {})
         if body is not None:
             request_headers["Content-Type"] = "application/json"

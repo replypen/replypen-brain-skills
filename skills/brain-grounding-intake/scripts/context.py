@@ -7,8 +7,8 @@
 
     uv run skills/brain-grounding-intake/scripts/context.py [--out DIR]
 
-Read-only: `rc project database ls` for the database descriptions a run sees, `rc dev console
-capabilities` for the databases actually mounted, `rc project repo ls` for the source mirrors
+Read-only: `rp project database ls` for the database descriptions a run sees, `rp dev console
+capabilities` for the databases actually mounted, `rp project repo ls` for the source mirrors
 and the description a run reads about each, and the brain's own
 tracked markdown with line counts. Judge every question from this chair, not from your
 checkout: what the run has is what grounds the answer.
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from datetime import date
@@ -25,14 +26,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from scan import find_brain_root, read_toml  # noqa: E402
+from scan import _marker, find_brain_root, read_toml  # noqa: E402
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
 
 MAX_BRAIN_LINES = 200
 
 
 def rc_json(brain_root: Path, args: list[str]) -> object | None:
-    """The parsed JSON of one read-only `rc` command, or None when it was unavailable."""
-    proc = subprocess.run(["rc", *args], cwd=str(brain_root), text=True,
+    """The parsed JSON of one read-only `rp` command, or None when it was unavailable."""
+    proc = subprocess.run([_cli(), *args], cwd=str(brain_root), text=True,
                           capture_output=True, check=False)
     if proc.returncode != 0:
         return None
@@ -82,10 +89,10 @@ def database_lines(listed: object, capabilities: object) -> list[str]:
 
 
 def mirror_lines(repos: object) -> list[str]:
-    """One line per source mirror from `rc project repo ls`: the description a run reads in its
+    """One line per source mirror from `rp project repo ls`: the description a run reads in its
     mirror roster, plus the branch it is pinned to."""
     if repos is None:
-        return ["- unknown: `rc project repo ls` was not available."]
+        return ["- unknown: `rp project repo ls` was not available."]
     out = []
     for item in repos if isinstance(repos, list) else []:
         if not isinstance(item, dict):
@@ -126,24 +133,24 @@ def build(project: str, listed: object, capabilities: object, repos: object,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Write what a production run receives")
     parser.add_argument("--out", type=Path,
-                        help="output directory, default .rootcause/grounding-intake/<date>")
+                        help="output directory, default .replypen/grounding-intake/<date>")
     args = parser.parse_args(argv)
 
     brain_root = find_brain_root()
-    out_dir = Path(args.out or brain_root / ".rootcause" / "grounding-intake"
+    out_dir = Path(args.out or brain_root / ".replypen" / "grounding-intake"
                    / date.today().isoformat()).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    project = str(read_toml(brain_root / ".rootcause.toml").get("project") or brain_root.name)
+    project = str(read_toml(_marker(brain_root)).get("project") or brain_root.name)
     listed = rc_json(brain_root, ["project", "database", "ls", "-o", "json"])
     capabilities = rc_json(brain_root, ["dev", "console", "capabilities", "-o", "json"])
     repos = rc_json(brain_root, ["project", "repo", "ls", "-o", "json"])
     notes = []
     if listed is None:
-        notes.append("`rc project database ls` was not available, database descriptions are "
+        notes.append("`rp project database ls` was not available, database descriptions are "
                      "missing here.")
     if capabilities is None:
-        notes.append("`rc dev console capabilities` was not available, mounts are missing here.")
+        notes.append("`rp dev console capabilities` was not available, mounts are missing here.")
     files = brain_files(brain_root)
 
     (out_dir / "context.md").write_text(build(project, listed, capabilities, repos, files, notes),

@@ -11,7 +11,7 @@ paths' working-tree bytes, or one cherry-picked commit), commits with the repo's
 non-force (optionally the same commit to more branches, e.g. a mirror's `stable`, also when main already
 has it), verifies each remote ref contains it, and removes the worktree on every exit. A push lost to a
 concurrent publisher is retried from the new tip; nothing is ever force-pushed or rewritten. Optionally
-refreshes the mirror per project with `rc dev mirror refresh --expect-sha`.
+refreshes the mirror per project with `rp dev mirror refresh --expect-sha`.
 
     uv run --no-project python git_land.py --repo ~/code/x/mirror --paths a.py docs/b.md \
       --message 'fix: …' --also stable --refresh-mirror mirror --project p1 --project p2
@@ -29,6 +29,11 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from brain_git_sync import _unsafe_staged_paths  # noqa: E402  (one secret/cache rule set)
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 EXIT_FAILED, EXIT_BLOCKED, EXIT_CONFLICT, EXIT_REFRESH = 1, 2, 3, 4
 
@@ -187,11 +192,11 @@ def land(repo: Path, args: argparse.Namespace) -> dict:
 
 
 def refresh(repo: Path, name: str, projects: list[str], sha: str, dry_run: bool) -> list[dict]:
-    helped = subprocess.run(['rc', 'dev', 'mirror', 'refresh', '--help'], capture_output=True, text=True)
+    helped = subprocess.run([_cli(), 'dev', 'mirror', 'refresh', '--help'], capture_output=True, text=True)
     extra = ['--accept-descendant'] if '--accept-descendant' in helped.stdout + helped.stderr else []
     verdicts = []
     for project in projects:
-        cmd = ['rc', '--project', project, 'dev', 'mirror', 'refresh', '--repo', name,
+        cmd = [_cli(), '--project', project, 'dev', 'mirror', 'refresh', '--repo', name,
                '--expect-sha', sha, *extra]
         if dry_run:
             verdicts.append(dict(project=project, ok=True, detail='dry-run: ' + ' '.join(cmd)))

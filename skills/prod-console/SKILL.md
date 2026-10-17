@@ -1,19 +1,19 @@
 ---
 name: prod-console
-description: "Run a guarded production primitive directly from a brain checkout via rc dev console: SQL/schema read, rare dry-run-first SQL write, workspace bash, cataloged script, action preflight/run, exact mirror refresh. Use when a query, script, or action must be checked against production without wrapping it in an LLM run."
+description: "Run a guarded production primitive directly from a brain checkout via rp dev console: SQL/schema read, rare dry-run-first SQL write, workspace bash, cataloged script, action preflight/run, exact mirror refresh. Use when a query, script, or action must be checked against production without wrapping it in an LLM run."
 ---
 
 # prod-console — direct production primitives
 
-Verbs and flags live in one home: [docs/rc-cli.md](../../docs/rc-cli.md) and `rc dev console <cmd> --help`.
+Verbs and flags live in one home: [docs/rp-cli.md](../../docs/rp-cli.md) and `rp dev console <cmd> --help`.
 This file is the decision logic around them.
 
-Public `rc` only — never private RootCause repos, host shells, SSM, or registry SQL
-([docs/support-boundary.md](../../docs/support-boundary.md)). Scope comes from `.rootcause.toml`, the
+Public `rp` only — never private ReplyPen repos, host shells, SSM, or registry SQL
+([docs/support-boundary.md](../../docs/support-boundary.md)). Scope comes from `.replypen.toml`, the
 active OAuth login, and optional `--project` / `--tenant`.
 
-**Console vs `rc ask`:** console primitives answer "does this query/script work?" directly and fast.
-`rc ask` wraps them in an LLM run — keep it for full-loop behavior validation, ambiguous
+**Console vs `rp ask`:** console primitives answer "does this query/script work?" directly and fast.
+`rp ask` wraps them in an LLM run — keep it for full-loop behavior validation, ambiguous
 investigations, and customer-style simulations.
 
 ## Required Context
@@ -23,32 +23,32 @@ investigations, and customer-style simulations.
 
 ## Workflow
 
-1. **Discover before guessing.** `rc dev console capabilities` is the manifest: databases, cataloged
-   scripts, actions, and which console planes this login actually has. `rc project connection ls`
+1. **Discover before guessing.** `rp dev console capabilities` is the manifest: databases, cataloged
+   scripts, actions, and which console planes this login actually has. `rp project connection ls`
    adds OAuth/API grants.
-2. **Freshness.** A missing pushed script or stale `/brain` → `rc dev brain status` / `rc dev brain
+2. **Freshness.** A missing pushed script or stale `/brain` → `rp dev brain status` / `rp dev brain
    sync` (sync expires warm bash workspaces, so the next run remounts). A mirror commit pushed to its
-   tracked branch (`rc project repo ls` → `default_branch`) that must be visible now → `rc dev
+   tracked branch (`rp project repo ls` → `default_branch`) that must be visible now → `rp dev
    mirror refresh --repo <name> --expect-sha $(git rev-parse HEAD)`, once per affected project;
    success proves that exact commit is mounted (`--accept-descendant`: or a newer tip containing it,
    when siblings pushed meanwhile). Never restart Docker.
-3. **Database.** `rc dev console database list` is the authoritative view of which DSNs exist and
-   connect; `rc project database ls` only shows the annotated ones. A database missing from `list`
+3. **Database.** `rp dev console database list` is the authoritative view of which DSNs exist and
+   connect; `rp project database ls` only shows the annotated ones. A database missing from `list`
    is not registered — seal `<PROJECT>_<DBKEY>_DSN`, then annotate
    ([docs/secrets.md](../../docs/secrets.md#register-a-new-grounding-database)).
    Query failing on a column name → stop and read `schema --table`, do not keep guessing.
    Bind values with repeated `--param`, never string interpolation. Analysis over more than a
    preview belongs in a local script over a complete `--all` export —
-   [`rc-script-wrapper`](../rc-script-wrapper/SKILL.md).
-4. **Workspace files.** `rc dev console bash run` is the exec plane; prefer a cataloged script
+   [`rp-script-wrapper`](../rp-script-wrapper/SKILL.md).
+4. **Workspace files.** `rp dev console bash run` is the exec plane; prefer a cataloged script
    (`bash list`) over raw bash. Logs are reached through the same plane
    (`python -m lib.cloudwatch …`), not a separate verb. `/kb` holds synced knowledge-base articles,
    `/brain/knowledge` the brain's own — filters in
    [docs/knowledge-base.md](../../docs/knowledge-base.md).
    Bash stdout is capped at ~64 KiB; a truncated result ends with the exact
-   `rc dev console file get /tmp/rc-console/stdout-<seq>.txt …` that downloads the full stdout
+   `rp dev console file get /tmp/rc-console/stdout-<seq>.txt …` that downloads the full stdout
    (`bash run --out FILE` does it automatically). To copy files or whole directories to the laptop,
-   never base64-chunk through bash: `rc dev console file get <sandbox-path> [local-path]` (any size,
+   never base64-chunk through bash: `rp dev console file get <sandbox-path> [local-path]` (any size,
    byte-exact, directories unpacked locally, any readable path incl. `/kb`, `/brain`, `/mirrors`).
 5. **Actions.** `list` / `show` / `preflight` are read-only; `run` is a real state-changing
    execution on the project's own production. `preflight` runs the brain's Python
@@ -58,8 +58,8 @@ investigations, and customer-style simulations.
    `bash run 'python actions/<id>/preflight.py …'` workaround is no longer needed for the verdict —
    only for debugging the script's own stdout/stderr. Run it only when the user asked for execution or the
    task plainly requires it and params are grounded; report the action-run id, status, and result.
-   For history across runs (stored params, originating run links) use `rc fleet actions` —
-   [`rc-fleet`](../rc-fleet/SKILL.md).
+   For history across runs (stored params, originating run links) use `rp fleet actions` —
+   [`rp-fleet`](../rp-fleet/SKILL.md).
 
 ## Side effects — the two that are not read-only
 
@@ -88,13 +88,13 @@ run gets — the right tool for "reproduce this one requester's failure". When t
 `preflight` honours `--tenant` and runs in the same tenant-scoped grounding workspace a run gets
 (scoped `*_DSN`, `RC_TENANT_*` stamped, no action/write credential). So a "record N not found" from
 a console preflight means the grounding data no longer holds N — not a scope or env gap — even if a
-run saw N earlier. Confirm with `rc dev console bash run --tenant <slug>` + `lib.db` before
+run saw N earlier. Confirm with `rp dev console bash run --tenant <slug>` + `lib.db` before
 suspecting the console.
 
 ## Brain-script catalog convention
 
-Host contract (`rootcause` parses it): comment metadata in the **first 40 lines** of a
-`skills/*/scripts/*.py|.sh` file makes the script discoverable through `rc dev console bash list` and
+Host contract (`replypen` parses it): comment metadata in the **first 40 lines** of a
+`skills/*/scripts/*.py|.sh` file makes the script discoverable through `rp dev console bash list` and
 `capabilities`.
 
 ```python

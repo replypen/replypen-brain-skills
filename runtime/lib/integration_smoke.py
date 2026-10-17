@@ -1,7 +1,7 @@
 """Local live-smoke helper for connector authors.
 
 Runs a few read-only calls against a connector when a developer has a live credential, without needing
-a rootcause project row. Secrets are read from env only: set ``RC_CONN_<KEY>`` directly, or set a local
+a ReplyPen project row. Secrets are read from env only: set ``RC_CONN_<KEY>`` directly, or set a local
 override such as ``RC_INTEGRATION_SMOKE_<KEY>`` / ``RC_INTEGRATION_SMOKE_TOKEN`` and this helper copies
 it into the connector env slot for this process and any connector CLI subprocess.
 """

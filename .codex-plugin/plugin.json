@@ -1,8 +1,8 @@
 {
   "name": "brain-dev",
-  "version": "0.12.4",
-  "description": "Rootcause Brain Dev skills for local checks, safe cross-computer Git sync, rc ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows. Brain-dir-relative; no private RootCause source needed.",
-  "author": { "name": "rootcause" },
-  "repository": "https://github.com/rootcause-org/rootcause-brain-skills",
+  "version": "0.13.0",
+  "description": "ReplyPen Brain Dev skills for local checks, safe cross-computer Git sync, rp ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows. Brain-dir-relative; no private ReplyPen source needed.",
+  "author": { "name": "ReplyPen" },
+  "repository": "https://github.com/replypen/replypen-brain-skills",
   "skills": "./skills/"
 }

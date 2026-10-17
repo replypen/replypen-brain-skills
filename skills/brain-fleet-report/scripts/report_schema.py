@@ -491,7 +491,7 @@ def owner_prompt_allowed(finding: Finding) -> bool:
         and finding.root_cause
         and finding.root_cause.plane in ("brain_content", "tenant_brain")
         and all(
-            Path(t.repo).expanduser().resolve().name.startswith("rootcause-brain-")
+            Path(t.repo).expanduser().resolve().name.startswith(("replypen-brain-", "rootcause-brain-"))
             for t in finding.prompt.targets
         )
     )
@@ -855,7 +855,7 @@ def compose_prompt(finding: Finding) -> str:
         lines.append(f"Also touch: {target.repo}: {', '.join(target.paths)}")
     lines.append(f"Files: {', '.join(first.paths)}")
     for url in prompt.run_refs:
-        lines.append(f"Runs: {url} (trace: rc run show {url.rsplit('/', 1)[-1]})")
+        lines.append(f"Runs: {url} (trace: rp run show {url.rsplit('/', 1)[-1]})")
     lines += ["", "What is wrong", prompt.conclusion]
     if prompt.repro:
         lines += ["", "Reproduce", prompt.repro]
@@ -869,7 +869,7 @@ def compose_prompt(finding: Finding) -> str:
     lines += [
         "",
         "Boundaries",
-        "- Execute only after a human review decision. Investigation never runs rc ask or confirms actions.",
+        "- Execute only after a human review decision. Investigation never runs rp ask or confirms actions.",
         "- Edit only the listed repos. Commit AND ship: publish brain, release kit or promote host as appropriate.",
         "- The implementation job owns production verification against Done when; record the result. If not improved, allow one bounded fix/ship/test retry (two rounds maximum).",
     ]

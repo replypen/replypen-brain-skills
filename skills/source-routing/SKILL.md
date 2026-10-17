@@ -5,15 +5,15 @@ description: Build a question digest, trace-backed source usage report and human
 
 # Source routing
 
-Local developer workflow, not a production grounding skill. Run from the target brain after `rc auth login`.
-The collector uses public read-only `rc`; inventory/propose/ingest use local files and Python 3.11+ (also
+Local developer workflow, not a production grounding skill. Run from the target brain after `rp auth login`.
+The collector uses public read-only `rp`; inventory/propose/ingest use local files and Python 3.11+ (also
 workspace-compatible). Reuses the sibling helpcenter skill's email cleaner; no LLM calls, runtime changes,
 private host scripts or provider-specific assumptions.
 
-First inspect `rc project knowledge sync get`, `rc fleet health`, and `rc project knowledge content list`
+First inspect `rp project knowledge sync get`, `rp fleet health`, and `rp project knowledge content list`
 with explicit `--project` and, where applicable, `--tenant`. `/kb` is independent of the brain; absence of
 local `kb/` proves nothing about production. Export the appropriate scoped content with
-`rc project knowledge content export --help`. The export writes `articles/<provider>/…` plus a manifest. Use `--root EXPORT/articles --mount /kb`;
+`rp project knowledge content export --help`. The export writes `articles/<provider>/…` plus a manifest. Use `--root EXPORT/articles --mount /kb`;
 for one subtree use `--root EXPORT/articles/PROVIDER --mount /kb/PROVIDER`. Check manifest `truncated`
 before claiming coverage. Do not inventory `hits.md` or prepend `articles/` to runtime paths. Older trees may use `/brain/kb`.
 If no mirror exists, say so immediately: inventory existing brain notes instead and propose a source
@@ -23,11 +23,11 @@ All artifacts and question caches belong under an ignored directory. Do not comm
 `S` below is this skill's installed `scripts/` directory; no local-control commands belong in the brain.
 
 ```bash
-uv run "$S/digest.py" --project PROJECT --days 60 --out .rootcause/source-routing/digest.json --markdown .rootcause/source-routing/digest.md
-uv run "$S/trace.py" --digest .rootcause/source-routing/digest.json --out .rootcause/source-routing/trace.json --markdown .rootcause/source-routing/trace.md
-uv run "$S/propose.py" --digest .rootcause/source-routing/digest.json --trace .rootcause/source-routing/trace.json \
-  --root LOCAL_EXPORT/articles --mount /kb --out .rootcause/source-routing/proposal.json --markdown .rootcause/source-routing/proposal.md
-uv run "$S/ingest.py" --reviewed .rootcause/source-routing/reviewed.md --brain . --out .rootcause/source-routing/reviewed.json
+uv run "$S/digest.py" --project PROJECT --days 60 --out .replypen/source-routing/digest.json --markdown .replypen/source-routing/digest.md
+uv run "$S/trace.py" --digest .replypen/source-routing/digest.json --out .replypen/source-routing/trace.json --markdown .replypen/source-routing/trace.md
+uv run "$S/propose.py" --digest .replypen/source-routing/digest.json --trace .replypen/source-routing/trace.json \
+  --root LOCAL_EXPORT/articles --mount /kb --out .replypen/source-routing/proposal.json --markdown .replypen/source-routing/proposal.md
+uv run "$S/ingest.py" --reviewed .replypen/source-routing/reviewed.md --brain . --out .replypen/source-routing/reviewed.json
 # After the owner has pruned the table, repeat ingest with --apply to write locally.
 ```
 
@@ -65,5 +65,5 @@ generated block. Human table rows override the same topic/path on later imports;
 
 Link the fixed routing note from triage and source-status. Before review, commit only a stub that says
 no document decisions have been approved. After review, use [brain-publish](../brain-publish/SKILL.md):
-reconcile/push the brain's `main`, then publish and verify the exact SHA via public `rc dev brain publish`.
+reconcile/push the brain's `main`, then publish and verify the exact SHA via public `rp dev brain publish`.
 The proposal itself remains ignored until reviewed.

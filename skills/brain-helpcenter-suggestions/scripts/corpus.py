@@ -466,7 +466,7 @@ def ticket_conversation(header: dict[str, Any]) -> dict[str, Any] | None:
 
 def trace_conversation(header: dict[str, Any],
                        mailbox_domains: frozenset[str] = frozenset()) -> dict[str, Any] | None:
-    """First JSONL record of `rc run trace --stream` -> conversation (draft = the reply).
+    """First JSONL record of `rp run trace --stream` -> conversation (draft = the reply).
 
     `is_inbound` is *delivery direction*, not authorship: a sibling vendor cc'd on the thread also
     arrives inbound. Only the originating sender and our own mailbox domains are provable, the rest

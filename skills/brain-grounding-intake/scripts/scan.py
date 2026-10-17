@@ -8,7 +8,7 @@
     uv run skills/brain-grounding-intake/scripts/scan.py [--repo NAME=PATH ...]
         [--listing NAME=FILE[:ROOT] ...] [--tables FILE] [--out DIR]
 
-With no `--repo` and no `--listing` the `[mirrors]` table of the brain's `.rootcause.toml` is
+With no `--repo` and no `--listing` the `[mirrors]` table of the brain's `.replypen.toml` is
 walked. With no `--tables` and a `schema.json` already in `$OUT`, the probed table names are
 the table list, so the code half and the data half meet in one directory. Listing mode reads only a file of paths (the `find` output you captured from the prod
 console): no file contents, so no manifests, no line counts, no word grep.
@@ -28,6 +28,12 @@ import sys
 from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
 
 MAX_FILES = 60000
 MAX_GREP_FILES = 2000
@@ -81,7 +87,7 @@ AREAS = ("entry", "routes", "config", "models", "mail", "jobs", "migrations", "t
 def find_brain_root(start: Path | None = None) -> Path:
     here = (start or Path.cwd()).resolve()
     for candidate in [here, *here.parents]:
-        if (candidate / ".rootcause.toml").exists():
+        if (_marker(candidate)).exists():
             return candidate
     return here
 
@@ -687,7 +693,7 @@ def sources(args: argparse.Namespace, brain_root: Path) -> list[tuple[str, str, 
         out.append((name, "listing", spec))
     if out:
         return out
-    mirrors = read_toml(brain_root / ".rootcause.toml").get("mirrors") or {}
+    mirrors = read_toml(_marker(brain_root)).get("mirrors") or {}
     for name, rel in sorted(mirrors.items()):
         out.append((name, "repo", str(brain_root / str(rel))))
     return out
@@ -748,8 +754,8 @@ def analyse(repo: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     brain_root = find_brain_root()
-    project = str(read_toml(brain_root / ".rootcause.toml").get("project") or brain_root.name)
-    out_dir = (args.out or brain_root / ".rootcause" / "grounding-intake"
+    project = str(read_toml(_marker(brain_root)).get("project") or brain_root.name)
+    out_dir = (args.out or brain_root / ".replypen" / "grounding-intake"
                / date.today().isoformat())
     out_dir = Path(out_dir).expanduser()
     (out_dir / "raw").mkdir(parents=True, exist_ok=True)
@@ -757,7 +763,7 @@ def main(argv: list[str] | None = None) -> int:
     specs = sources(args, brain_root)
     if not specs:
         print("scan: nothing to scan: pass --repo NAME=PATH or --listing NAME=FILE, "
-              "or add a [mirrors] table to .rootcause.toml", file=sys.stderr)
+              "or add a [mirrors] table to .replypen.toml", file=sys.stderr)
         return 2
     repos = []
     for name, kind, spec in specs:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Publish a shared project brain in one command: local checks -> brain_git_sync -> preflight ->
-edge/stable gate -> `rc dev brain publish` -> proof. Run from the brain checkout root:
+edge/stable gate -> `rp dev brain publish` -> proof. Run from the brain checkout root:
 
     uv run --no-project python .agents/skills/brain-publish/scripts/brain_publish.py --project <p>
 
@@ -29,10 +29,21 @@ SKILLS = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SKILLS / "brain-git-sync" / "scripts"))
 import brain_git_sync as bgs
 
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
+
 CHECKS = SKILLS / "local-brain-work" / "scripts"
 RECOVERY = SKILLS / "brain-git-sync" / "references" / "recovery.md"
 EXIT_FAILED, EXIT_BLOCKED, EXIT_CONFLICT = 1, 2, 3
-WRITE_STAGES = {"publish", "proof"}  # an rc failure here means "maybe live", never "blocked"
+WRITE_STAGES = {"publish", "proof"}  # a CLI failure here means "maybe live", never "blocked"
 
 
 class Stop(Exception):
@@ -50,15 +61,15 @@ def classify(repo: Path, project: str) -> None:
     if (repo / "runtime" / "lib").is_dir() and (repo / "plugin.json").is_file():
         raise Stop(EXIT_BLOCKED, "classify", "this is the brain-skills kit, not a brain: run "
                    "`./refresh-brains.sh --release patch` instead")
-    marker = repo / ".rootcause.toml"
+    marker = _marker(repo)
     if not marker.is_file():
-        raise Stop(EXIT_BLOCKED, "classify", f"no .rootcause.toml in {repo}; run from a brain checkout root")
+        raise Stop(EXIT_BLOCKED, "classify", f"no .replypen.toml in {repo}; run from a brain checkout root")
     data = tomllib.loads(marker.read_text("utf-8"))
     if data.get("tenant"):
         raise Stop(EXIT_BLOCKED, "classify", f"tenant brain ({data['tenant']}): it runs from its own "
                    "main and has no channel to publish; brain-git-sync is its publish")
     if data.get("project") != project:
-        raise Stop(EXIT_BLOCKED, "classify", f"--project {project!r} but .rootcause.toml binds "
+        raise Stop(EXIT_BLOCKED, "classify", f"--project {project!r} but .replypen.toml binds "
                    f"{data.get('project')!r}; refusing to publish the wrong brain")
     if not ((repo / "skills").is_dir() or (repo / "actions").is_dir()):
         raise Stop(EXIT_BLOCKED, "classify", "no skills/ or actions/: not a shared project brain")
@@ -88,7 +99,7 @@ class Rc:
         self.repo, self.project = repo, project
 
     def __call__(self, *args: str, stage: str) -> dict:
-        cmd = ["rc", "dev", "brain", *args, "--project", self.project, "--scope", "project",
+        cmd = [_cli(), "dev", "brain", *args, "--project", self.project, "--scope", "project",
                "-o", "json", "--raw-output"]
         try:
             proc = subprocess.run(cmd, cwd=self.repo, capture_output=True, text=True, timeout=600)
@@ -181,8 +192,8 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
     def lap(stage: str, t0: float) -> None:
         timings[stage] = round(time.monotonic() - t0, 1)
 
-    if not shutil.which("rc"):
-        raise Stop(EXIT_BLOCKED, "classify", "rc is not on PATH (brain-dev-upgrade)")
+    if not shutil.which(_cli()):
+        raise Stop(EXIT_BLOCKED, "classify", "rp is not on PATH (brain-dev-upgrade)")
     top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
     repo = Path(top.stdout.strip() or ".").resolve()
     classify(repo, args.project)
@@ -257,7 +268,7 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
         # Re-read right before each move: another publisher may have advanced the channel during
         # preflight. Shrinks the race to rc's own sync; a strict guarantee needs a server-side CAS.
         forward_only(c, sha, rc.channels("publish-recheck"), lambda o, n: relation(git, o, n), "publish-recheck")
-        note(f"-> rc dev brain publish --channel {c} --sha {sha}")
+        note(f"-> rp dev brain publish --channel {c} --sha {sha}")
         try:
             out = rc("publish", "--channel", c, "--sha", sha, stage="publish")
         except Stop as stop:
@@ -268,7 +279,7 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
                 now = None
             published.append({"channel": c, "attempted": True, "now": now, "changed": now == sha or None})
             stop.details["uncertain"] = (f"{c} now resolves {now or 'UNKNOWN'} after the failed publish; "
-                                         "check `rc dev brain status --scope project` before retrying")
+                                         "check `rp dev brain status --scope project` before retrying")
             raise
         published.append({"channel": c, "old_sha": out.get("old_sha"), "changed": out.get("old_sha") != sha})
     lap("publish", t0)
@@ -281,7 +292,7 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
         raise Stop(EXIT_FAILED, "proof", f"channel(s) {wrong} do not resolve {sha} after publish; not live")
     if edge_consumers == 0 and "edge" in after:
         warnings.append(f"edge has no consumers but is still reported at {after['edge'].get('resolved_sha')}; "
-                        "server GC did not run, check `rc dev brain status`")
+                        "server GC did not run, check `rp dev brain status`")
     receipt["status"] = "published" if any(p["changed"] for p in published) else "noop"
     timings["total"] = round(time.monotonic() - started, 1)
     return 0
@@ -325,7 +336,7 @@ def render(receipt: dict, code: int) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--project", required=True, help="project slug; must match .rootcause.toml")
+    p.add_argument("--project", required=True, help="project slug; must match .replypen.toml")
     p.add_argument("--channel", choices=("stable", "edge"), default="stable")
     p.add_argument("--commit-message", help="commit the already-staged index with this message first")
     p.add_argument("--verify-command", action="append", default=[], metavar="CMD",

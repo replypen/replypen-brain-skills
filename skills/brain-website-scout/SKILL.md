@@ -1,6 +1,6 @@
 ---
 name: brain-website-scout
-description: "Deep local public-website scout from a rootcause brain checkout: map and capture a project's site, then distil first-party evidence into a progressive-disclosure brain. Use when asked to bootstrap, replace, or substantially refresh a brain's product/company knowledge from its public website."
+description: "Deep local public-website scout from a ReplyPen brain checkout: map and capture a project's site, then distil first-party evidence into a progressive-disclosure brain. Use when asked to bootstrap, replace, or substantially refresh a brain's product/company knowledge from its public website."
 ---
 
 # brain-website-scout - build a brain from public first-party evidence
@@ -33,12 +33,12 @@ Script: `scripts/website_scout.py` (`plan | scrape | run`, `--help` for flags). 
 `FIRECRAWL_API_KEY` from the shell or the skill-local `.env`, and refuses stageable output.
 
 1. **Protect the capture.** Preserve unrelated work and prove the run directory is ignored — raw capture
-   must never sit under a committed brain path. If `rc dev brain status -o json` shows
+   must never sit under a committed brain path. If `rp dev brain status -o json` shows
    `status.brain_source.read_only == true`, stop — learning for a read-only brain alias happens only from the source project;
    consumer runs are QA evidence, not learning input.
    ```bash
    git status --short --branch
-   OUT=.rootcause/website-scout/<domain>-<YYYY-MM-DD>
+   OUT=.replypen/website-scout/<domain>-<YYYY-MM-DD>
    mkdir -p "$OUT" && git check-ignore "$OUT/.probe"
    SKILL=<absolute path to skills/brain-website-scout>
    ```
@@ -76,7 +76,7 @@ Script: `scripts/website_scout.py` (`plan | scrape | run`, `--help` for flags). 
    = default symptom router; `terminology.md` = confirmed terms only; stable topic facts in small
    `knowledge/`, `policies/` or `playbooks/` files named for the site's actual domains, each claim
    cluster carrying source URL + capture date. Keep out: raw pages, navigation catalogs, boilerplate,
-   `rc` commands, generic RootCause behavior, speculation. Voice goes to persona settings, draft/no-draft
+   `rp` commands, generic ReplyPen behavior, speculation. Voice goes to persona settings, draft/no-draft
    to triage settings.
 
 7. **Verify, then publish.** Check relative links, confirm the diff carries no capture artifacts or

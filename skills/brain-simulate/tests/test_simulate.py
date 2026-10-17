@@ -1,4 +1,4 @@
-"""Offline tests for brain-simulate. No network, no `rc`, no git checkout required.
+"""Offline tests for brain-simulate. No network, no `rp`, no git checkout required.
 
     cd skills/brain-simulate && uv run --with pytest --no-project pytest tests -q
 """
@@ -177,7 +177,7 @@ def test_dry_run_builds_the_expected_command(tmp_path, capsys):
     ids = seed(tmp_path)
     assert cli(tmp_path, "run", "--dry-run") == 0
     out = capsys.readouterr().out
-    assert out.count("rc ask ") == 3
+    assert out.count("rp ask ") == 3
     assert out.count("--simulation") == 3
     assert "--brain-ref" not in out and "--session" not in out
     assert "--scenario email" in out
@@ -185,7 +185,7 @@ def test_dry_run_builds_the_expected_command(tmp_path, capsys):
     command = sim.build_command({"id": ids[0], "subject": "Onderwerp",
                                  "inbound": [{"at": None, "text": "Hallo daar"}]},
                                 "dev/x", "5m", None)
-    assert command[:3] == ["rc", "ask", "Hallo daar"]
+    assert command[:3] == ["rp", "ask", "Hallo daar"]
     assert command[-2:] == ["--brain-ref", "dev/x"]
     assert "--simulation" in command and "--session" not in command
     assert command[command.index("--from") + 1] == f"simulate-{ids[0][:8].lower()}@example.test"
@@ -202,9 +202,9 @@ def test_run_skips_done_cases_unless_forced(tmp_path, capsys):
     sim.write_json(scratch(tmp_path) / "runs" / "main" / f"{ids[0]}.json",
                    {"case_id": ids[0], "status": "done"})
     assert cli(tmp_path, "run", "--dry-run") == 0
-    assert capsys.readouterr().out.count("rc ask ") == 2
+    assert capsys.readouterr().out.count("rp ask ") == 2
     assert cli(tmp_path, "run", "--dry-run", "--force") == 0
-    assert capsys.readouterr().out.count("rc ask ") == 3
+    assert capsys.readouterr().out.count("rp ask ") == 3
 
 
 def test_run_retries_transient_failures_and_snapshots_persona(tmp_path, monkeypatch):
@@ -215,7 +215,7 @@ def test_run_retries_transient_failures_and_snapshots_persona(tmp_path, monkeypa
     def fake_run(command, **kwargs):
         if command[0] == "git":
             return SimpleNamespace(returncode=1, stdout="", stderr="")
-        if command[:4] == ["rc", "project", "settings", "behavior"]:
+        if command[:4] == ["rp", "project", "settings", "behavior"]:
             return SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(
                 {"resolved": {"persona": {"tone": {"source": "project", "value": "warm"}}}}))
         asks.append(command)

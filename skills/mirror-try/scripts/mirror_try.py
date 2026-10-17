@@ -5,6 +5,7 @@ import ast
 import base64
 import hashlib
 import json
+import shutil
 from pathlib import Path, PurePosixPath
 import re
 import shlex
@@ -15,6 +16,11 @@ import zlib
 # All kit skills ship together; retain the fleet's established privacy reducer.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'brain-fleet-report/scripts'))
 from prototype_format import reduced
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 
 BUDGET_REMEDY = 'commit your files and use --ref <branch> --base <sha>, or --diff --only <path>'
@@ -71,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix=prefix+str(os.getpid())+"-", dir="/tmp/t
 
 
 def run_version(files, argv, scope, sha, repo_name="helper", **live):
-    cmd = ['rc', 'dev', 'console', 'bash', 'run', *scope, '--raw-output', '-o', 'json',
+    cmd = [_cli(), 'dev', 'console', 'bash', 'run', *scope, '--raw-output', '-o', 'json',
            '--timeout', '120', '--', '-']
     done = subprocess.run(cmd, input=console_command(files, argv, repo_name, **live), text=True,
                           capture_output=True, timeout=180)

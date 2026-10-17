@@ -880,7 +880,7 @@ class Rendering(unittest.TestCase):
         self.assertIn("30 rows × 3 cols", preview)
         self.assertIn("columns: id, email, payload", preview)
         self.assertIn("remote workspace file", preview)
-        self.assertIn("rc dev console file get", preview)
+        self.assertIn("rp dev console file get", preview)
         self.assertIn("query it:", preview)
         self.assertIn("awk -F','", preview)
         self.assertLess(len(preview.encode()), 6000)

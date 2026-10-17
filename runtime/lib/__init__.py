@@ -1,4 +1,4 @@
-"""rootcause sandbox helper library.
+"""ReplyPen sandbox helper library.
 
 Thin, READ-ONLY helpers the agent's Python grounding code imports inside the disposable
 container: `db`, `api`, `stripe`, `cloudwatch`, `fs`, `http`, `html`, `oauth`. Hosted Python actions

@@ -14,21 +14,21 @@
     chat_case.py widen <case-dir|session8> --tenants a,b,c [--turn N] [--as LABEL] [--tag T]
                        [--brain-ref dev/x] [--mirror-ref repo=ref]…
 
-open: share link → `rc run session`; run link → `rc run debug '<link>'` (session from its header);
-viewer link / bare id → the logged-in path. Logged in, it also reads `rc run thread <session>
---transcript` (feedback, principal id) and `rc run sessions search` (principal kind, surface).
-Then `rc run debug` per run (skipped when the JSONL exists, unless --force). Writes case.md + case.json.
+open: share link → `rp run session`; run link → `rp run debug '<link>'` (session from its header);
+viewer link / bare id → the logged-in path. Logged in, it also reads `rp run thread <session>
+--transcript` (feedback, principal id) and `rp run sessions search` (principal kind, surface).
+Then `rp run debug` per run (skipped when the JSONL exists, unless --force). Writes case.md + case.json.
 
-replay: `--mode auto` (default) uses `rc ask --replay-chat-run <run id>` when the installed rc has it
+replay: `--mode auto` (default) uses `rp ask --replay-chat-run <run id>` when the installed rp has it
 (chat framing, real prior turns, the session's own principal, simulation); else the raw fallback:
-`rc ask --scenario raw --simulation` with the prior turns embedded in the question and the case's
+`rp ask --scenario raw --simulation` with the prior turns embedded in the question and the case's
 principal. No --brain-ref/--mirror-ref → labelled `baseline` (same brain as today: flakiness check).
 `--dry-scope` previews the principal scope of the raw path, no LLM spend.
 Writes replays/<ts>-<label>.{json,md}: historical vs latest baseline vs this replay.
 
 compare: two replay JSONs side by side. widen: questions.tsv + the devloop.py commands (no spend).
 
-Scratch: <brain>/.rootcause/chatdebug/<session8>/ (gitignored with .rootcause/; holds customer data and
+Scratch: <brain>/.replypen/chatdebug/<session8>/ (gitignored with .replypen/; holds customer data and
 capability links). Stdlib only: `uv run --no-project python chat_case.py …`. `RC` env overrides the
 rc binary (tests).
 """
@@ -47,6 +47,12 @@ import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 SHORT_RE = re.compile(r"^[0-9a-f]{8}$", re.I)
@@ -153,7 +159,7 @@ def parse_pairs(values: list[str] | None) -> list[str]:
 # --- question composer (pure) -----------------------------------------------------------------
 def compose_question(turns: list[dict[str, Any]], n: int, override: str | None = None,
                      oneline: bool = False) -> str:
-    """Turn n's question with every earlier turn embedded oldest first (rc ask --session does NOT
+    """Turn n's question with every earlier turn embedded oldest first (rp ask --session does NOT
     replay prior turns). `oneline` flattens for a TSV cell."""
     prior = [t for t in turns if t["n"] < n]
     current = next((t for t in turns if t["n"] == n), None)
@@ -182,7 +188,7 @@ def compose_question(turns: list[dict[str, Any]], n: int, override: str | None =
 
 # --- trace summary (pure) ---------------------------------------------------------------------
 def md_section(md_text: str | None, heading: str) -> list[str]:
-    """Bullet lines under a `## <heading>` of an `rc run debug` markdown index."""
+    """Bullet lines under a `## <heading>` of an `rp run debug` markdown index."""
     if not md_text:
         return []
     out, inside = [], False
@@ -267,7 +273,7 @@ class Ctx:
     def __init__(self, root: Path):
         self.root = root
         self.rc = shlex.split(os.environ.get("RC") or "rc")
-        config = root / ".rootcause.toml"
+        config = _marker(root)
         data = tomllib.loads(config.read_text()) if config.is_file() else {}
         self.project = data.get("project") or ""
         self.base_url = (data.get("base_url") or DEFAULT_BASE).rstrip("/")
@@ -278,18 +284,18 @@ class Ctx:
             return subprocess.run([*self.rc, *args], cwd=str(self.root), capture_output=True, text=True,
                                   timeout=timeout, check=False)
         except FileNotFoundError as exc:
-            raise ChatCaseError("`rc` is not on PATH: install/upgrade it (brain-dev-upgrade)") from exc
+            raise ChatCaseError("`rp` is not on PATH: install/upgrade it (brain-dev-upgrade)") from exc
         except subprocess.TimeoutExpired as exc:
-            raise ChatCaseError(f"rc {' '.join(args[:2])} timed out after {timeout}s") from exc
+            raise ChatCaseError(f"rp {' '.join(args[:2])} timed out after {timeout}s") from exc
 
     def json(self, args: list[str], timeout: int = 180, tolerate_exit: bool = False) -> Any:
         done = self.run([*args, "-o", "json", "--raw-output"], timeout)
         payload = parse_json(done.stdout)
         if done.returncode != 0 and not (tolerate_exit and isinstance(payload, dict) and payload.get("run_id")):
-            raise ChatCaseError(f"rc {' '.join(a for a in args[:3] if not a.startswith('http'))} exited "
+            raise ChatCaseError(f"rp {' '.join(a for a in args[:3] if not a.startswith('http'))} exited "
                                 f"{done.returncode}: {flat(done.stderr or done.stdout, 400)}")
         if payload is None:
-            raise ChatCaseError(f"rc {args[0]} {args[1] if len(args) > 1 else ''} did not return JSON")
+            raise ChatCaseError(f"rp {args[0]} {args[1] if len(args) > 1 else ''} did not return JSON")
         return payload
 
     def scope(self, project: str | None, tenant: str | None = None) -> list[str]:
@@ -324,8 +330,8 @@ def parse_json(text: str | None) -> Any:
 
 
 def fetch_trace(ctx: Ctx, ref: str, run_id: str, project: str | None, force: bool) -> tuple[Path, Path]:
-    """`rc run debug` once per run; returns (md, jsonl) paths under <brain>/.rootcause/debug/."""
-    debug = ctx.root / ".rootcause" / "debug"
+    """`rp run debug` once per run; returns (md, jsonl) paths under <brain>/.replypen/debug/."""
+    debug = ctx.root / ".replypen" / "debug"
     found = sorted(debug.glob(f"{run_id[:8]}-{project}.jsonl" if project else f"{run_id[:8]}-*.jsonl")) \
         or sorted(debug.glob(f"{run_id[:8]}-*.jsonl"))
     if found and not force:
@@ -335,7 +341,7 @@ def fetch_trace(ctx: Ctx, ref: str, run_id: str, project: str | None, force: boo
     paths = [line.strip() for line in done.stdout.splitlines() if line.strip().endswith(".jsonl")]
     if done.returncode != 0 or not paths:
         hint = "" if "://" in ref else " (a bare id needs a login with access to that project; the share link needs none)"
-        raise ChatCaseError(f"rc run debug {run_id} exited {done.returncode}: "
+        raise ChatCaseError(f"rp run debug {run_id} exited {done.returncode}: "
                             f"{flat(done.stderr or done.stdout, 300)}{hint}")
     jsonl = Path(paths[0]) if Path(paths[0]).is_absolute() else ctx.root / paths[0]
     return jsonl.with_suffix(".md"), jsonl
@@ -375,7 +381,7 @@ SESSION_PAGES = 10  # x 100 rows, newest first, from the first question's day ba
 
 def find_session_row(ctx: Ctx, session_id: str, first_turn_at: str | None, project: str | None,
                      tenant: str | None) -> dict[str, Any] | None:
-    """Principal kind/surface/tenant: the session row from `rc run sessions search` (no by-id lookup).
+    """Principal kind/surface/tenant: the session row from `rp run sessions search` (no by-id lookup).
 
     Search dates filter SESSION CREATION, which can precede the first question by days, so only an
     upper bound is safe: the session existed by its first turn (`--until` a date is inclusive)."""
@@ -400,11 +406,11 @@ def resolve_case_dir(ctx: Ctx, value: str) -> Path:
     path = Path(value)
     if path.is_dir() and (path / "case.json").exists():
         return path.resolve()
-    candidate = ctx.root / ".rootcause" / "chatdebug" / value[:8].lower()
+    candidate = ctx.root / ".replypen" / "chatdebug" / value[:8].lower()
     if (candidate / "case.json").exists():
         return candidate
     raise ChatCaseError(f"no case at {value!r}: run `chat_case.py open <link>` first "
-                        f"(cases live in {rel(ctx, ctx.root / '.rootcause' / 'chatdebug')}/<session8>/)")
+                        f"(cases live in {rel(ctx, ctx.root / '.replypen' / 'chatdebug')}/<session8>/)")
 
 
 def read_expected(args: argparse.Namespace) -> str | None:
@@ -447,18 +453,18 @@ def cmd_open(args: argparse.Namespace, ctx: Ctx) -> int:
         project, tenant = project or src["project"], tenant or src["tenant"] or None
     else:
         if not authed:
-            raise ChatCaseError("a bare id needs `rc auth login`; or paste the chat share link (/s/<token>)")
+            raise ChatCaseError("a bare id needs `rp auth login`; or paste the chat share link (/s/<token>)")
         thread = ctx.json([*ctx.scope(project, tenant), "run", "thread", src["id"]])
         runs = thread.get("runs") or []
         if thread.get("resolved_by") == "none" or not runs:
             raise ChatCaseError(f"{src['id']} is no run or session this login can see. Find the chat: "
-                                "`rc run sessions search --contains \"<words from the chat>\" --since <YYYY-MM-DD>`")
+                                "`rp run sessions search --contains \"<words from the chat>\" --since <YYYY-MM-DD>`")
         session_id = next(((r.get("attribution") or {}).get("session_id") for r in runs
                            if (r.get("attribution") or {}).get("session_id")), None) or thread.get("id")
 
     if not session_id:
         raise ChatCaseError("could not derive a session id from the input")
-    case_dir = ctx.root / ".rootcause" / "chatdebug" / session_id[:8]
+    case_dir = ctx.root / ".replypen" / "chatdebug" / session_id[:8]
     previous = read_json(case_dir / "case.json") if (case_dir / "case.json").exists() else {}
     expected = read_expected(args)
     if expected is None:
@@ -491,12 +497,12 @@ def cmd_open(args: argparse.Namespace, ctx: Ctx) -> int:
             row = find_session_row(ctx, session_id, turns[0]["created_at"] if turns else None,
                                    project or ctx.project, tenant)
             if row is None:
-                notes.append("session row not found by `rc run sessions search`: principal kind/surface unknown")
+                notes.append("session row not found by `rp run sessions search`: principal kind/surface unknown")
         except ChatCaseError as exc:
             notes.append(f"logged-in transcript unavailable ({flat(exc, 200)}): feedback and principal missing")
     elif not zero:
         notes.append("not logged in: feedback and principal are withheld from share links; "
-                     "replay then needs --principal-kind/--principal-id (`rc auth login` fixes both)")
+                     "replay then needs --principal-kind/--principal-id (`rp auth login` fixes both)")
 
     by_run = {(r.get("run_id") or r.get("id")): r for r in share_runs}
     if not turns:
@@ -560,10 +566,10 @@ def cmd_open(args: argparse.Namespace, ctx: Ctx) -> int:
 
 
 def warn_if_tracked(ctx: Ctx) -> None:
-    done = subprocess.run(["git", "-C", str(ctx.root), "check-ignore", "-q", ".rootcause/chatdebug/x"],
+    done = subprocess.run(["git", "-C", str(ctx.root), "check-ignore", "-q", ".replypen/chatdebug/x"],
                           capture_output=True, check=False)
     if done.returncode == 1:
-        print("warning: .rootcause/ is not gitignored in this checkout; case files hold customer data",
+        print("warning: .replypen/ is not gitignored in this checkout; case files hold customer data",
               file=sys.stderr)
 
 
@@ -586,7 +592,7 @@ def case_summary(case: dict[str, Any], md_path: str | None) -> list[str]:
         + (f" · {ZERO_RUNS}" if case.get("zero_runs") else ""),
         f"feedback: {', '.join(rated) or 'none'} · expected: {'given' if case.get('expected') else 'not given'}",
         f"next: read case.md, then replay --turn {last}" if last else
-        "next: find the chat with an answer: rc run sessions search --contains \"<words>\" --since <YYYY-MM-DD>",
+        "next: find the chat with an answer: rp run sessions search --contains \"<words>\" --since <YYYY-MM-DD>",
     ]
 
 
@@ -657,7 +663,7 @@ def render_case_md(case: dict[str, Any], case_dir: str | None = None) -> str:
         words = parent or "<words from the chat>"
         out += ["## Turns", "", ZERO_RUNS,
                 "Nothing to debug here: find the chat that holds the bad answer with "
-                f"`rc run sessions search --contains \"{words}\" --since <YYYY-MM-DD>` "
+                f"`rp run sessions search --contains \"{words}\" --since <YYYY-MM-DD>` "
                 "(logged in), then `open` that session id. Never derive a failure from the seed message.", ""]
         return "\n".join(out)
     for t in turns:
@@ -682,7 +688,7 @@ def render_case_md(case: dict[str, Any], case_dir: str | None = None) -> str:
     mirrors = sorted({m["name"] for t in turns for m in ((t.get("evidence") or {}).get("mirrors") or [])},
                      key=lambda name: -sum(f.startswith(f"/mirrors/{name}/") for t in turns
                                            for f in ((t.get("evidence") or {}).get("files_read") or [])))
-    d = case_dir or f".rootcause/chatdebug/{case['session_id'][:8]}"
+    d = case_dir or f".replypen/chatdebug/{case['session_id'][:8]}"
     cc = 'uv run --no-project python "$CC"'
     mirror_flag = " ".join(f"--mirror-ref {m}=dev/<branch>" for m in mirrors[:1]) or "--mirror-ref <repo>=dev/<branch>"
     out += ["## Next", "",
@@ -819,10 +825,10 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
     if not turn.get("run_id"):
         raise ChatCaseError(f"turn {turn['n']} has no run id; reopen the case with `open --force`")
     if not ctx.logged_in():
-        raise ChatCaseError("not logged in: run `rc auth login`, then rerun this replay")
+        raise ChatCaseError("not logged in: run `rp auth login`, then rerun this replay")
     mirror_refs = parse_pairs(args.mirror_ref)
     if mirror_refs and "--mirror-ref" not in ctx.ask_help():
-        raise ChatCaseError("installed rc has no `rc ask --mirror-ref`; upgrade rc (brain-dev-upgrade)")
+        raise ChatCaseError("installed rp has no `rp ask --mirror-ref`; upgrade rc (brain-dev-upgrade)")
     chat_ok = "--replay-chat-run" in ctx.ask_help()
     mode = args.mode
     if args.dry_scope:
@@ -830,7 +836,7 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
     elif mode == "auto":
         mode = "chat" if chat_ok else "raw"
     if mode == "chat" and not chat_ok:
-        raise ChatCaseError("installed rc has no `rc ask --replay-chat-run`; upgrade rc (brain-dev-upgrade) "
+        raise ChatCaseError("installed rp has no `rp ask --replay-chat-run`; upgrade rc (brain-dev-upgrade) "
                             "or pass --mode raw (not chat-equivalent)")
     simulation = mode == "chat" or not args.no_simulation
     tenant = args.tenant or case.get("tenant")
@@ -838,7 +844,7 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
     scope = ctx.scope(case.get("project"))
     if mode == "chat":
         # The host resolves the source run inside the request's tenant: forward the case tenant, or an
-        # ambient one (.rootcause/local.toml, login) turns the replay into a 404.
+        # ambient one (.replypen/local.toml, login) turns the replay into a 404.
         if args.tenant and case.get("tenant") and args.tenant != case["tenant"]:
             raise ChatCaseError(f"--tenant {args.tenant} conflicts with the case tenant {case['tenant']}: a chat "
                                 "replay runs in its source run's tenant; drop --tenant or use --mode raw")
@@ -852,7 +858,7 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
         if not (kind and pid):
             raise ChatCaseError("principal unknown for the raw replay: add "
                                 "`--principal-kind <kind> --principal-id <id>` (e.g. kampadmin_admin + the admin "
-                                "uuid; `rc auth login` + `open --force` fills it from the session)")
+                                "uuid; `rp auth login` + `open --force` fills it from the session)")
         principal = (kind, pid)
         question = compose_question(case["turns"], turn["n"], args.prompt_override)
         cmd = [*scope, "ask", question, "--scenario", mode, "--principal-kind", kind, "--principal-id", pid]
@@ -996,13 +1002,13 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--brain-ref", help="dev/<branch> of the brain (absent + no --mirror-ref = baseline)")
     rp.add_argument("--mirror-ref", action="append", metavar="REPO=REF", help="mirror override, repeatable")
     rp.add_argument("--mode", choices=("auto", "chat", "raw", "email"), default="auto",
-                    help="auto: chat (rc ask --replay-chat-run) when available, else raw")
+                    help="auto: chat (rp ask --replay-chat-run) when available, else raw")
     rp.add_argument("--prompt-override", help="replacement question text for the replayed turn")
     rp.add_argument("--effort", choices=("default", "pro", "max"))
     rp.add_argument("--principal-kind", help="raw/email mode: override the case principal kind")
     rp.add_argument("--principal-id", help="raw/email mode: override the case principal id")
     rp.add_argument("--tenant", help="raw/email: override the case tenant; chat: must match it (default: case tenant)")
-    rp.add_argument("--timeout", default="10m", help="rc ask --timeout (default 10m)")
+    rp.add_argument("--timeout", default="10m", help="rp ask --timeout (default 10m)")
     rp.add_argument("--no-simulation", action="store_true", help="raw/email mode: a real (non-simulation) run")
     rp.add_argument("--dry-scope", action="store_true", help="preview the raw path's principal scope, no LLM spend")
     rp.add_argument("--note", help="free text stored with the replay")

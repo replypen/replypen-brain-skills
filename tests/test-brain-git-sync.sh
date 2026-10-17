@@ -299,7 +299,7 @@ test "$(cat "$LOCAL/old-remote.txt")" = "old remote history"
 test "$(cat "$LOCAL/new-remote.txt")" = "replacement remote history"
 
 # A read-only brain alias must never write its source project's brain: the check runs before any
-# local commit or push, using whatever `rc` a fake PATH entry supplies.
+# local commit or push, using whatever `rp` a fake PATH entry supplies.
 new_fixture shared-consumer
 write_file "$LOCAL/shared.txt" "consumer attempted write"
 git -C "$LOCAL" add shared.txt
@@ -313,6 +313,7 @@ echo "$FAKE_RC_RESPONSE"
 exit "${FAKE_RC_EXIT:-0}"
 RC
 chmod +x "$FAKE_RC_BIN/rc"
+ln -s rc "$FAKE_RC_BIN/rp"  # scripts resolve `rp` first
 set +e
 output="$(PATH="$FAKE_RC_BIN:$PATH" \
   FAKE_RC_RESPONSE='{"status":{"state":"read_only_alias","brain_source":{"project_id":"00000000-0000-0000-0000-000000000001","project":"pro-backup","read_only":true,"ref":"main","sha":"deadbeef"}}}' \
@@ -338,6 +339,7 @@ echo "$FAKE_RC_RESPONSE"
 exit "${FAKE_RC_EXIT:-0}"
 RC
 chmod +x "$FAKE_RC_BIN_OWNER/rc"
+ln -s rc "$FAKE_RC_BIN_OWNER/rp"  # scripts resolve `rp` first
 output="$(PATH="$FAKE_RC_BIN_OWNER:$PATH" \
   FAKE_RC_RESPONSE='{"status":{"state":"current"}}' \
   run_sync --project pro-backup --commit-message "owner writes its own brain" --json)"
@@ -345,7 +347,7 @@ assert_json_ok "$output"
 assert_converged_clean
 test "$(cat "$LOCAL/owner.txt")" = "owner writes its own brain"
 
-# An `rc dev brain status` failure (older server without the alias field, not logged in, offline)
+# An `rp dev brain status` failure (older server without the alias field, not logged in, offline)
 # must degrade to standalone, never block sync.
 new_fixture shared-rc-failing
 write_file "$LOCAL/standalone.txt" "rc status unavailable"
@@ -358,6 +360,7 @@ echo '{"error":"not logged in"}' >&2
 exit 1
 RC
 chmod +x "$FAKE_RC_BIN_FAIL/rc"
+ln -s rc "$FAKE_RC_BIN_FAIL/rp"  # scripts resolve `rp` first
 output="$(PATH="$FAKE_RC_BIN_FAIL:$PATH" \
   run_sync --project pro-backup --commit-message "rc status unavailable" --json)"
 assert_json_ok "$output"

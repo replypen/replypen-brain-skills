@@ -1,2 +1,2 @@
-# Byte-exact shared frontmatter corpus (CRLF/BOM fixtures); rootcause vendors these bytes.
+# Byte-exact shared frontmatter corpus (CRLF/BOM fixtures); replypen vendors these bytes.
 runtime/lib/contracts/frontmatter/** -text

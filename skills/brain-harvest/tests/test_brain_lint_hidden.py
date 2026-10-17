@@ -1,4 +1,4 @@
-"""Run-hidden trees carry maintainer-only rc CLI guidance by design; the privacy lint skips them."""
+"""Run-hidden trees carry maintainer-only rp CLI guidance by design; the privacy lint skips them."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "brain_lint.py"
 
-HIDDEN_DOC = "Maintainer runbook\n\nRun `rc run debug <uuid>` locally to inspect the run.\n"
+HIDDEN_DOC = "Maintainer runbook\n\nRun `rp run debug <uuid>` locally to inspect the run.\n"
 
 
 def _brain(tmp_path: Path) -> Path:

@@ -1,6 +1,6 @@
 # brain-grounding-intake: files and contracts
 
-One output directory per intake: `$OUT = .rootcause/grounding-intake/<date>/`. Python writes the
+One output directory per intake: `$OUT = .replypen/grounding-intake/<date>/`. Python writes the
 evidence tier, you write four small things, `validate.py` assembles `intake.json`, `render.py`
 turns it into `report.html`. Both halves of the evidence are optional on their own (a project can
 have a database and no readable code, or the reverse) but at least one must be there.
@@ -17,7 +17,7 @@ Locators, everywhere a file asks for one:
 
 | File | Tier | Content |
 |---|---|---|
-| `context.md` | read whole | what a production run receives before it reads anything: the database descriptions (`rc project database ls`), the source mirrors and their description lines (`rc project repo ls`), the brain's file list with line counts. The agent's chair, written down |
+| `context.md` | read whole | what a production run receives before it reads anything: the database descriptions (`rp project database ls`), the source mirrors and their description lines (`rp project repo ls`), the brain's file list with line counts. The agent's chair, written down |
 | `scan.md` | read whole (≤ 300 lines) | per repo and per app root: framework guesses with the marker that proved them, then one block per area (entry · routes · config · models · mail · jobs · integrations · migrations · tests) listing ≤ 12 candidate paths with line counts; the mapping `<name> → <local path>`; extension tally per top-level dir; the table mapping summary when a schema was present |
 | `scan.json` | drill by key | the same, machine-shaped: `repos[]{name, root, mode: local|listing, files, apps[]{root, frameworks[]{name, marker}, areas{<area>: [{path, lines}]}, deps[]}}` plus `tables[]` |
 | `tables.tsv` | read whole | only when a schema was present (or `--tables FILE`): `table \t model_files \t mentions \t guess`; `model_files` = files declaring that table, `mentions` = files in model/migration areas containing the bare word, `guess` = a model file whose class name matches the table. Unmatched tables are listed last |

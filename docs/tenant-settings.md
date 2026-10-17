@@ -27,5 +27,5 @@ Rules:
 - The key must exist in `tenant.schema.json`, and carry a default in `projection.yaml`, so `get` sees
   the tenant's *effective* value rather than the fallback.
 - Test locally with `RC_TENANT_PROFILE_PATH=<file>`, or fetch a real tenant's document:
-  `rc dev brain render --tenant <slug> --path tenant_profile.json` →
-  `.rootcause/output/brain-render-<slug>/tree/tenant_profile.json`.
+  `rp dev brain render --tenant <slug> --path tenant_profile.json` →
+  `.replypen/output/brain-render-<slug>/tree/tenant_profile.json`.

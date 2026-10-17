@@ -1,4 +1,4 @@
 interface:
   display_name: "Brain Dev: Ask"
-  short_description: "Validate with production-loop rc ask"
-  default_prompt: "Use $brain-ask to validate a pushed brain ref with production-loop rc ask."
+  short_description: "Validate with production-loop rp ask"
+  default_prompt: "Use $brain-ask to validate a pushed brain ref with production-loop rp ask."

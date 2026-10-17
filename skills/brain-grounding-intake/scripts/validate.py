@@ -32,7 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from intake_common import (  # noqa: E402
     check_markdown_hygiene, frontmatter_description, read_tsv, split_list,
 )
-from scan import find_brain_root  # noqa: E402
+from scan import _marker, find_brain_root  # noqa: E402
+
 
 STATUSES = ("grounded", "ambiguous", "missing", "knowledge", "human")
 GROUPS = ("architecture", "where", "data", "settings", "queues", "conventions", "ownership")
@@ -151,7 +152,7 @@ class Locators:
             if not rel:
                 return f"{locator!r} names no file", None
             if self.brain_root is None:
-                return None, (f"{locator!r} could not be checked: no .rootcause.toml above "
+                return None, (f"{locator!r} could not be checked: no .replypen.toml above "
                               "the output directory, so the brain root is unknown")
             if not (self.brain_root / rel).exists():
                 return f"{locator!r} is not a file of the brain checkout", None
@@ -372,7 +373,7 @@ def load_json(path: Path, errors: list[str]) -> dict | None:
 
 def brain_root_of(out: Path) -> Path | None:
     root = find_brain_root(out.resolve())
-    return root if (root / ".rootcause.toml").exists() else None
+    return root if (_marker(root)).exists() else None
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,4 +1,4 @@
 interface:
   display_name: "Brain Dev: Health"
   short_description: "Check mirrors and dead-lettered runs"
-  default_prompt: "Use $rc-health to check project health, stale mirrors, and dead-lettered runs."
+  default_prompt: "Use $rp-health to check project health, stale mirrors, and dead-lettered runs."

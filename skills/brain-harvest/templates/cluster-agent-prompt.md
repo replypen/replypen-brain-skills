@@ -10,10 +10,10 @@ handed to you, never assume.
 ## Prompt (substitute and hand to the subagent)
 
 You are distilling one cluster of a sent-mail harvest into brain deltas. Work only from what you are
-given; you have no network and no `rc` access.
+given; you have no network and no `rp` access.
 
 **Cluster:** `{{CLUSTER_ID}}` — `{{CLUSTER_LABEL}}`
-**Scratch root:** `{{SCRATCH_ROOT}}` (e.g. `.rootcause/harvest/<tag>/`)
+**Scratch root:** `{{SCRATCH_ROOT}}` (e.g. `.replypen/harvest/<tag>/`)
 **Your reading plan** (from `clusters.json` → this cluster):
 - `sample_ids`: `{{SAMPLE_IDS}}` — the stratified single-pass sample (default cap 50, tunable).
 - `deep_read_ids`: `{{DEEP_READ_IDS}}` — risk-flagged members; read **all** of them, on top of the sample.

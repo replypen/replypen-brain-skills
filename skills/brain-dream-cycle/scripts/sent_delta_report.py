@@ -3,7 +3,7 @@
 # ///
 """Render sent-vs-proposed evidence as live-edit or shadow-readiness reports.
 
-`rc dev learning evidence --plane deltas --include-bodies` returns the two bodies that matter for a
+`rp dev learning evidence --plane deltas --include-bodies` returns the two bodies that matter for a
 dream cycle: what the brain proposed and what the human actually sent. JSON is unreadable for a
 human reviewer and a line diff is wrong for prose — humans rewrite *inside* sentences, so a
 line-granular diff paints a whole paragraph red/green and hides the actual edit.
@@ -12,19 +12,19 @@ Live rows retain the edit report. Rows carrying the evidence wire's ``shadow: tr
 verdict-first blind-comparison report instead; no similarity or prose heuristic guesses shadow mode.
 The script produces one self-contained HTML file that shows, per delta:
 
-  * the run/thread identifiers needed to drill further (`rc run debug <id>`);
+  * the run/thread identifiers needed to drill further (`rp run debug <id>`);
   * a paragraph alignment (fuzzy, so a rewritten paragraph stays paired with its original);
   * a word-level inline diff inside each aligned pair, plus a side-by-side view of the same data;
   * kept/removed/added word counts, so "polish" and "full rewrite" are distinguishable at a glance;
   * the agent's per-delta conclusion next to the evidence it was drawn from.
 
     sent_delta_report.py --limit 20
-    sent_delta_report.py --limit 20 --out .rootcause/dream/2026-07-29-sent-deltas.html
+    sent_delta_report.py --limit 20 --out .replypen/dream/2026-07-29-sent-deltas.html
     sent_delta_report.py --from-json deltas.json --annotations notes.json --conclusion concl.md
 
-Read-only: it shells out to `rc` for a GET, or reads a JSON file, and writes one local HTML file.
+Read-only: it shells out to `rp` for a GET, or reads a JSON file, and writes one local HTML file.
 
-PRIVACY: the output embeds raw customer mail. Keep it under the gitignored `.rootcause/` tree
+PRIVACY: the output embeds raw customer mail. Keep it under the gitignored `.replypen/` tree
 (the default), never commit it, and delete it when the dream cycle is done.
 """
 
@@ -35,12 +35,24 @@ import difflib
 import html
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
 
 # A token is one word (or one punctuation mark) plus the whitespace that follows it. Keeping
 # whitespace attached matters: with whitespace as its own token every "equal" space would split an
@@ -74,21 +86,21 @@ def load_evidence(args: argparse.Namespace) -> dict:
         raw = sys.stdin.read() if args.from_json == "-" else Path(args.from_json).read_text("utf-8")
         return json.loads(raw)
     plane = "shadow" if getattr(args, "shadow", False) else "deltas"
-    cmd = ["rc", "dev", "learning", "evidence", "--plane", plane, "--include-bodies",
+    cmd = [_cli(), "dev", "learning", "evidence", "--plane", plane, "--include-bodies",
            "--limit", str(args.limit), "-o", "json"]
     if args.project:
-        cmd = ["rc", "--project", args.project, *cmd[1:]]
+        cmd = [_cli(), "--project", args.project, *cmd[1:]]
     if args.tenant:
         cmd = [cmd[0], "--tenant", args.tenant, *cmd[1:]]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        sys.exit(f"rc failed ({proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
+        sys.exit(f"rp failed ({proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
     return json.loads(proc.stdout)
 
 
 def local_scope(cwd: Path) -> tuple[str, str]:
     """Best-effort project/tenant label from the brain checkout's committed marker."""
-    marker = cwd / ".rootcause.toml"
+    marker = _marker(cwd)
     if not marker.is_file():
         return "", ""
     try:
@@ -532,10 +544,10 @@ def render_markdown(items: list[dict], diffs: list[Diff], notes: dict[str, str],
 
     out += ["", "## Next", "",
             "1. Group by signal before deciding — a single delta rarely justifies a durable edit.",
-            "2. Drill one representative per group: `rc run debug <run-id>`.",
+            "2. Drill one representative per group: `rp run debug <run-id>`.",
             "3. Route with the durable-home table in the skill: brain file, persona settings, triage "
             "policy/rule, or action wiring. Wording-only deltas belong in persona, never in a brain file.",
-            "4. Verify with `rc ask` against a `dev/*` brain ref before publishing.", ""]
+            "4. Verify with `rp ask` against a `dev/*` brain ref before publishing.", ""]
     return "\n".join(out)
 
 
@@ -647,7 +659,7 @@ def render_shadow_markdown(items: list[dict], diffs: list[Diff], notes: dict[str
 
     out += ["", "## Next", "",
             "1. Start with verdict and recurring themes; low word overlap alone is not a lesson.",
-            "2. Drill one representative miss: `rc run debug <run-id>`.",
+            "2. Drill one representative miss: `rp run debug <run-id>`.",
             "3. Route the evidenced cause with the Shadow mode table in the skill.",
             "4. Treat unpaired runs as awaiting a human answer unless thread evidence says otherwise.", ""]
     return "\n".join(out)
@@ -800,7 +812,7 @@ def fmt_time(value: str) -> str:
 def render_card(index: int, item: dict, diff: Diff, note: str) -> str:
     run_id = item.get("related_run_id") or ""
     url = item.get("run_url") or ""
-    # The human report carries plain-language verdicts only — no ids, no metrics, no rc commands
+    # The human report carries plain-language verdicts only — no ids, no metrics, no rp commands
     # (pinned by test). delta_category qualifies: "factual"/"tone"/"omission" reads as English. The
     # payload's numeric `similarity` deliberately does not.
     tags = [f'<span class="tag shape">{esc(diff.shape)}</span>']
@@ -992,13 +1004,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project", default="", help="explicit project slug (all-projects token)")
     parser.add_argument("--tenant", default="", help="explicit tenant slug")
     parser.add_argument("--from-json", default="",
-                        help="read `rc dev learning evidence` JSON from a file or '-' for stdin")
+                        help="read `rp dev learning evidence` JSON from a file or '-' for stdin")
     parser.add_argument("--annotations", default="",
                         help='JSON map {"<delta-id>": "conclusion"} shown next to each delta')
     parser.add_argument("--conclusion", default="", help="markdown/text file shown at the top")
     parser.add_argument("--keep-quotes", action="store_true",
                         help="diff quoted reply history too (default: shown collapsed, not diffed)")
-    parser.add_argument("--out", default="", help="output path (default .rootcause/dream/<ts>-sent-deltas.html)")
+    parser.add_argument("--out", default="", help="output path (default .replypen/dream/<ts>-sent-deltas.html)")
     args = parser.parse_args(argv)
 
     payload = load_evidence(args)
@@ -1044,13 +1056,13 @@ def main(argv: list[str] | None = None) -> int:
         scope = " / ".join(p for p in (project or "unknown project", tenant) if p)
 
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
-        out = Path(args.out) if args.out else Path(".rootcause/dream") / f"{stamp}-sent-deltas.html"
+        out = Path(args.out) if args.out else Path(".replypen/dream") / f"{stamp}-sent-deltas.html"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(render(items, diffs, notes, scope, conclusion, len(aged_out)), "utf-8")
         md = out.with_suffix(".md")
         md.write_text(render_markdown(items, diffs, notes, scope, conclusion, str(out), aged_out), "utf-8")
-        if ".rootcause" not in out.resolve().parts:
-            print(f"warning: {out} is outside .rootcause/ and holds raw customer mail — do not commit",
+        if not {".replypen", ".rootcause"} & set(out.resolve().parts):
+            print(f"warning: {out} is outside .replypen/ and holds raw customer mail — do not commit",
                   file=sys.stderr)
         if aged_out:
             print(f"note: {len(aged_out)} delta(s) aged out (bodies scrubbed at 14 days); their "
@@ -1094,7 +1106,7 @@ def main(argv: list[str] | None = None) -> int:
     scope = " / ".join(p for p in (project or "unknown project", tenant) if p)
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
-    out = Path(args.out) if args.out else Path(".rootcause/dream") / f"{stamp}-sent-deltas.html"
+    out = Path(args.out) if args.out else Path(".replypen/dream") / f"{stamp}-sent-deltas.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render_shadow(shadow_items, shadow_diffs, notes, scope, conclusion,
                                  live_items, live_diffs, len(live_aged_out), live_hollow), "utf-8")
@@ -1111,8 +1123,8 @@ def main(argv: list[str] | None = None) -> int:
     if live_markdown:
         markdown += "\n\n---\n\n" + live_markdown
     md.write_text(markdown, "utf-8")
-    if ".rootcause" not in out.resolve().parts:
-        print(f"warning: {out} is outside .rootcause/ and holds raw customer mail — do not commit",
+    if not {".replypen", ".rootcause"} & set(out.resolve().parts):
+        print(f"warning: {out} is outside .replypen/ and holds raw customer mail — do not commit",
               file=sys.stderr)
     if live_aged_out:
         print(f"note: {len(live_aged_out)} live delta(s) aged out (bodies scrubbed at 14 days); "

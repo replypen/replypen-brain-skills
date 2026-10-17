@@ -1,4 +1,4 @@
 interface:
   display_name: "Brain Dev: Fleet"
   short_description: "Review recent production run patterns"
-  default_prompt: "Use $rc-fleet to review recent production runs and recurring failure patterns."
+  default_prompt: "Use $rp-fleet to review recent production runs and recurring failure patterns."

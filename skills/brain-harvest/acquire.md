@@ -1,25 +1,25 @@
 # Acquiring a harvest corpus (step 1 detail)
 
 Provider branches for `brain-harvest` step 1. Command syntax and semantics live in
-[`docs/rc-cli.md`](../../docs/rc-cli.md); side effects in
+[`docs/rp-cli.md`](../../docs/rp-cli.md); side effects in
 [`docs/side-effects.md`](../../docs/side-effects.md). This file only carries what the operator must
 *decide* per provider.
 
-Reuse a fresh export if one exists (`rc project corpus ls -o json`) — `download` starts the ~48h
+Reuse a fresh export if one exists (`rp project corpus ls -o json`) — `download` starts the ~48h
 server-side eviction window, and re-fetching after it is a production operation.
 
 ## Hosted providers (Gmail / Microsoft / Intercom)
 
 ```bash
-rc project corpus ls -o json
-rc project mailbox harvest <mailbox-id> --max-threads 1000
-rc project corpus get <export-id>                  # poll until terminal
-rc project corpus download <export-id> --out "$SCRATCH/corpus/corpus.md"
+rp project corpus ls -o json
+rp project mailbox harvest <mailbox-id> --max-threads 1000
+rp project corpus get <export-id>                  # poll until terminal
+rp project corpus download <export-id> --out "$SCRATCH/corpus/corpus.md"
 ```
 
 Use `--out` and let `prepare_harvest.py` parse the raw bytes: it reads corpus **v1, v2 and v3**, so
 `--split` is a convenience, not a dependency. Today it is also the only working path — the server emits
-v2 and released `rc` hard-rejects v2 in its splitter (see
+v2 and released `rp` hard-rejects v2 in its splitter (see
 [the migration note's CLI gaps](../../docs/brain-harvest-v2-migration.md)). An existing `--split`
 directory from an older export can be passed to `prepare` instead.
 
@@ -27,9 +27,9 @@ directory from an older export can be passed to `prepare` instead.
 
 ```bash
 mkdir -p "$SCRATCH/templates"
-rc project mailbox templates <mailbox-id>
-rc project corpus get <templates-export-id>
-rc project corpus download <templates-export-id> --out "$SCRATCH/templates/export.json"
+rp project mailbox templates <mailbox-id>
+rp project corpus get <templates-export-id>
+rp project corpus download <templates-export-id> --out "$SCRATCH/templates/export.json"
 ```
 
 Authored, high-signal voice and stock-phrasing reference (`templates/v1` JSON). It is **not interaction
@@ -51,7 +51,7 @@ Hosted IMAP harvest is a **shallow smoke path only** (the server caps rendered r
 Before any deep/local run, prove both public surfaces exist:
 
 ```bash
-rc project mailbox imap-env --help
+rp project mailbox imap-env --help
 test -f "$SKILL/scripts/local_imap_harvest.py"
 ```
 
@@ -60,7 +60,7 @@ If either is missing, stop with an implementation/ops gap via
 invent env-file handling. When both exist:
 
 ```bash
-rc project mailbox imap-env <mailbox-id> --out "$SCRATCH/imap.env"
+rp project mailbox imap-env <mailbox-id> --out "$SCRATCH/imap.env"
 git check-ignore "$SCRATCH/imap.env"
 uv run "$SKILL/scripts/local_imap_harvest.py" --env "$SCRATCH/imap.env" --out "$SCRATCH/imap-export/"
 ```

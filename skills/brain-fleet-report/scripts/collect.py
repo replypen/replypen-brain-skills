@@ -6,13 +6,13 @@
 
     uv run skills/brain-fleet-report/scripts/collect.py --date 2026-09-04
 
-Writes `<brain>/.rootcause/fleet-report/<report_id>/<date>/`:
+Writes `<brain>/.replypen/fleet-report/<report_id>/<date>/`:
   manifest.json  feeds + coverage + window        kpis.json  the A<->B counter contract
   evidence.json  everything, local only           digest.md  privacy-reduced, this is what the LLM reads
   runs.jsonl     one reduced record per run       commits.md correlate.py output
   raw/           rc responses, cache keyed by argv
 
-Read-only: every rc call is a list/show/trace. Never `rc ask`.
+Read-only: every rc call is a list/show/trace. Never `rp ask`.
 """
 
 from __future__ import annotations
@@ -135,7 +135,7 @@ def paged_runs(rc: Rc, base: Sequence[str], start: datetime, end: datetime, max_
             args += ["--before", before]
         payload = rc.json(*args)
         if payload is None:
-            # rc failed (network reset, auth): an empty list is NOT a quiet day.
+            # rp failed (network reset, auth): an empty list is NOT a quiet day.
             raise RuntimeError(f"run list failed for {' '.join(base)} (see collect errors)")
         runs = (payload or {}).get("runs") or []
         if not runs:
@@ -945,7 +945,7 @@ def main() -> int:
     start, _ = day_bounds(days[0], tz)
     _, end = day_bounds(focus, tz)
 
-    report_root = brain_root / ".rootcause" / "fleet-report" / report_id
+    report_root = brain_root / ".replypen" / "fleet-report" / report_id
     out_dir = Path(args.out_dir) if args.out_dir else report_root / (focus.isoformat() if args.days == 1 else f"{focus.isoformat()}-{args.days}d")
     (out_dir / "raw").mkdir(parents=True, exist_ok=True)
     rc = Rc(raw_dir=out_dir / "raw", cwd=brain_root, refresh=args.refresh, offline=args.offline)

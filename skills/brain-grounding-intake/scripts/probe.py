@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded read-only schema probe. Runs ON THE BOX, not on your laptop.
 
-`collect.py` ships this file through `rc dev console bash run -`, replaces the `CONFIG = {...}`
+`collect.py` ships this file through `rp dev console bash run -`, replaces the `CONFIG = {...}`
 line with its own values, and fetches the JSON it writes. Stdlib plus the injected `lib.db`
 only: the box has no kit, no requests, no pip.
 
@@ -12,7 +12,7 @@ never `select *`). Anything that raises lands in `budget.skipped` and the probe 
 
 from __future__ import annotations
 
-CONFIG = {"db": "staging", "out": "/tmp/rootcause-out/schema.json", "profile_max_rows": 3000000, "max_profile_queries": 120, "max_profile_per_table": 6, "max_count_queries": 40, "count_max_rows": 200000, "wall_seconds": 600, "rows_per_page": 5000}
+CONFIG = {"db": "staging", "out": "/tmp/replypen-out/schema.json", "profile_max_rows": 3000000, "max_profile_queries": 120, "max_profile_per_table": 6, "max_count_queries": 40, "count_max_rows": 200000, "wall_seconds": 600, "rows_per_page": 5000}
 
 import json
 import re

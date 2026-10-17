@@ -3,17 +3,17 @@
 A run-dump turns ONE agent run into two files: a concise markdown **index** (sized for an agent or a
 hurried human deciding WHERE to look) and a jq-queryable **JSONL** event log (the drill-down target,
 one untruncated JSON object per tool call). This module is the single source of truth for that
-rendering, imported by public `rc`/Local Brain Work consumers so their output stays stable:
+rendering, imported by public `rp`/Local Brain Work consumers so their output stays stable:
 
   * the project-dev path — `skills/local-brain-work/scripts/brain_dump.py` here, fed by the public-API
-    trace bundle (`rc run trace <id> -o json`);
+    trace bundle (`rp run trace <id> -o json`);
 
 The producer normalizes its source to the **bundle dict** (`{"run": {...}, "events": [...]}`) and hands
 it here. The server
 ships raw truth; this module decorates it — the `disp`/`label`/`P1,P2…` computation, anomaly flags,
 and "files read" extraction are presentation, computed here, never by the server.
 
-It lives in `rootcause-runtime` (not the prod run image, which never imports it) so both consumers
+It lives in `replypen-runtime` (not the prod run image, which never imports it) so both consumers
 pull identical bytes via the existing git-tag pin — the same anti-drift mechanism `lib` uses. It is
 **pure stdlib** and is NOT imported by any grounding/run path.
 

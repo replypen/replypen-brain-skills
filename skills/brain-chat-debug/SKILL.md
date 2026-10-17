@@ -5,11 +5,11 @@ description: "Debug one bad in-app chat answer from a share link, run link or se
 
 # brain-chat-debug — bad chat answer → fix → replay
 
-One script does the mechanics; you do the judgement. Public `rc` ≥ 1.41 only.
+One script does the mechanics; you do the judgement. Public `rp` ≥ 1.41 only.
 
 ## Required Context
 
-- [rc-debug](../rc-debug/SKILL.md): reading one trace, and its discipline: a single bad run is
+- [rp-debug](../rp-debug/SKILL.md): reading one trace, and its discipline: a single bad run is
   evidence, not permission to oversteer ([run-trace-model](../../docs/run-trace-model.md#debug-discipline)).
 - [brain-helper-devloop](../brain-helper-devloop/SKILL.md) when the fix is a helper;
   [mirror-try](../mirror-try/SKILL.md) / [scope-check](../scope-check/SKILL.md) to prove it on real data.
@@ -25,22 +25,22 @@ CC="$PWD/.agents/skills/brain-chat-debug/scripts/chat_case.py"   # run from the 
 uv run --no-project python "$CC" open '<share link | run link | session id | run id>' --expected "<what the user expected>"
 ```
 
-Writes `.rootcause/chatdebug/<session8>/case.md` + `case.json`: header (project, tenant, surface,
+Writes `.replypen/chatdebug/<session8>/case.md` + `case.json`: header (project, tenant, surface,
 principal, feedback), Expected verbatim, every turn's Q/A, and per run the brain/mirror refs it ran on,
 relevant prompt sections that were off, commands with exit + stdout head, files read, flags. Traces
-land in `.rootcause/debug/` (`rc run debug`, skipped when present; `--force` refetches).
+land in `.replypen/debug/` (`rp run debug`, skipped when present; `--force` refetches).
 A share/run link needs no login but withholds feedback and principal; logged in, `open` adds both.
 
 - **0 runs** ("No answer exists in this shared chat…"): a spawned child chat nobody asked anything in.
-  Say so, find the real chat with `rc run sessions search --contains "<words>" --since <date>`, never
+  Say so, find the real chat with `rp run sessions search --contains "<words>" --since <date>`, never
   guess a failure from the seed message.
 - The scratch dir holds customer data and capability links (`share_url`, `?t=`); it is gitignored
-  with `.rootcause/`. In tickets and chat reports cite run ids, never those links.
+  with `.replypen/`. In tickets and chat reports cite run ids, never those links.
 
 ## 2. Read
 
 `case.md` first. Then the turn's trace md (path in case.md), then `jq` on its JSONL exactly as in
-[rc-debug § Drill](../rc-debug/SKILL.md#drill) (header drift first: `brain_resolved`, mirrors,
+[rp-debug § Drill](../rp-debug/SKILL.md#drill) (header drift first: `brain_resolved`, mirrors,
 `tenant_settings_drift`). Compare the answer with Expected and say which claim is wrong and why.
 
 ## 3. Diagnose + own
@@ -49,11 +49,11 @@ Fix at the highest layer that generalizes; nothing lower papers over a higher-la
 
 | Symptom | Layer | Edit |
 |---|---|---|
-| Rendering/privacy of the chat itself (raw `⟦pii:…⟧` tokens, broken record links, output contract) | RootCause host | support request ([support-boundary](../../docs/support-boundary.md)); never a brain rule |
+| Rendering/privacy of the chat itself (raw `⟦pii:…⟧` tokens, broken record links, output contract) | ReplyPen host | support request ([support-boundary](../../docs/support-boundary.md)); never a brain rule |
 | Wrong fact/query shared by all of the product's projects, helper missing or misleading | shared source mirror | its `skills/**` helper or doc ([brain-helper-devloop](../brain-helper-devloop/SKILL.md)) |
 | Audience-specific routing, case runbook, missing pointer for this brain | project brain | `AGENTS.md` routing line / `skills/cases/*` |
 | One tenant's genuinely local policy | tenant overlay / tenant settings | overlay repo or settings, not shared prose |
-| Tone, language, signature; process vs skip | persona / triage settings | `rc` settings, not brain prose |
+| Tone, language, signature; process vs skip | persona / triage settings | `rp` settings, not brain prose |
 | The customer's app computes or shows the wrong thing | the customer's app | report to its developers; the brain explains, never hides it |
 
 When the brain keeps a repository/settings map (e.g. under `_internal/`), route through it. Propose the smallest change, then stop unless the user asked to fix it. Name every
@@ -74,10 +74,10 @@ uv run --no-project python "$CC" replay <session8> --turn N --brain-ref dev/<bra
   --mirror-ref <repo>=dev/<branch>                                              # candidate
 ```
 
-- **Chat-faithful first.** When `rc ask --help` lists `--replay-chat-run`, `replay` uses it: the
+- **Chat-faithful first.** When `rp ask --help` lists `--replay-chat-run`, `replay` uses it: the
   stored chat turn with chat framing, prior turns (text only, no attachments) and the session's own
   principal, as a simulation test run. `--prompt-override` swaps the question text.
-- **Raw fallback = grounding-only probe** (`--mode raw|email`, or an older rc): `rc ask --scenario raw
+- **Raw fallback = grounding-only probe** (`--mode raw|email`, or an older rp): `rp ask --scenario raw
   --simulation` with prior turns embedded in the question and the case principal. Not
   chat-equivalent (no persona, confidentiality floor, chat output contract, record links): judge
   facts, grounding and helper pickup, not prose; it can never close a privacy/rendering regression.

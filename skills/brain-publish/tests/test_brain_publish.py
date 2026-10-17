@@ -1,4 +1,4 @@
-"""brain_publish.py end to end against a bare-origin fixture and a fake `rc` (no network, no prod)."""
+"""brain_publish.py end to end against a bare-origin fixture and a fake `rp` (no network, no prod)."""
 
 from __future__ import annotations
 
@@ -73,6 +73,7 @@ class BrainPublishTest(unittest.TestCase):
         bin_dir.mkdir()
         (bin_dir / "rc").write_text(FAKE_RC)
         (bin_dir / "rc").chmod(0o755)
+        (bin_dir / "rp").symlink_to("rc")  # subprocesses resolve `rp` first
         self.state_path = self.tmp / "rc.json"
         self.env.update(FAKE_RC_STATE=str(self.state_path), PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
         self._saved = {k: os.environ.get(k) for k in self.env}
@@ -83,7 +84,7 @@ class BrainPublishTest(unittest.TestCase):
         subprocess.run(["git", "clone", "-q", str(self.origin), str(self.repo)], check=True, capture_output=True)
         (self.repo / "skills").mkdir()
         (self.repo / "skills" / "a.md").write_text("one\n")
-        (self.repo / ".rootcause.toml").write_text('project = "demo"\n')
+        (self.repo / ".replypen.toml").write_text('project = "demo"\n')
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-qm", "one")
         self.old = git(self.repo, "rev-parse", "HEAD")
@@ -197,7 +198,7 @@ class BrainPublishTest(unittest.TestCase):
     def test_refuses_tenant_brain_and_wrong_project(self) -> None:
         code, receipt = self.publish_with_project("other")
         self.assertEqual((code, receipt["stage"]), (2, "classify"))
-        (self.repo / ".rootcause.toml").write_text('project = "demo"\ntenant = "t1"\n')
+        (self.repo / ".replypen.toml").write_text('project = "demo"\ntenant = "t1"\n')
         code, receipt = self.publish()
         self.assertIn("tenant brain", receipt["error"])
 

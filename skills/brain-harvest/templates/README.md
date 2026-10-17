@@ -24,7 +24,7 @@ Onboarding-shaped outputs land in `notes/onboarding-inbox.md` (survey facts) and
 
 Standard prompts and output formats for the v2 pipeline stages. Templates 1–3 are instructions for
 **local coding-agent subagents** — they may reference scratch paths and opaque IDs but keep laptop-side
-`rc` orchestration in the SKILL, not in the prompt. Templates 4–5 are the operator-facing report formats.
+`rp` orchestration in the SKILL, not in the prompt. Templates 4–5 are the operator-facing report formats.
 
 | Template | Pipeline step | Purpose |
 |---|---|---|
@@ -40,6 +40,6 @@ defaults sourced from the prepare config**, never spec constants.
 ## Runtime boundary (both kinds)
 
 Generated brain instructions must describe the production runtime: `bash` plus its scenario terminal
-tool, no `rc` binary, read-only `/brain`, and grounding through `/brain` scripts plus injected `lib.*`.
+tool, no `rp` binary, read-only `/brain`, and grounding through `/brain` scripts plus injected `lib.*`.
 See [`../../../docs/brain-model.md`](../../../docs/brain-model.md). Keep local authenticated CLI
 workflows in this kit, never in a generated brain or a committed harvest record.

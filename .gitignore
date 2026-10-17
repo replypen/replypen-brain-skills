@@ -12,8 +12,8 @@ dist/
 build/
 *.egg-info/
 
-# Local rc/kit artifacts (rc CLI debug dumps, brain_dump run dumps) — gitignored wholesale, regenerable.
-/.rootcause/
+# Local rc/kit artifacts (rp CLI debug dumps, brain_dump run dumps) — gitignored wholesale, regenerable.
+/.replypen/
 /.agents/skills/brain-ask
 /.claude/skills/brain-ask
 /.agents/skills/brain-debug
@@ -26,10 +26,10 @@ build/
 /.claude/skills/local-brain-work
 /.agents/skills/observability
 /.claude/skills/observability
-/.agents/skills/rc-fleet
-/.claude/skills/rc-fleet
-/.agents/skills/rc-health
-/.claude/skills/rc-health
+/.agents/skills/rp-fleet
+/.claude/skills/rp-fleet
+/.agents/skills/rp-health
+/.claude/skills/rp-health
 /.agents/skills/rc-inspect
 /.claude/skills/rc-inspect
 /.agents/skills/rc-run

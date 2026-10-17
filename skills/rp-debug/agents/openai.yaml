@@ -1,4 +1,4 @@
 interface:
   display_name: "Brain Dev: Debug"
   short_description: "Inspect one production run or thread"
-  default_prompt: "Use $rc-debug to inspect one production run, thread, or session trace."
+  default_prompt: "Use $rp-debug to inspect one production run, thread, or session trace."

@@ -16,11 +16,11 @@ scope-check roster (`_internal/scopecheck-<project>.toml`, in the brain or a `[m
 or a literal `kind:id`. Keep questions path-free: never name the helper or case file — that is the
 thing under test.
 
-ask: `rc ask --no-wait` per question, the run id is persisted at once (`runs/<id>.submit.json`), then
-`rc run show` is polled until terminal (`runs/<id>.json`). Re-entrant: a submit file resumes polling,
+ask: `rp ask --no-wait` per question, the run id is persisted at once (`runs/<id>.submit.json`), then
+`rp run show` is polled until terminal (`runs/<id>.json`). Re-entrant: a submit file resumes polling,
 a finished run is skipped unless `--force`. At most 3 in flight.
 
-report: `rc run debug` per run (skipped when the JSONL exists), then one row per question:
+report: `rp run debug` per run (skipped when the JSONL exists), then one row per question:
   surfaced  case/helper path in the grounding pre-step (its commands or submit_selection picks)
   opened    case path appears in a main-loop bash command
   called    helper executed by a main-loop bash command (first argv, count, exit, Traceback)
@@ -28,7 +28,7 @@ report: `rc run debug` per run (skipped when the JSONL exists), then one row per
 Honesty: these are command-text matches. A path mention is a read ATTEMPT, not a proven read; an
 exit code belongs to the whole bash command, not only the helper; `right` stays a human column.
 
-Scratch: <brain>/.rootcause/devloop/<tag>/ (gitignored). Stdlib only:
+Scratch: <brain>/.replypen/devloop/<tag>/ (gitignored). Stdlib only:
 `uv run --no-project python devloop.py …`.
 """
 
@@ -39,6 +39,7 @@ import concurrent.futures
 import json
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -48,6 +49,11 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scope-check" / "scripts"))
 from roster import RosterError, brain_project, resolve_principal
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 MAX_PARALLEL = 3
 PENDING = {"queued", "running", "pending", "submitted", "starting", ""}
@@ -107,30 +113,30 @@ def parse_questions(text: str) -> list[dict[str, str]]:
 # --- rc -------------------------------------------------------------------------------------
 def rc(args: list[str], root: Path, timeout: int = 180) -> subprocess.CompletedProcess:
     try:
-        return subprocess.run(["rc", *args], cwd=str(root), capture_output=True, text=True,
+        return subprocess.run([_cli(), *args], cwd=str(root), capture_output=True, text=True,
                               timeout=timeout, check=False)
     except FileNotFoundError as exc:
-        raise DevloopError("`rc` is not on PATH (brain-dev-upgrade)") from exc
+        raise DevloopError("`rp` is not on PATH (brain-dev-upgrade)") from exc
     except subprocess.TimeoutExpired as exc:
-        raise DevloopError(f"rc {' '.join(args[:2])} timed out after {timeout}s") from exc
+        raise DevloopError(f"rp {' '.join(args[:2])} timed out after {timeout}s") from exc
 
 
 def rc_json(args: list[str], root: Path, timeout: int = 180) -> dict[str, Any]:
     done = rc([*args, "-o", "json", "--raw-output"], root, timeout)
     if done.returncode != 0:
-        raise DevloopError(f"rc {args[0]} {args[1]} exited {done.returncode}: "
+        raise DevloopError(f"rp {args[0]} {args[1]} exited {done.returncode}: "
                            f"{(done.stderr or done.stdout).strip()[-400:]}")
     start = re.search(r"[{\[]", done.stdout or "")
     try:
         return json.loads(done.stdout[start.start():]) if start else {}
     except ValueError as exc:
-        raise DevloopError(f"rc {args[0]} {args[1]} did not return JSON") from exc
+        raise DevloopError(f"rp {args[0]} {args[1]} did not return JSON") from exc
 
 
 def require_mirror_ref(root: Path) -> None:
     done = rc(["ask", "--help"], root, 30)
     if "--mirror-ref" not in (done.stdout + done.stderr):
-        raise DevloopError("installed rc has no `rc ask --mirror-ref` yet; upgrade rc "
+        raise DevloopError("installed rp has no `rp ask --mirror-ref` yet; upgrade rp "
                            "(brain-dev-upgrade) or drop --mirror-ref and refresh the mirror instead")
 
 
@@ -165,7 +171,7 @@ def run_one(row: dict[str, str], args: argparse.Namespace, root: Path, runs: Pat
     else:
         payload = rc_json(ask_command(row, args, principal), root)
         if not payload.get("run_id"):
-            raise DevloopError(f"rc ask returned no run_id: {flat(payload, 300)}")
+            raise DevloopError(f"rp ask returned no run_id: {flat(payload, 300)}")
         submit = {"id": row["id"], "run_id": payload["run_id"], "submitted_at": now_iso(),
                   "tenant": row["tenant"] or args.tenant or None, "as": row["as"] or None,
                   "principal_kind": principal[0] if principal else None,
@@ -374,14 +380,14 @@ def analyse(header: dict[str, Any], events: list[dict[str, Any]], helper: str | 
 
 # --- report ---------------------------------------------------------------------------------
 def debug_trace(run_id: str, root: Path) -> Path:
-    debug = root / ".rootcause" / "debug"
+    debug = root / ".replypen" / "debug"
     found = sorted(debug.glob(f"{run_id[:8]}-*.jsonl"))
     if found:
         return found[0]
     done = rc(["run", "debug", run_id, "--raw-output"], root, 300)
     paths = [line.strip() for line in done.stdout.splitlines() if line.strip().endswith(".jsonl")]
     if done.returncode != 0 or not paths:
-        raise DevloopError(f"rc run debug {run_id} exited {done.returncode}: "
+        raise DevloopError(f"rp run debug {run_id} exited {done.returncode}: "
                            f"{(done.stderr or done.stdout).strip()[-300:]}")
     path = Path(paths[0])
     return path if path.is_absolute() else root / path
@@ -483,16 +489,16 @@ def build_parser() -> argparse.ArgumentParser:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--brain", default=".", help="brain checkout root (default: cwd)")
     sub = parser.add_subparsers(dest="command", required=True)
-    ask = sub.add_parser("ask", help="submit questions with rc ask --no-wait and poll to terminal")
+    ask = sub.add_parser("ask", help="submit questions with rp ask --no-wait and poll to terminal")
     ask.add_argument("--tag", required=True)
     ask.add_argument("--questions", required=True, help="TSV: id, tenant, question[, as]")
     ask.add_argument("--brain-ref", help="dev/<branch> (default: the project's main channel)")
     ask.add_argument("--mirror-ref", action="append", metavar="REPO=REF",
-                     help="passed to rc ask (needs an rc that lists --mirror-ref)")
+                     help="passed to rp ask (needs an rp that lists --mirror-ref)")
     ask.add_argument("--parallel", type=int, default=3, help=f"in flight, capped at {MAX_PARALLEL}")
     ask.add_argument("--tenant", help="tenant for rows with an empty tenant column")
     ask.add_argument("--scenario", choices=("email", "raw"), default="email")
-    ask.add_argument("--simulation", action="store_true", help="rc ask --simulation (no actions/journal)")
+    ask.add_argument("--simulation", action="store_true", help="rp ask --simulation (no actions/journal)")
     ask.add_argument("--only", action="append", metavar="ID[,ID]")
     ask.add_argument("--force", action="store_true", help="re-ask finished questions")
     ask.add_argument("--wait", type=int, default=1200, help="max seconds to poll one run (default 1200)")
@@ -513,7 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     root = Path(args.brain).resolve()
-    scratch = root / ".rootcause" / "devloop" / args.tag
+    scratch = root / ".replypen" / "devloop" / args.tag
     try:
         if args.command == "ask":
             return cmd_ask(args, root, scratch)

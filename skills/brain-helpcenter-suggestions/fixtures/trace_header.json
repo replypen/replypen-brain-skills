@@ -1,5 +1,5 @@
 {
- "_comment": "Anonymised shape of the first `rc run trace --stream` record. Modelled on a real thread where a sibling vendor is cc'd and answers: its reply arrives with is_inbound=true but is NOT the customer.",
+ "_comment": "Anonymised shape of the first `rp run trace --stream` record. Modelled on a real thread where a sibling vendor is cc'd and answers: its reply arrives with is_inbound=true but is NOT the customer.",
  "run_id": "53ff0f29-0000-4000-8000-000000000000",
  "thread_id": "1a03cc0d9f99e510",
  "created_at": "2026-09-01T06:07:36Z",

@@ -171,7 +171,7 @@ def test_as_label_resolves_through_the_mirror_roster(tmp_path, monkeypatch):
         '[[audience]]\nlabel = "regular-admin"\nkind = "ka_admin"\nid = "u-1"\n')
     brain = tmp_path / 'brain'
     brain.mkdir()
-    (brain / '.rootcause.toml').write_text('project = "proj"\n[mirrors]\n"m" = "../mirror"\n')
+    (brain / '.replypen.toml').write_text('project = "proj"\n[mirrors]\n"m" = "../mirror"\n')
     monkeypatch.chdir(brain)
     seen = {}
 

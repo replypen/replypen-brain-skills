@@ -149,6 +149,7 @@ def test_refresh_mirror_per_project(world, capsys, monkeypatch, tmp_path):
     (bin_dir / 'rc').write_text(f'#!/bin/sh\ncase "$*" in *--help*) echo "  --accept-descendant"; exit 0;; esac\n'
                                 f'echo "$*" >> {log}\ncase "$*" in *bad*) echo boom; exit 1;; esac\necho refreshed\n')
     (bin_dir / 'rc').chmod(0o755)
+    (bin_dir / 'rp').symlink_to('rc')  # subprocesses resolve `rp` first
     monkeypatch.setenv('PATH', f"{bin_dir}:{__import__('os').environ['PATH']}")
     (world['shared'] / 'mine.txt').write_text('m\n')
     code, result = run(capsys, '--repo', str(world['shared']), '--paths', 'mine.txt', '--message', 'x',
@@ -164,6 +165,7 @@ def test_noop_still_promotes_requested_stable_and_refreshes(world, capsys, monke
     bin_dir.mkdir()
     (bin_dir / 'rc').write_text(f'#!/bin/sh\ncase "$*" in *--help*) exit 0;; esac\necho "$*" >> {log}\n')
     (bin_dir / 'rc').chmod(0o755)
+    (bin_dir / 'rp').symlink_to('rc')  # subprocesses resolve `rp` first
     monkeypatch.setenv('PATH', f"{bin_dir}:{__import__('os').environ['PATH']}")
     shared = world['shared']
     (shared / 'mine.txt').write_text('new\n')

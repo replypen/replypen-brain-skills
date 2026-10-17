@@ -61,7 +61,7 @@ def test_uv_child_does_not_shadow_explicit_runtime_override(tmp_path: Path, monk
     runtime = tmp_path / "runtime"
     _write_probe(runtime, "local-source")
     monkeypatch.setattr(E, "RUNTIME", runtime)
-    monkeypatch.setenv("RC_RUNTIME_SPEC", "rootcause-runtime==99")
+    monkeypatch.setenv("RC_RUNTIME_SPEC", "replypen-runtime==99")
 
     child = E.uv_child_env({}, [], mirrors_root=None)
 
@@ -71,7 +71,7 @@ def test_uv_child_does_not_shadow_explicit_runtime_override(tmp_path: Path, monk
 def test_declared_mirrors_are_relative_and_cli_overrides(tmp_path: Path) -> None:
     brain = tmp_path / "org" / "brain"
     brain.mkdir(parents=True)
-    (brain / ".rootcause.toml").write_text(
+    (brain / ".replypen.toml").write_text(
         'project = "demo"\n\n[mirrors]\napp = "../../app"\n', encoding="utf-8"
     )
     override = tmp_path / "override"
@@ -86,7 +86,7 @@ def test_declared_mirrors_are_relative_and_cli_overrides(tmp_path: Path) -> None
 def test_mirrors_root_overrides_declared_name_even_when_missing(tmp_path: Path) -> None:
     brain = tmp_path / "brain"
     brain.mkdir()
-    (brain / ".rootcause.toml").write_text(
+    (brain / ".replypen.toml").write_text(
         'project = "demo"\n\n[mirrors]\napp = "../usual-app"\n', encoding="utf-8"
     )
     root = tmp_path / "farm"
@@ -110,7 +110,7 @@ def test_invalid_cli_mirror_name_is_rejected(tmp_path: Path) -> None:
 
 
 def test_cli_and_config_env_name_collision_is_rejected(tmp_path: Path) -> None:
-    (tmp_path / ".rootcause.toml").write_text(
+    (tmp_path / ".replypen.toml").write_text(
         'project = "demo"\n\n[mirrors]\na-b = "../one"\n', encoding="utf-8"
     )
     with pytest.raises(ValueError, match="both map to RC_MIRROR_A_B"):
@@ -118,7 +118,7 @@ def test_cli_and_config_env_name_collision_is_rejected(tmp_path: Path) -> None:
 
 
 def test_declared_mirror_path_must_be_relative(tmp_path: Path) -> None:
-    (tmp_path / ".rootcause.toml").write_text(
+    (tmp_path / ".replypen.toml").write_text(
         f'project = "demo"\n\n[mirrors]\napp = "{tmp_path}"\n', encoding="utf-8"
     )
     with pytest.raises(ValueError, match="must be relative to the brain root"):

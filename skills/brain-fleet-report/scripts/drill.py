@@ -17,7 +17,7 @@ draft, the notes, every action, the trace step by step, the human edit, the feed
 clusters the run belongs to. The brain's overlay may append a project-specific follow-up.
 
 Read-only, and cache-first: every rc call reuses collect.py's `raw/` directory, so drilling a run
-that was already collected costs nothing. Never `rc ask`.
+that was already collected costs nothing. Never `rp ask`.
 
 Two reading rules for everything this writes: every excerpt is **post-reduction** (first names
 shortened, e-mail addresses dropped) — mangled-looking text is the privacy reducer, not corruption,
@@ -30,7 +30,7 @@ fatal). `ctx` is a plain dict:
 
   run_id project tenant    ids for this run (`tenant` is "" on a tenantless project)
   rc rc_args              `fr_common.Rc` (disk-cached, read-only) + base args incl. --project/--tenant
-  show thread actions     `rc run show` / `run thread` payloads, `run actions` items
+  show thread actions     `rp run show` / `run thread` payloads, `run actions` items
   trace                   raw trace-stream records, index 0 is the header
   steps                   summarise_steps() output; `step["record"]` is the UNCLIPPED record —
                           `step["stdout"]/["stderr"]` are display summaries, never parse those
@@ -91,7 +91,7 @@ def rc_failures(rc: Rc, seen: int = 0) -> list[str]:
 
 def report_dir(brain_root: Path, report_id: str, wanted: str | None) -> Path:
     """The report directory to read and write into. Latest existing day when `--date` is omitted."""
-    root = brain_root / ".rootcause" / "fleet-report" / report_id
+    root = brain_root / ".replypen" / "fleet-report" / report_id
     if wanted:
         return root / wanted
     days = sorted(p for p in root.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]") if p.is_dir())

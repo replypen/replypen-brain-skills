@@ -6,7 +6,7 @@ the staff composer font nor the signature over its API, so both are recovered fr
 sent HTML. Run at onboarding, and whenever drafts "look off" — default Arial, missing logo.
 
 ```bash
-# 1. the row-export query. Raw message HTML is not on a public rc surface yet: RootCause runs it —
+# 1. the row-export query. Raw message HTML is not on a public rp surface yet: ReplyPen runs it —
 #    from a brain checkout, request the export through brain-publish.
 uv run --no-project python "$SKILL/scripts/voice_format_probe.py" --print-sql \
   --mailbox info@example.com --limit 30
@@ -29,8 +29,8 @@ different staff (the usual multi-tenant case), otherwise tenant or project. Unli
 legitimately lives at mailbox scope.
 
 ```bash
-rc project mailbox ls -o json      # mailbox settings are keyed by UUID, not address
-rc --project <project> project mailbox settings set <mailbox-id> \
+rp project mailbox ls -o json      # mailbox settings are keyed by UUID, not address
+rp --project <project> project mailbox settings set <mailbox-id> \
   channel.draft_font_css="font-family:verdana,sans-serif" \
   channel.signature_html="$(jq -r .signature_html "$SCRATCH/voice/proposal.json")"
 ```

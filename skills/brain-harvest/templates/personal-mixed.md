@@ -20,7 +20,7 @@ cases/
 ## Triage skill (skeleton)
 
 State the draft/skip/escalate rationale in `skills/triage/SKILL.md`, but keep **deterministic** rules
-and **broad guidance** in RootCause triage settings — the brain skill explains the *why*, the triage
+and **broad guidance** in ReplyPen triage settings — the brain skill explains the *why*, the triage
 surface enforces the *what*. Configure settings from the local authenticated control plane; do not put
 control-plane commands in runtime instructions.
 
@@ -37,7 +37,7 @@ control-plane commands in runtime instructions.
 - **Brain files**: case runbooks, terminology, escalation criteria, distilled patterns.
 
 State the runtime boundary near the top of `AGENTS.md`: production has `bash` plus its scenario
-terminal tool, no `rc` binary, and read-only `/brain`; ground through `/brain` scripts and injected
+terminal tool, no `rp` binary, and read-only `/brain`; ground through `/brain` scripts and injected
 `lib.*` capabilities.
 
 Privacy is acute here: personal mail carries credentials, addresses, health data. No raw thread bodies

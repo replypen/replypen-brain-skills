@@ -16,14 +16,14 @@ record in [`docs/brain-harvest-improvements.md`](brain-harvest-improvements.md) 
   never built; this supersedes it. All numeric knobs are tunable defaults via `--config`.
 - **Local IMAP exporter feeds `prepare` directly.** `skills/brain-harvest/scripts/local_imap_harvest.py`
   now emits a `harvest_format: v1` corpus blob at `<out>/corpus/corpus.md` — the exact section shape the
-  server's canonical renderer (`rootcause/internal/export/harvest_render.go` `render()`) produces, with
+  server's canonical renderer (`replypen/internal/export/harvest_render.go` `render()`) produces, with
   real sender addresses — alongside the legacy `INDEX.md` + `threads/` split (kept one deprecation
   release). Deep-IMAP harvests therefore flow through the deterministic pipeline (`prepare --corpus
   <out>/corpus/`) instead of being forced onto the manual fallback. Because the export is sent-folder
   only, every message is mailbox-authored (`direction: mailbox_first`, no external-question holdouts —
   run with `--holdout 0`); paired inbound-thread expansion stays future work.
 - **Single ignored scratch root.** Everything sensitive (corpus, manifest, ledger, drafts, critic notes,
-  brief, IMAP env) lives under `.rootcause/harvest/<tag>/`. Cleanup is a structural delete-and-verify of
+  brief, IMAP env) lives under `.replypen/harvest/<tag>/`. Cleanup is a structural delete-and-verify of
   that root — no artifact registry.
 - **Coverage ledger instead of "read every thread."** Mechanical scan of all threads plus semantic
   deep-read of a stratified sample and every risk-flagged thread. The ledger proves each thread is
@@ -34,7 +34,7 @@ record in [`docs/brain-harvest-improvements.md`](brain-harvest-improvements.md) 
   and unreconciled totals; then it generates the operator brief plus an exact tracked-safe record
   candidate. Raw holdouts never enter the synthesis thread tree; content fingerprints catch copied
   replay text. After approval, `record --approved` copies that candidate byte-for-byte before cleanup.
-- **Bound target and evidence provenance.** Preflight verifies `rc auth access`, normalizes read/write
+- **Bound target and evidence provenance.** Preflight verifies `rp auth access`, normalizes read/write
   proofs, and binds exact project/tenant/mailbox/provider/export metadata into `run.json`; review fails
   if it changes. Reduction JSON carries scratch-only evidence IDs so skip occurrence counts and durable
   semantic reads reconcile mechanically without leaking identifiers into the committed record.
@@ -75,18 +75,18 @@ These are deliberate product decisions, not refactors:
   checkpoint files — they were bookkeeping insuring against a failure neither real run hit. Reads are a
   single stratified pass, not incremental batch rounds.
 
-## What still requires rootcause-cli / server work (out of scope here)
+## What still requires replypen-cli / server work (out of scope here)
 
 These are tracked in the spec's CLI/server deliverables, not in this kit change. The kit is designed to
 work today regardless, because `prepare_harvest.py` parses raw v2 itself:
 
-- **v2 split support (M, urgent):** released `rc` hard-rejects corpus format v2 in its splitter, but the
-  server now emits v2 only. Until `rc` splits v2, use `rc project corpus download --out <file>` and let
+- **v2 split support (M, urgent):** released `rp` hard-rejects corpus format v2 in its splitter, but the
+  server now emits v2 only. Until `rp` splits v2, use `rp project corpus download --out <file>` and let
   `prepare_harvest.py` parse the raw bytes.
-- **`--out` rescue on split failure (S):** `rc` currently discards downloaded bytes when a split fails
+- **`--out` rescue on split failure (S):** `rp` currently discards downloaded bytes when a split fails
   and makes `--out`/`--split` mutually exclusive, so there is no client-side rescue path; the fix should
   offer `--out` on split failure and name the ~48h re-download window.
-- **Format advertising (S):** the export format is not in the API status projection and `rc self doctor`
+- **Format advertising (S):** the export format is not in the API status projection and `rp self doctor`
   does not advertise supported corpus formats, so clients cannot see the format before download.
 - **Inbound/no-reply decision export (L, future):** would unlock absence-based skip inference (§5), but
   requires a cross-subsystem join the export lane deliberately avoids today. Explicitly not a v2

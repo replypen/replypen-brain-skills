@@ -5,12 +5,12 @@
 # ///
 """Provision a chat-editable public website on Cloudflare Workers Builds in one run.
 
-repo (from rootcause-org/site-template) → GitHub App access → Worker + Workers Builds triggers →
-first production build → rootcause `role=website` mirror → Browser Rendering screenshots.
+repo (from replypen/site-template) → GitHub App access → Worker + Workers Builds triggers →
+first production build → ReplyPen `role=website` mirror → Browser Rendering screenshots.
 
 Every step reads live state first and only writes what is missing, so a rerun after a failure
 continues where it stopped. `--dry-run` never writes: reads run when their credential is present,
-writes are printed. urllib + PyYAML; shells out to git, pnpm, rc with a minimal environment.
+writes are printed. urllib + PyYAML; shells out to git, pnpm, rp with a minimal environment.
 
 Ownership: a Worker is only touched when its Workers Builds connection points at <org>/site-<slug>,
 or when this machine's kickstart record (--state-dir) says we created it. Everything else needs an
@@ -37,11 +37,16 @@ from pathlib import Path
 
 import yaml
 
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
 CF_API = "https://api.cloudflare.com/client/v4"
 GH_API = "https://api.github.com"
 DEFAULT_ACCOUNT = "60c5feed78b351b48868d3a691184c4b"  # Cloudflare "Rootcause Sites"
 WORKERS_SUBDOMAIN = "rootcause-sites"  # <worker>.rootcause-sites.workers.dev
-TEMPLATE = "rootcause-org/site-template"
+TEMPLATE = "replypen/site-template"
 APP_SLUGS = ("rootcause-app", "cloudflare-workers-and-pages")
 MIRROR_NAME = "site"
 DEPLOY_CHECK = "Workers Builds"
@@ -65,7 +70,7 @@ SLUG = re.compile(r"[a-z0-9][a-z0-9-]*")
 SAFE_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "SHELL",
             "SSH_AUTH_SOCK", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "PNPM_HOME",
             "MISE_DATA_DIR", "MISE_CONFIG_DIR", "MISE_CACHE_DIR")
-TOOL_ENV = {"gh": ("GH_CONFIG_DIR", "GH_HOST"), "git": ("GIT_SSH_COMMAND", "GH_CONFIG_DIR"), "rc": ("RC_",)}
+TOOL_ENV = {"gh": ("GH_CONFIG_DIR", "GH_HOST"), "git": ("GIT_SSH_COMMAND", "GH_CONFIG_DIR"), "rp": ("RC_",), "rc": ("RC_",)}
 
 
 def child_env(cmd, extra=None):
@@ -83,7 +88,7 @@ class Http:
         req = urllib.request.Request(url, data=data, method=method, headers=dict(headers or {}))
         if data is not None:
             req.add_header("Content-Type", "application/json")
-        req.add_header("User-Agent", "rootcause-website-kickstart")
+        req.add_header("User-Agent", "replypen-website-kickstart")
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 return resp.status, resp.read()
@@ -171,7 +176,7 @@ class Kickstart:
             if self.a.dry_run:
                 self.plan(f"{method} {path} (no {token_env}: read skipped)")
                 return None
-            raise StepFailed(f"{token_env} is not set (mise-env rootcause-org/rootcause.env)")
+            raise StepFailed(f"{token_env} is not set (mise-env replypen/replypen.env)")
         headers = {"Authorization": f"Bearer {token}"}
         if base == GH_API:
             headers |= {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
@@ -581,10 +586,10 @@ class Kickstart:
             self.sleep(POLL_SECONDS)
         raise StepFailed(f"{self.live_url}: {last}")
 
-    # ---- 5. rootcause mirror --------------------------------------------------------------------
+    # ---- 5. ReplyPen mirror --------------------------------------------------------------------
 
-    def step_rootcause(self):
-        scope = ["rc", "--project", self.a.project, "--tenant", self.a.tenant]
+    def step_replypen(self):
+        scope = [_cli(), "--project", self.a.project, "--tenant", self.a.tenant]
         want = {"git_url": f"https://github.com/{self.full_name}.git", "role": "website",
                 "live_url": self.live_url, "preview_url_template": self.preview_template,
                 "deploy_check": DEPLOY_CHECK}
@@ -592,7 +597,7 @@ class Kickstart:
             repos = json.loads(self.run(scope + ["project", "repo", "ls", "-o", "json"]) or "[]")
         except (StepFailed, json.JSONDecodeError) as err:
             if not self.a.dry_run:
-                raise StepFailed(f"rc project repo ls failed: {err}") from err
+                raise StepFailed(f"rp project repo ls failed: {err}") from err
             repos = []
         name = self.a.mirror_name
         have = next((r for r in repos if r.get("name") == name), None)
@@ -647,7 +652,7 @@ class Kickstart:
     # ---- teardown (throwaway sites only) --------------------------------------------------------
 
     def teardown(self):
-        """Undo a kickstart: rc mirror row, Cloudflare triggers + repo connections + Worker, App access.
+        """Undo a kickstart: rp mirror row, Cloudflare triggers + repo connections + Worker, App access.
         Ownership is proven before the first delete. Neither our gh login nor the PAT may delete repos,
         so the repo is renamed out of the way (the slug is free again) and archived; the delete command
         is printed. Rerunnable from any partial failure (record + redirect + idempotent deletes)."""
@@ -660,7 +665,7 @@ class Kickstart:
             self.say("✗", "preflight", f"{err} — nothing was changed")
             return 1
         self.say("·" if self.a.dry_run else "✓", "preflight", plan["detail"])
-        steps = (("rootcause mirror", lambda: self.teardown_rootcause()),
+        steps = (("ReplyPen mirror", lambda: self.teardown_replypen()),
                  ("cloudflare", lambda: self.teardown_cloudflare(plan["tag"])),
                  ("github", lambda: self.teardown_github(plan["repo"], plan["parked"])))
         ok = True
@@ -704,8 +709,8 @@ class Kickstart:
                     raise
                 self.sleep(POLL_SECONDS)
 
-    def teardown_rootcause(self):
-        scope = ["rc", "--project", self.a.project, "--tenant", self.a.tenant]
+    def teardown_replypen(self):
+        scope = [_cli(), "--project", self.a.project, "--tenant", self.a.tenant]
         repos = json.loads(self.run(scope + ["project", "repo", "ls", "-o", "json"]) or "[]")
         git_url = f"https://github.com/{self.full_name}.git"
         have = next((r for r in repos if r.get("name") == self.a.mirror_name and r.get("git_url") == git_url), None)
@@ -753,7 +758,7 @@ class Kickstart:
 
     STEPS = (("preflight", "step_preflight"), ("repo", "step_repo"), ("github apps", "step_github_apps"), ("worker", "step_worker"),
              ("workers builds", "step_builds"), ("first build", "step_build"),
-             ("rootcause mirror", "step_rootcause"), ("screenshots", "step_screenshots"))
+             ("ReplyPen mirror", "step_replypen"), ("screenshots", "step_screenshots"))
 
     def main(self):
         ok = True
@@ -785,7 +790,7 @@ class Kickstart:
             ("trigger json", s.get("triggers_json", "-")),
             ("screenshots", ", ".join(s.get("screenshots", [])) or "-"),
             ("try in chat", f'"{chat}"'),
-            ("or from cli", f'rc --project {self.a.project} --tenant {self.a.tenant} project chat send --lane setup "{chat}"'),
+            ("or from cli", f'rp --project {self.a.project} --tenant {self.a.tenant} project chat send --lane setup "{chat}"'),
         ]
         print("\n── website kickstart " + "─" * 40)
         for key, value in rows:
@@ -800,15 +805,15 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("org", help="GitHub org that owns the site repo (dentai-org, kampadmin, …)")
     p.add_argument("slug", help="site slug: repo + Worker become site-<slug>")
-    p.add_argument("--project", required=True, help="rootcause project (dentai, kampadmin, …)")
-    p.add_argument("--tenant", required=True, help="rootcause tenant slug")
+    p.add_argument("--project", required=True, help="ReplyPen project (dentai, kampadmin, …)")
+    p.add_argument("--tenant", required=True, help="ReplyPen tenant slug")
     p.add_argument("--name", help="display name for _data/site.yml (default: title-cased slug)")
     p.add_argument("--worker-name", help="Worker name (default: site-<slug>)")
     p.add_argument("--account", default=DEFAULT_ACCOUNT, help="Cloudflare account id (default: Rootcause Sites)")
     p.add_argument("--live-url", help="mirror live_url (default: the workers.dev URL; set the real domain after DNS)")
     p.add_argument("--build-token", help="Workers Builds build_token_uuid (default: discovered)")
     p.add_argument("--adopt", action="store_true", help="existing repo: skip creation and placeholder filling")
-    p.add_argument("--mirror-name", default=MIRROR_NAME, help="rootcause mirror name (default: site)")
+    p.add_argument("--mirror-name", default=MIRROR_NAME, help="ReplyPen mirror name (default: site)")
     p.add_argument("--teardown", metavar="WORKER", help="undo a throwaway kickstart; value must equal the Worker name")
     p.add_argument("--force-orphan", action="store_true",
                    help="teardown: also delete a Worker with no Git connection and no kickstart record")

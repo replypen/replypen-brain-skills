@@ -7,15 +7,15 @@ size budget (WARN ≥64 KiB / FAIL ≥96 KiB, override `actions/lint.yaml`), dup
 helpers across ≥3 scripts (WARN), dead module-level `_private` names (WARN).
 Read the module docstring + `docs/actions.md` "Script Hygiene" + `docs/specs/action-script-hygiene.md`.
 
-Only validated so far on `rootcause-brain-dentai` (origin/main): 1 FAIL, ~46 WARNs, 4 dead-code
+Only validated so far on `replypen-brain-dentai` (origin/main): 1 FAIL, ~46 WARNs, 4 dead-code
 hits all confirmed real, 0 false positives seen.
 
 ## Task
-1. Enumerate every local brain checkout: `~/code/rootcause-org/rootcause-brain-*` (~22). Use each
+1. Enumerate every local brain checkout: `~/code/replypen/replypen-brain-*` (~22). Use each
    repo's `origin/main` via a throwaway `git worktree add /tmp/... origin/main --detach` (never
    checkout/reset the shared checkout; remove the worktree afterwards).
 2. Run the lint on each: `lint_actions(root)` from `lib.action_lint` (runtime at
-   `rootcause-brain-skills/runtime`, `PYTHONPATH=$(pwd)/runtime` — uv's `--with .` can serve a
+   `replypen-brain-skills/runtime`, `PYTHONPATH=$(pwd)/runtime` — uv's `--with .` can serve a
    stale cached wheel). Also run the real path once (`brain_test.py`) on 2–3 brains to confirm wiring.
 3. Per brain, tabulate findings. For every finding, classify: TRUE / FALSE POSITIVE (with reason).
    Hunt false negatives: helpers duplicated in only 2 scripts, dup helpers among `preflight.py`

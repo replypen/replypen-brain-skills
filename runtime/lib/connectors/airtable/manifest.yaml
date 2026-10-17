@@ -29,7 +29,7 @@ oauth:
   auth_url: https://airtable.com/oauth2/v1/authorize
   token_url: https://airtable.com/oauth2/v1/token
   # Airtable's OAuth2 REQUIRES PKCE: the token endpoint rejects without S256 code_challenge.
-  # Drives oauth_pkce=true in the generated catalog seed (rootcause db migration 00093).
+  # Drives oauth_pkce=true in the generated catalog seed (replypen db migration 00093).
   pkce: true
   # Minimal read scopes for support grounding: read records + base/table schema.
   # data.records:read — see record data; schema.bases:read — see table names and field types.

@@ -2,8 +2,9 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Collect inbound run questions and compact source evidence via public rc; cluster lexically."""
+"""Collect inbound run questions and compact source evidence via public rp; cluster lexically."""
 import argparse
+import shutil
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,11 @@ from common import cell, link, read, words, write
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'brain-helpcenter-suggestions' / 'scripts'))
 from corpus import clean  # shared email quote/signature cleanup
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
 
 PATH = re.compile(r'/(?:brain|kb|tenant)/[^\s\x00\'"`<>;|]+?\.(?:md|txt|csv|html|json)(?=$|[\s\'"`:;,|>&\]\)])')
 
@@ -62,7 +68,7 @@ def reduce_trace(records):
 
 
 def rc(args):
-    done = subprocess.run(['rc', *args, '-o', 'json', '--raw-output'], capture_output=True, text=True, timeout=180)
+    done = subprocess.run([_cli(), *args, '-o', 'json', '--raw-output'], capture_output=True, text=True, timeout=180)
     if done.returncode:
         raise RuntimeError(done.stderr[:300] or done.stdout[:300])
     if done.stderr.strip():
@@ -80,7 +86,7 @@ def collect(args):
         scope += ['--tenant', args.tenant]
     raw = read(args.runs) if args.runs else json.loads(rc(['fleet', 'runs', '--days', str(args.days), *scope]))
     if not isinstance(raw, dict) or not isinstance(raw.get('runs'), list):
-        raise ValueError('Expected rc fleet runs JSON object with runs list')
+        raise ValueError('Expected rp fleet runs JSON object with runs list')
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=args.days)
     rows = [r for r in raw['runs'] if r.get('kind') in args.kind and not r.get('simulation')
@@ -180,10 +186,10 @@ def main():
     p.add_argument('--tenant')
     p.add_argument('--days', type=int, default=60)
     p.add_argument('--kind', action='append', choices=['email', 'chat', 'analysis'])
-    p.add_argument('--runs', help='optional previously exported rc fleet runs JSON; still date/scope filtered')
+    p.add_argument('--runs', help='optional previously exported rp fleet runs JSON; still date/scope filtered')
     p.add_argument('--input', help='offline previously collected digest JSON; recluster without rc')
     p.add_argument('--topics', help='optional JSON {topic: [keywords]} for language/domain vocabulary')
-    p.add_argument('--cache', default='.rootcause/source-routing/cache')
+    p.add_argument('--cache', default='.replypen/source-routing/cache')
     p.add_argument('--refresh', action='store_true')
     p.add_argument('--out', required=True, help='JSON output')
     p.add_argument('--markdown', required=True)

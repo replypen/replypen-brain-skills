@@ -19,9 +19,9 @@ new_brain() {
   git init -q -b main "$BRAIN"
   git -C "$BRAIN" config user.name "Installer Test"
   git -C "$BRAIN" config user.email "installer-test@example.com"
-  printf '%s\n' 'project = "fixture"' >"$BRAIN/.rootcause.toml"
+  printf '%s\n' 'project = "fixture"' >"$BRAIN/.replypen.toml"
   printf '%s\n' '# tracked rules stay unchanged' >"$BRAIN/.gitignore"
-  git -C "$BRAIN" add .rootcause.toml .gitignore
+  git -C "$BRAIN" add .replypen.toml .gitignore
   git -C "$BRAIN" commit -q -m initial
 }
 
@@ -39,7 +39,7 @@ assert_clean_local_install() {
   test "$(cat "$BRAIN/.gitignore")" = "# tracked rules stay unchanged"
   local exclude
   exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
-  grep -qxF '/.rootcause/' "$exclude"
+  grep -qxF '/.replypen/' "$exclude"
   grep -qxF '/.agents/skills/alpha' "$exclude"
   grep -qxF '/.agents/skills/beta' "$exclude"
   grep -qxF '/.agents/docs' "$exclude"
@@ -217,8 +217,8 @@ mkdir -p "$BRAIN"
 git init -q -b main "$REPO"
 git -C "$REPO" config user.name "Installer Test"
 git -C "$REPO" config user.email "installer-test@example.com"
-printf '%s\n' 'project = "fixture"' >"$BRAIN/.rootcause.toml"
-git -C "$REPO" add tenant/.rootcause.toml
+printf '%s\n' 'project = "fixture"' >"$BRAIN/.replypen.toml"
+git -C "$REPO" add tenant/.replypen.toml
 git -C "$REPO" commit -q -m initial
 run_install >"$TMP/nested.out"
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
@@ -229,17 +229,17 @@ test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? tenant/.clau
 
 # A second nested brain keeps the first brain's independently managed excludes.
 FIRST_BRAIN="$BRAIN"
-mkdir -p "$FIRST_BRAIN/.rootcause" "$REPO/other"
-printf '%s\n' 'sensitive local artifact' >"$FIRST_BRAIN/.rootcause/dump"
-printf '%s\n' 'project = "fixture"' >"$REPO/other/.rootcause.toml"
-git -C "$REPO" add other/.rootcause.toml
+mkdir -p "$FIRST_BRAIN/.replypen" "$REPO/other"
+printf '%s\n' 'sensitive local artifact' >"$FIRST_BRAIN/.replypen/dump"
+printf '%s\n' 'project = "fixture"' >"$REPO/other/.replypen.toml"
+git -C "$REPO" add other/.replypen.toml
 git -C "$REPO" commit -q -m 'add second brain'
 BRAIN="$REPO/other"
 run_install >"$TMP/nested-other.out"
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
 grep -qxF '/tenant/.agents/skills/alpha' "$exclude"
 grep -qxF '/other/.agents/skills/alpha' "$exclude"
-git -C "$REPO" check-ignore -q tenant/.rootcause/dump
+git -C "$REPO" check-ignore -q tenant/.replypen/dump
 git -C "$REPO" check-ignore -q tenant/.agents/skills/alpha
 git -C "$REPO" check-ignore -q other/.agents/skills/alpha
 test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? other/.claude/skills
@@ -252,7 +252,7 @@ new_brain hooked
 run_install >/dev/null
 hook="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
 test -x "$hook"
-grep -qF 'rootcause-brain-skills managed pre-commit hook' "$hook"
+grep -qF 'replypen-brain-skills managed pre-commit hook' "$hook"
 grep -qF "$KIT/skills/local-brain-work/scripts/brain_hygiene.py" "$hook"
 run_install >/dev/null
 new_brain userhook
@@ -261,5 +261,38 @@ printf '%s\n' '#!/bin/sh' 'echo mine' >"$hook"
 run_install >"$TMP/userhook.out"
 grep -qF 'kept your own hook' "$TMP/userhook.out"
 test "$(sed -n 2p "$hook")" = 'echo mine'
+
+# Pre-rebrand install: ~/.rootcause-brain-skills moves to ~/.replypen-brain-skills (old path kept as a
+# link); links, exclude block and hook made by the old installer stay installer-owned; .rootcause.toml
+# still marks a brain; retired rc-* skill links are removed.
+FAKE_HOME="$TMP/home"
+LEGACY="$FAKE_HOME/.rootcause-brain-skills"
+mkdir -p "$FAKE_HOME"
+cp -R "$KIT" "$LEGACY"
+BRAIN="$TMP/legacy"
+git init -q -b main "$BRAIN"
+printf '%s\n' 'project = "fixture"' >"$BRAIN/.rootcause.toml"
+git -C "$BRAIN" add .rootcause.toml
+git -C "$BRAIN" -c user.name=t -c user.email=t@example.com commit -q -m initial
+mkdir -p "$BRAIN/.agents/skills"
+ln -s "$LEGACY/skills/alpha" "$BRAIN/.agents/skills/alpha"
+ln -s "$LEGACY/skills/rc-debug" "$BRAIN/.agents/skills/rc-debug"
+exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
+printf '%s\n' '# rootcause-brain-skills: begin managed local install (.)' '/.rootcause/' \
+  '/.agents/skills/rc-debug' '# rootcause-brain-skills: end managed local install (.)' >>"$exclude"
+hook="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+mkdir -p "$(dirname "$hook")"
+printf '%s\n' '#!/bin/sh' '# rootcause-brain-skills managed pre-commit hook (install.sh)' 'exit 0' >"$hook"
+# First pass as a user (no RC_BRAIN_KIT), second as refresh-brains.sh (default path passed explicitly).
+env -u RC_BRAIN_KIT HOME="$FAKE_HOME" "$ROOT/install.sh" "$BRAIN" >"$TMP/legacy.out"
+HOME="$FAKE_HOME" RC_BRAIN_KIT="$FAKE_HOME/.replypen-brain-skills" "$ROOT/install.sh" "$BRAIN" >"$TMP/legacy2.out"
+test -f "$FAKE_HOME/.replypen-brain-skills/skills/alpha/SKILL.md"
+test "$(readlink "$LEGACY")" = "$FAKE_HOME/.replypen-brain-skills"
+test "$(readlink "$BRAIN/.agents/skills/alpha")" = "$FAKE_HOME/.replypen-brain-skills/skills/alpha"
+if [ -L "$BRAIN/.agents/skills/rc-debug" ]; then echo "error: retired rc-debug link survived" >&2; exit 1; fi
+if grep -qF 'rootcause-brain-skills: begin' "$exclude"; then echo "error: legacy exclude block kept" >&2; exit 1; fi
+grep -qxF '/.replypen/' "$exclude"
+grep -qxF '/.rootcause/' "$exclude"
+grep -qF 'replypen-brain-skills managed pre-commit hook' "$hook"
 
 echo "install tests passed"

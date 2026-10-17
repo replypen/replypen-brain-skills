@@ -1,7 +1,7 @@
-"""Small, typed wrapper around the local ``rc`` CLI for deterministic scripts.
+"""Small, typed wrapper around the local ``rp`` CLI for deterministic scripts.
 
 This module is for *local brain development* scripts, where OAuth and project scope already live in
-``rc``.  It is deliberately not a production-runtime helper: the production loop has no ``rc``
+``rp``.  It is deliberately not a production-runtime helper: the production loop has no ``rp``
 binary and should use the injected ``lib.db`` / ``lib.fs`` capabilities instead.
 
 The console's machine contract is JSON with ``rows`` as arrays plus an ordered ``columns`` list.  A
@@ -14,6 +14,7 @@ from __future__ import annotations
 import builtins
 import json
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,7 +27,7 @@ _LOCAL_TIMEOUT_GRACE_S = 30
 
 
 class RCClientError(RuntimeError):
-    """Base class for an ``rc`` failure, retaining its typed CLI exit code."""
+    """Base class for an ``rp`` failure, retaining its typed CLI exit code."""
 
     exit_code = 1
 
@@ -112,7 +113,7 @@ def _default_runner(args: Sequence[str], timeout: float | None) -> subprocess.Co
 
 
 def _decode_error(stdout: str, stderr: str, returncode: int) -> RCClientError:
-    message = stderr.strip() or stdout.strip() or f"rc exited {returncode}"
+    message = stderr.strip() or stdout.strip() or f"CLI exited {returncode}"
     status = None
     fields = None
     try:
@@ -136,11 +137,12 @@ class Client:
     def __init__(
         self,
         *,
-        executable: str = "rc",
+        executable: str | None = None,
         database: str | None = None,
         runner: Runner | None = None,
     ):
-        self.executable = executable
+        # `rp`, else `rc`: the pre-rebrand name of the same CLI.
+        self.executable = executable or ("rp" if shutil.which("rp") else "rc")
         self.database = database
         self._runner = runner or _default_runner
 
@@ -155,17 +157,17 @@ class Client:
         try:
             completed = self._runner(command, timeout)
         except FileNotFoundError as exc:
-            raise TransportError(f"rc executable not found: {self.executable}") from exc
+            raise TransportError(f"CLI executable not found: {self.executable}") from exc
         except subprocess.TimeoutExpired as exc:
-            raise RemoteCommandError(f"rc command timed out after {timeout}s") from exc
+            raise RemoteCommandError(f"{self.executable} command timed out after {timeout}s") from exc
         if completed.returncode and completed.returncode not in set(allowed_exit_codes):
             raise _decode_error(completed.stdout, completed.stderr, completed.returncode)
         try:
             payload = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
-            raise TransportError("rc returned invalid JSON") from exc
+            raise TransportError(f"{self.executable} returned invalid JSON") from exc
         if not isinstance(payload, dict):
-            raise TransportError("rc returned a non-object JSON response")
+            raise TransportError(f"{self.executable} returned a non-object JSON response")
         if "error" in payload:
             raise _decode_error(completed.stdout, completed.stderr, completed.returncode)
         return payload
@@ -179,7 +181,7 @@ class Client:
         database: str | None = None,
         allow_truncated: bool = False,
     ) -> Result:
-        """Execute parameterized SQL through ``rc`` and return lossless rows.
+        """Execute parameterized SQL through ``rp`` and return lossless rows.
 
         ``params`` values are deliberately text, matching repeated ``--param key=value``.  Use
         ``all=True`` for a complete export; otherwise a server-declared truncation raises.
@@ -198,11 +200,11 @@ class Client:
         rows = payload.get("rows")
         truncated = payload.get("truncated", False)
         if not isinstance(columns, list) or not builtins.all(isinstance(column, str) for column in columns):
-            raise TransportError("rc query response has invalid columns")
+            raise TransportError("CLI query response has invalid columns")
         if not isinstance(rows, list) or not builtins.all(isinstance(row, list) for row in rows):
-            raise TransportError("rc query response has invalid rows")
+            raise TransportError("CLI query response has invalid rows")
         if not isinstance(truncated, bool):
-            raise TransportError("rc query response has invalid truncated flag")
+            raise TransportError("CLI query response has invalid truncated flag")
         result = Result(columns=columns, rows=rows, truncated=truncated)
         if result.truncated and not allow_truncated:
             raise TruncatedError("query result was truncated; rerun with all=True or allow_truncated=True")
@@ -252,7 +254,7 @@ class Client:
         stderr = payload.get("stderr", "")
         timed_out = payload.get("timed_out", False)
         if not isinstance(exit_code, int) or not isinstance(stdout, str) or not isinstance(stderr, str) or not isinstance(timed_out, bool):
-            raise TransportError("rc bash response has invalid fields")
+            raise TransportError("CLI bash response has invalid fields")
         return BashResult(exit_code=exit_code, stdout=stdout, stderr=stderr, timed_out=timed_out)
 
     def file_get(self, remote: str, local: str | Path) -> Path:

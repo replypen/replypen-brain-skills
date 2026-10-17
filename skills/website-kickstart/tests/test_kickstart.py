@@ -94,7 +94,7 @@ class World:
                 return js({"message": "Not Found"}, 404)
             return js({"id": repo["id"], "full_name": name, "owner": {"id": 277291192},
                        "html_url": f"https://github.com/{name}", "archived": repo.get("archived", False)})
-        if path == "/repos/rootcause-org/site-template/generate":
+        if path == "/repos/replypen/site-template/generate":
             self.redirects.pop(f"{body['owner']}/{body['name']}", None)
             self.repos[f"{body['owner']}/{body['name']}"] = {"id": 1000 + self.n, "files": dict(TEMPLATE_FILES),
                                                               "sha": "a" * 40}
@@ -203,13 +203,13 @@ class World:
             self.scripts[name] = "tag0"
             self.writes.append(("cmd", "wrangler deploy", None))
             return ""
-        if cmd[0] == "rc":
+        if cmd[0] == "rp":
             args = cmd[5:]
             args = args[1:] if args[0] == "project" else args
             verb, params = args[:2], args[2:]
             if verb == ["repo", "ls"]:
                 return json.dumps(self.rc_repos)
-            self.writes.append(("cmd", "rc " + " ".join(verb), params))
+            self.writes.append(("cmd", "rp " + " ".join(verb), params))
             kv = dict(a.split("=", 1) for a in params if "=" in a)
             if verb == ["repo", "add"]:
                 self.rc_repos.append(kv)
@@ -247,7 +247,7 @@ class KickstartTest(unittest.TestCase):
         code, out, writes = self.kick()
         self.assertEqual(code, 0, out)
         self.assertEqual(self.names(writes), [
-            "POST /repos/rootcause-org/site-template/generate",
+            "POST /repos/replypen/site-template/generate",
             "cmd git push",
             "PUT /user/installations/168123503/repositories/1000",
             "PUT /user/installations/169196228/repositories/1000",
@@ -256,8 +256,8 @@ class KickstartTest(unittest.TestCase):
             "POST /builds/triggers",
             "POST /builds/triggers",
             "POST /builds/triggers/trig-1/builds",
-            "cmd rc repo add",
-            "cmd rc dev mirror",
+            "cmd rp repo add",
+            "cmd rp dev mirror",
             "POST /browser-rendering/screenshot",
             "POST /browser-rendering/screenshot",
         ])
@@ -270,7 +270,7 @@ class KickstartTest(unittest.TestCase):
                          (["main"], "npx wrangler@4 deploy", "tok-1"))
         self.assertEqual((preview["branch_excludes"], preview["deploy_command"]), (["main"], "npx wrangler@4 preview"))
         self.assertTrue(prod["build_caching_enabled"])
-        rc_add = next(w[2] for w in writes if w[1] == "rc repo add")
+        rc_add = next(w[2] for w in writes if w[1] == "rp repo add")
         self.assertIn("preview_url_template=https://{branch}-site-test.rootcause-sites.workers.dev", rc_add)
         self.assertIn("deploy_check=Workers Builds", rc_add)
         self.assertTrue((Path(self.tmp.name) / "test-mobile.png").exists())
@@ -284,7 +284,7 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         # only the idempotent upsert, the mirror refresh and fresh screenshots remain
         self.assertEqual(self.names(writes), [
-            "PUT /builds/repos/connections", "cmd rc dev mirror",
+            "PUT /builds/repos/connections", "cmd rp dev mirror",
             "POST /browser-rendering/screenshot", "POST /browser-rendering/screenshot"])
         self.assertIn("already succeeded", out)
 
@@ -293,7 +293,7 @@ class KickstartTest(unittest.TestCase):
         code, out, writes = self.kick()
         self.assertEqual(code, 1)
         self.assertIn("✗ first build", out)
-        self.assertNotIn("cmd rc repo add", self.names(writes))
+        self.assertNotIn("cmd rp repo add", self.names(writes))
         self.assertTrue(list(Path(self.tmp.name).glob("test-build-*.log.json")))
         code, out, writes = self.kick()
         self.assertEqual(code, 0, out)
@@ -315,8 +315,8 @@ class KickstartTest(unittest.TestCase):
         code, out, writes = self.kick("--dry-run", env={})
         self.assertEqual(code, 0, out)
         self.assertEqual(writes, [])
-        self.assertIn("(dry-run) would POST /repos/rootcause-org/site-template/generate", out)
-        self.assertIn("(dry-run) would $ rc --project dentai --tenant test project repo add name=site", out)
+        self.assertIn("(dry-run) would POST /repos/replypen/site-template/generate", out)
+        self.assertIn("(dry-run) would $ rp --project dentai --tenant test project repo add name=site", out)
         self.assertIn("result  dry-run", out)
 
     def test_dry_run_with_credentials_reads_but_never_writes(self):

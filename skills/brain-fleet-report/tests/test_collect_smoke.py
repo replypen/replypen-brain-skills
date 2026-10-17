@@ -250,7 +250,7 @@ def test_trace_header_allowlist_drops_the_bootstrap_prompt():
 
 
 def test_find_brain_root_prefers_the_nearest_checkout(tmp_path):
-    brain = tmp_path / "rootcause-brain-demo"
+    brain = tmp_path / "replypen-brain-demo"
     (brain / ".git").mkdir(parents=True)
     (brain / "projection.yaml").write_text("x")
     nested = brain / "skills" / "records"

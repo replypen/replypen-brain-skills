@@ -1,4 +1,0 @@
-interface:
-  display_name: "Brain Dev: rc Script Wrapper"
-  short_description: "Write safe deterministic wrappers around rc"
-  default_prompt: "Use $rc-script-wrapper to wrap rc safely in a local deterministic script."

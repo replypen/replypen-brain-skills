@@ -32,11 +32,11 @@ that contract:
     **WARN** — a no-op tag on an already-pasted AGENTS.md.
     The repo kind (brain / tenant overlay / mirror) comes from `detect_repo_kind`.
 
-It mirrors `rootcause/internal/treeview` so lint and tree **agree**: `md_description_full` is a port
+It mirrors `replypen/internal/treeview` so lint and tree **agree**: `md_description_full` is a port
 of `treeview.DocDescription` (real YAML over the frontmatter block closed within 8 KiB, any string
 form; malformed YAML or no closed block falls back to the legacy 2 KiB line scan), real YAML for
 action manifests, and the same `tidyDesc` whitespace collapse. Both sides replay the shared corpus in
-`contracts/frontmatter/` (rootcause vendors it as `internal/treeview/testdata/frontmatter/`).
+`contracts/frontmatter/` (replypen vendors it as `internal/treeview/testdata/frontmatter/`).
 
 This module stays stdlib + PyYAML only so the standalone developer entrypoint and the production
 publish gate can import it without pytest. `lib.brain_lint_pytest` owns the optional pytest wiring.
@@ -61,6 +61,12 @@ from .brain_doc import FRONTMATTER_CAP
 from .brain_doc import frontmatter_lines as _frontmatter_lines
 from .brain_doc import include_in as _include_in
 from .brain_doc import strip_frontmatter as _strip_frontmatter
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
 
 # Mirror treeview's descMaxLen (tree gloss) / descFullMaxLen (agentskills.io cap) / descHeadBytes
 # (legacy line-scan fallback) so the lint's verdict matches what the host reads.
@@ -97,6 +103,7 @@ _SCRIPT_ALLOWED_ROOTS = frozenset({"skills", "actions", "actions-drafts", "tests
 _SCRIPT_IGNORED_DIRS = frozenset({
     ".agents",
     ".claude",
+    ".replypen",
     ".rootcause",
     ".git",
     ".venv",
@@ -411,7 +418,7 @@ def _check_doc_surfaces(root: Path) -> list[Finding]:
     return findings
 
 
-# Host size budgets for markdown, in bytes of the frontmatter-stripped body. Mirrors rootcause's
+# Host size budgets for markdown, in bytes of the frontmatter-stripped body. Mirrors ReplyPen's
 # internal/grounding/hardload.go (grounding 8K/24K; agent + principal share 16K/48K) and
 # internal/triage/brainknowledge.go (triage 8K/24K). Past a cap the host cuts the body with
 # "... (truncated — read the rest with bash)" — and models rarely do.
@@ -421,10 +428,10 @@ HARD_LOAD_CAPS = {  # role -> (include_in tags, per-file cap, total cap)
     "agent": (("agent", "principal"), 16 << 10, 48 << 10),
 }
 # Untagged docs are read on demand with bash, which shows a stream over 6000 chars only as a
-# 2000+1000-char preview (rootcause internal/tool/tool.go defaultBashSpillThreshold). The advisory
+# 2000+1000-char preview (replypen internal/tool/tool.go defaultBashSpillThreshold). The advisory
 # stays at 16 KB so it names genuinely oversized docs; AGENTS.md is pasted whole, uncapped, every run.
 ON_DEMAND_DOC_CAP = 16 << 10
-_DOC_SIZE_IGNORED_DIRS = frozenset({".agents", ".claude", ".rootcause", ".git", ".venv", "_internal",
+_DOC_SIZE_IGNORED_DIRS = frozenset({".agents", ".claude", ".replypen", ".rootcause", ".git", ".venv", "_internal",
                                     "node_modules", "__pycache__"})
 
 
@@ -487,16 +494,16 @@ def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
 
 
 # ---- Frontmatter the host never reads ------------------------------------------------------------
-# Every constant below names the rootcause source it mirrors; change them together with the host.
+# Every constant below names the replypen source it mirrors; change them together with the host.
 
 # include_in roles the host collects: grounding/agent/principal in internal/grounding/hardload.go
 # (roleGrounding/roleAgent/rolePrincipal), triage in internal/triage/brainknowledge.go.
 INCLUDE_IN_ROLES = ("triage", "grounding", "agent", "principal")
 # A MIRROR repo is scanned for include_in only at its root *.md and recursively under these dirs —
-# rootcause internal/grounding/hardload.go `mirrorScanSubdirs`. Brains and tenant overlays are scanned whole.
+# replypen internal/grounding/hardload.go `mirrorScanSubdirs`. Brains and tenant overlays are scanned whole.
 MIRROR_SCAN_DIRS = (".agents", ".claude", "doc", "docs", "skills")
 # Dirs treeview.TaggedFiles prunes in every scan (internal/treeview/tagged.go + bootstrap.go skipDirs).
-_TAG_PRUNED_DIRS = frozenset({".git", ".rootcause", "__pycache__", "node_modules", ".venv", "venv",
+_TAG_PRUNED_DIRS = frozenset({".git", ".replypen", ".rootcause", "__pycache__", "node_modules", ".venv", "venv",
                               ".pytest_cache", ".ruff_cache", ".mypy_cache"})
 # Frontmatter keys the host reads from brain markdown, all by a top-level line scan (treeview.frontmatterList,
 # bootstrap.go mdDescription). Near-miss spellings the host silently ignores map to the real key.
@@ -509,9 +516,9 @@ REPO_KINDS = ("brain", "tenant", "mirror")
 
 
 def detect_repo_kind(root: str | Path) -> tuple[str, str]:
-    """(kind, reason): `tenant` when the committed `.rootcause.toml` names a tenant; `mirror` when a
-    brain checkout beside it lists this repo in its `.rootcause.toml [mirrors]` (the table brain_run.py
-    resolves) — checked before `project =`, which a source repo may carry only to scope `rc`; else
+    """(kind, reason): `tenant` when the committed `.replypen.toml` names a tenant; `mirror` when a
+    brain checkout beside it lists this repo in its `.replypen.toml [mirrors]` (the table brain_run.py
+    resolves) — checked before `project =`, which a source repo may carry only to scope `rp`; else
     `brain`, the widest include_in scope."""
     import tomllib
 
@@ -523,22 +530,23 @@ def detect_repo_kind(root: str | Path) -> tuple[str, str]:
         except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
             return {}
 
-    own = toml(root / ".rootcause.toml")
+    own = toml(_marker(root))
     if own.get("tenant"):
-        return "tenant", f".rootcause.toml: project {own.get('project')!r}, tenant {own['tenant']!r}"
+        return "tenant", f".replypen.toml: project {own.get('project')!r}, tenant {own['tenant']!r}"
     # Brains declare mirrors as paths relative to themselves; look in the sibling and cousin checkouts
     # (`../brain`, `../../org/brain`). Skipped at filesystem depth 1 (a container's /brain).
     if root.parent != root.parent.parent:
-        for cfg in sorted([*root.parent.glob("*/.rootcause.toml"), *root.parent.parent.glob("*/*/.rootcause.toml")]):
+        for cfg in sorted(c for name in (".replypen.toml", ".rootcause.toml")
+                         for c in [*root.parent.glob(f"*/{name}"), *root.parent.parent.glob(f"*/*/{name}")]):
             mirrors = toml(cfg).get("mirrors") if cfg.parent != root else None
             if not isinstance(mirrors, dict):
                 continue
             for value in mirrors.values():
                 if isinstance(value, str) and (cfg.parent / value).resolve() == root:
-                    return "mirror", f"listed in {cfg.parent.name}/.rootcause.toml [mirrors]"
+                    return "mirror", f"listed in {cfg.parent.name}/{cfg.name} [mirrors]"
     if own.get("project"):
-        return "brain", f".rootcause.toml: project {own['project']!r}"
-    return "brain", "no .rootcause.toml identity and no brain lists it under [mirrors]"
+        return "brain", f".replypen.toml: project {own['project']!r}"
+    return "brain", "no .replypen.toml identity and no brain lists it under [mirrors]"
 
 
 # Paths the host drops from every run view whatever the control files say (internal/treeview/visible.go

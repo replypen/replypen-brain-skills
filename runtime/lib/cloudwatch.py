@@ -54,7 +54,7 @@ def _client():
     client.meta.events.register("needs-retry.cloudwatch-logs.*", auditor.needs_retry)
     # Botocore's event emitter keeps bound handlers, but retaining the adapter makes ownership clear
     # and protects against a future weak-handler implementation.
-    client._rootcause_http_auditor = auditor
+    client._replypen_http_auditor = auditor
     return client
 
 

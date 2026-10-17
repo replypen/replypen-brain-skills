@@ -20,12 +20,12 @@ A non-DRAFT inbound followed by a non-self SENT reply is answered. SENT self-add
 
 - `inventory.json`: complete discovered inbox/older-draft IDs and pagination flags; no message bodies.
 - `index.json`: bounded snippets, subjects, state, health, IDs, Gmail links, coverage. Read first.
-- `threads/<id>.json`: Gmail + provider-filtered rc lineage. Read only selected threads.
+- `threads/<id>.json`: Gmail + provider-filtered rp lineage. Read only selected threads.
 - `details/<id>.json`: refreshed thread, latest run body/notes, full MIME drafts, fingerprint. Read before review/correction; correction eligibility expires after four hours. Stale findings can still render with a single refresh-before-acting notice.
 - `config.json`: machine-local adapter/project target. Do not publish.
 - `corrections/<id>.json`: original draft, hash, evidence, write/readback state; `.txt` is the full replacement body.
 
-These files contain private mail; output directories should be outside source control. Files are mode 600, newly created directories mode 700. Do not commit them, attach entire bundles to tickets, or repeat raw content in the final response. The public kit needs no private RootCause checkout or host access. `rc run debug` is available for a narrow trace drill, with files kept in the same private evidence area.
+These files contain private mail; output directories should be outside source control. Files are mode 600, newly created directories mode 700. Do not commit them, attach entire bundles to tickets, or repeat raw content in the final response. The public kit needs no private ReplyPen checkout or host access. `rp run debug` is available for a narrow trace drill, with files kept in the same private evidence area.
 
 Immediately before a write, the audit records `write_attempted`. If the update/readback raises, that status means outcome unknown: read Gmail before any retry.
 

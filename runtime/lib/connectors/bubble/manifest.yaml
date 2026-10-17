@@ -50,7 +50,7 @@ help_md: |
   `<token>@https://<your-app>.bubbleapps.io/version-test`.
 
   Good to know: the admin token is powerful — Bubble cannot issue a read-only key, so the token can in
-  principle read, write, and delete, and it bypasses the app's privacy rules. rootcause keeps it
+  principle read, write, and delete, and it bypasses the app's privacy rules. ReplyPen keeps it
   host-side behind the API broker and only ever issues reads (writes are refused), so grounding stays
   read-only. Two things to check if a lookup comes back empty: an app that has not been deployed to
   live serves its data only under the `/version-test` address above until you click Deploy, and field

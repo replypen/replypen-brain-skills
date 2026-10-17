@@ -3,8 +3,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE="${RC_WORKSPACE_IMAGE_REPO:-ghcr.io/rootcause-org/workspace}"
-ROOTCAUSE_DIR="${ROOTCAUSE_DIR:-$ROOT/../rootcause}"
+IMAGE="${RC_WORKSPACE_IMAGE_REPO:-ghcr.io/replypen/workspace}"
+# Sibling host checkout: new name first, the pre-rebrand `rootcause` folder until a laptop is migrated.
+HOST_DIR="${REPLYPEN_DIR:-${ROOTCAUSE_DIR:-}}"
+if [ -z "$HOST_DIR" ]; then
+  HOST_DIR="$ROOT/../replypen"
+  [ -d "$HOST_DIR/runtime" ] || HOST_DIR="$ROOT/../rootcause"
+fi
 SKIP_IMAGE="${SKIP_IMAGE:-0}"
 SKIP_PROD="${SKIP_PROD:-0}"
 
@@ -46,12 +51,15 @@ fi
 
 if [ "$SKIP_PROD" = 1 ]; then
   echo "warning: skipped sibling prod pin/lock checks" >&2
-elif [ -d "$ROOTCAUSE_DIR/runtime" ]; then
-  prod_dockerfile="$ROOTCAUSE_DIR/runtime/Dockerfile"
-  prod_lock="$ROOTCAUSE_DIR/runtime/requirements.lock"
+elif [ -d "$HOST_DIR/runtime" ]; then
+  prod_dockerfile="$HOST_DIR/runtime/Dockerfile"
+  prod_lock="$HOST_DIR/runtime/requirements.lock"
   if [ -f "$prod_dockerfile" ]; then
-    if ! grep -qF "rootcause-brain-skills@$tag#subdirectory=runtime" "$prod_dockerfile"; then
-      err "$prod_dockerfile does not pin rootcause-runtime to $tag"
+    # Canonical spec, plus the pre-rebrand one a not-yet-renamed host still carries.
+    pin_new="replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@$tag#subdirectory=runtime"
+    pin_old="rootcause-runtime @ git+https://github.com/rootcause-org/rootcause-brain-skills@$tag#subdirectory=runtime"
+    if ! grep -qF "$pin_new" "$prod_dockerfile" && ! grep -qF "$pin_old" "$prod_dockerfile"; then
+      err "$prod_dockerfile does not pin replypen-runtime to $tag"
     fi
   fi
   if [ -f "$prod_lock" ] && ! cmp -s "$ROOT/runtime/requirements.lock" "$prod_lock"; then
@@ -59,19 +67,19 @@ elif [ -d "$ROOTCAUSE_DIR/runtime" ]; then
   fi
   # The host integration_catalog is a generated projection of these connector manifests. Fail the
   # release if a manifest changed without regenerating the prod snapshot (`make catalog`).
-  catalog_gen="$ROOTCAUSE_DIR/scripts/gen_catalog_migration.py"
+  catalog_gen="$HOST_DIR/scripts/gen_catalog_migration.py"
   if [ -f "$catalog_gen" ]; then
     if command -v uv >/dev/null 2>&1; then
       if ! uv run --with pyyaml python "$catalog_gen" \
-          "$ROOT/runtime/lib/connectors" "$ROOTCAUSE_DIR/db/catalog.generated.sql" --check >/dev/null; then
-        err "db/catalog.generated.sql is stale vs connector manifests — run \`make catalog\` in rootcause"
+          "$ROOT/runtime/lib/connectors" "$HOST_DIR/db/catalog.generated.sql" --check >/dev/null; then
+        err "db/catalog.generated.sql is stale vs connector manifests — run \`make catalog\` in replypen"
       fi
     else
       echo "warning: uv unavailable; skipped catalog snapshot lockstep check" >&2
     fi
   fi
 else
-  echo "warning: sibling rootcause repo not found at $ROOTCAUSE_DIR; skipped prod pin/lock checks" >&2
+  echo "warning: sibling replypen repo not found at $HOST_DIR; skipped prod pin/lock checks" >&2
 fi
 
 prev_tag="$(git -C "$ROOT" tag -l 'v*' | grep -v "^$tag$" | sort -V | tail -1 || true)"

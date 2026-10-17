@@ -11,15 +11,15 @@ One report = one help centre, decided by the **mount**, not by the presence of t
 under `/kb/tenant/**` plus `--tenant` gives a per-tenant report, otherwise every project-level KB is
 one help centre and the tenant is just a column. `--tenant` also filters the conversations.
 
-Writes `<brain>/.rootcause/helpcenter/<window end date>[-<tenant>]/`:
+Writes `<brain>/.replypen/helpcenter/<window end date>[-<tenant>]/`:
   conversations.tsv / articles.tsv  the read-whole tier (one short line each)
   digest.md                         the drill tier (full bodies)
   evidence.json                     the judge contract (its sha256 goes into suggestions.json)
   raw/articles/A*.md                every kb article verbatim, the anchor source for `edit:`
   raw/                              rc + console artifact cache (hdr-<run_id>.json per session)
 
-Read-only: `rc fleet runs`, `rc run trace`, `rc project mailbox ls`, and guarded
-`rc dev console bash run` reads. Never `rc ask`, never a write action.
+Read-only: `rp fleet runs`, `rp run trace`, `rp project mailbox ls`, and guarded
+`rp dev console bash run` reads. Never `rp ask`, never a write action.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ import argparse
 import hashlib
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -51,11 +52,16 @@ except ImportError:  # noqa: BLE001 - the sibling skill is the only hard depende
 
 import corpus  # noqa: E402
 
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
 MAX_HS_PAGES = 60
 MAX_DAYS = 120
 CONSOLE_TIMEOUT = 300
 TRACE_TIMEOUT = 120
-OUT = "/tmp/rootcause-out"
+OUT = "/tmp/replypen-out"
 MIN_RUNS_OVER_HELPSCOUT = 20  # fewer runs than this and a Help Scout box wins
 CORPUS_KINDS = ("email", "chat", "analysis")
 # `analysis` runs are Embassy support tickets: an admin filing one is an admin who did not find
@@ -67,14 +73,14 @@ HEADER_DROP = ("bootstrap_turn", "system_prompt", "prompt_sections", "manifest_b
 # Verified 2026-09-08 (iBeauty, pro-backup): console stdout caps at 64 KiB, and a Help Scout page is
 # ~270 KB and a 190-article INDEX overflows too, so anything bulky goes through an artifact file.
 HS_PAGE_SCRIPT = (
-    "import json,subprocess,os; os.makedirs('/tmp/rootcause-out',exist_ok=True); "
+    "import json,subprocess,os; os.makedirs('/tmp/replypen-out',exist_ok=True); "
     "r=subprocess.run(['python','-m','lib.api','get','helpscout','/conversations',"
     "'--query','status=all','--query','embed=threads','--query','page={page}',"
     "'--query','query=(createdAt:[{start} TO {end}])'],capture_output=True,text=True); "
     "p=json.loads(r.stdout); "
     "[c['_embedded'].update(threads=[t for t in c['_embedded'].get('threads',[]) if t.get('type')!='note']) "
     "for c in p.get('_embedded',{{}}).get('conversations',[]) if c.get('_embedded')]; "  # Beacon notes carry IP + browsing history
-    "json.dump(p,open('/tmp/rootcause-out/hc-page-{page}.json','w')); "
+    "json.dump(p,open('/tmp/replypen-out/hc-page-{page}.json','w')); "
     "print(json.dumps(p.get('page')))"
 )
 FIND_INDEXES = "find /kb -maxdepth 4 -name INDEX.md 2>/dev/null"
@@ -90,7 +96,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tenant", help="tenant slug: filters runs and scopes /kb to that tenant")
     parser.add_argument("--skip-tenant", action="append", default=[], metavar="SLUG",
                         help="tenant whose conversations are internal traffic (repeatable)")
-    parser.add_argument("--out", help="output directory (default .rootcause/helpcenter/<end date>)")
+    parser.add_argument("--out", help="output directory (default .replypen/helpcenter/<end date>)")
     parser.add_argument("--source", choices=("auto", "runs", "helpscout"), default="auto",
                         help="corpus source; auto = runs unless fewer than %d and a Help Scout "
                              "mailbox exists" % MIN_RUNS_OVER_HELPSCOUT)
@@ -110,13 +116,13 @@ def cover(feed: str, status: str, scanned: int, retained: int, reason: str | Non
 
 
 def _rc_console(brain_root: Path, tenant: str | None, *args: str) -> subprocess.CompletedProcess:
-    """`--tenant` goes ONLY on console calls: RC_TENANT would also scope `rc fleet runs` to nothing."""
-    argv = ["rc", "dev", "console"] + (["--tenant", tenant] if tenant else []) + list(args)
+    """`--tenant` goes ONLY on console calls: RC_TENANT would also scope `rp fleet runs` to nothing."""
+    argv = [_cli(), "dev", "console"] + (["--tenant", tenant] if tenant else []) + list(args)
     return subprocess.run(argv, capture_output=True, text=True, timeout=CONSOLE_TIMEOUT, cwd=brain_root)
 
 
 def console(brain_root: Path, script: str, tenant: str | None = None) -> dict[str, Any]:
-    """`rc dev console bash run` envelope: {stdout, stderr, exit_code, stdout_truncated}."""
+    """`rp dev console bash run` envelope: {stdout, stderr, exit_code, stdout_truncated}."""
     try:
         done = _rc_console(brain_root, tenant, "bash", "run", "-o", "json", "--raw-output", script)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -173,7 +179,7 @@ def parse_frontmatter(lines: list[str]) -> dict[str, str]:
 
 
 def fetch_header(brain_root: Path, raw_dir: Path, run_id: str) -> tuple[dict[str, Any] | None, bool]:
-    """First JSONL record of `rc run trace --stream`, cached as raw/hdr-<run_id>.json.
+    """First JSONL record of `rp run trace --stream`, cached as raw/hdr-<run_id>.json.
 
     Not `Rc.jsonl`: that buffers the whole trace stream (~200 KB per run, and the tail is turn
     transcripts we never read). Read one line, kill the process, persist the corpus keys only.
@@ -184,7 +190,7 @@ def fetch_header(brain_root: Path, raw_dir: Path, run_id: str) -> tuple[dict[str
             return json.loads(target.read_text(encoding="utf-8")), True
         except (OSError, json.JSONDecodeError):
             target.unlink(missing_ok=True)
-    argv = ["rc", "run", "trace", run_id, "--stream", "-o", "json", "--raw-output"]
+    argv = [_cli(), "run", "trace", run_id, "--stream", "-o", "json", "--raw-output"]
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
                             cwd=brain_root)
     header = None
@@ -532,7 +538,7 @@ def mailboxes(rc: Rc) -> list[dict]:
 
 
 def pick_source(rc: Rc, brain_root: Path, raw_dir: Path, args, start, end):
-    """One `rc fleet runs` call: `--kind` decides the corpus, the other kinds only get counted."""
+    """One `rp fleet runs` call: `--kind` decides the corpus, the other kinds only get counted."""
     kinds = tuple(getattr(args, "kind", None) or CORPUS_KINDS)
     payload = rc.json("fleet", "runs", "--days", str(args.days))
     rows = [r for r in ((payload.get("runs") if isinstance(payload, dict) else payload) or [])
@@ -575,7 +581,7 @@ def main() -> int:
     start = (end - timedelta(days=max(1, args.days) - 1)).replace(
         hour=0, minute=0, second=0, microsecond=0)
     out_dir = Path(args.out).expanduser() if args.out else (
-        brain_root / ".rootcause" / "helpcenter"
+        brain_root / ".replypen" / "helpcenter"
         / (end.date().isoformat() + (f"-{args.tenant}" if args.tenant else "")))
     raw_dir = out_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)

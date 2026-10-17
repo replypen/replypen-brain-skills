@@ -12,7 +12,7 @@ still works: one project, defaults, no project follow-up. `collect.py`, `drill.p
 ```
 
 **Commit it, but keep it out of runs:** `/_internal/` must be in the brain's `.replypenignore` (it
-already is in most brains). The report output (`.rootcause/`) is gitignored.
+already is in most brains). The report output (`.replypen/`) is gitignored.
 
 ## `config.toml`
 
@@ -54,7 +54,7 @@ An overlay `drill` that reads a live project database must stamp its output `as 
 answers as of now, not as of the run, and the difference between "the agent misread the agenda" and
 "the human moved it afterwards" is exactly that stamp.
 
-`ctx` keys are documented in `scripts/drill.py`'s module docstring: `rc` (the disk-cached read-only
+`ctx` keys are documented in `scripts/drill.py`'s module docstring: `rp` (the disk-cached read-only
 `fr_common.Rc`) + `rc_args`, `show`, `thread`, `actions`, `trace`, `steps`, `deltas`, `feedback`,
 `tz`, `brain_root`, `privacy`, `fr`. Everything you emit must pass through `ctx["privacy"]`.
 Import nothing from the kit — use `ctx["fr"]` if you need a helper.
@@ -62,7 +62,7 @@ Import nothing from the kit — use `ctx["fr"]` if you need a helper.
 ## `OVERLAY.md` — the *Owner reach* table
 
 The kit decides `findings[].audience` by **reach** ([SKILL.md](SKILL.md) rule 6), and the generic
-plane list ([report_schema.md](report_schema.md)) only knows RootCause planes. `OVERLAY.md` adds a section `## Owner reach` that names the
+plane list ([report_schema.md](report_schema.md)) only knows ReplyPen planes. `OVERLAY.md` adds a section `## Owner reach` that names the
 project's concrete owner surfaces — the admin dashboard, master data, source-system configuration,
 policy calls — and, opposite it, what is developer-only. Two columns, one row per surface, written
 so the judging LLM can look at a finding and say "owner" or "technical" without guessing. Without

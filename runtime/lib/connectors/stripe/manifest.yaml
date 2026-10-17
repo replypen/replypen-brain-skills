@@ -25,7 +25,7 @@ read_endpoints:
     # Creates an unsaved invoice preview; Stripe does not persist, list, edit, or collect it.
     - /invoices/create_preview
     - /v1/invoices/create_preview
-# Principal-scoped HTTP egress ("RLS for APIs"): the rootcause-owned rule-set that, on a principal-asserted
+# Principal-scoped HTTP egress ("RLS for APIs"): the ReplyPen-owned rule-set that, on a principal-asserted
 # run whose project binds `stripe_customer_id`, limits Stripe reads to that one customer's objects. Absent a
 # bound principal it is inert (unscoped-as-today). The three modes cover the BOLA shapes: self (id IS the
 # owner), inject (list filtered by a provider-honoured param), preflight (owner learnable only from the body).

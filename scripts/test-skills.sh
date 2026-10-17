@@ -15,6 +15,6 @@ for name in "${names[@]}"; do
   files=($(find "$ROOT/skills/$name" -name 'test_*.py' -not -path '*/__pycache__/*' -not -path '*/fixtures/*' | sort))
   [ ${#files[@]} -gt 0 ] || continue
   echo "== $name"
-  uv run --no-project "${DEPS[@]}" pytest -q -p no:cacheprovider "${files[@]}" || failed+=("$name")
+  uv run --no-project "${DEPS[@]}" pytest -q -p no:cacheprovider --confcutdir "$ROOT" "${files[@]}" || failed+=("$name")
 done
 [ ${#failed[@]} -eq 0 ] || { echo "FAILED skills: ${failed[*]}" >&2; exit 1; }

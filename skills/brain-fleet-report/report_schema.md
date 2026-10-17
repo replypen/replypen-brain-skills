@@ -112,11 +112,11 @@ reports or alter decisions.
 Composer emits uppercase task kind/title, start checkout + AGENTS.md, other targets, files, canonical
 runs, diagnosis, optional repro, change/checks/options, completion, decision, boundaries. It excludes
 recurrence and skills. Warns outside 90–260 words and on hedged fixes (“locate”, “consider”, “either”,
-“investigate whether”, “or (b)”, “read the full error”). Investigation never runs rc ask or confirms actions. After a human decision, implementation commits
+“investigate whether”, “or (b)”, “read the full error”). Investigation never runs rp ask or confirms actions. After a human decision, implementation commits
 AND ships, then verifies production; one bounded retry when not improved (maximum two rounds).
 
 Owner prompt publication requires **all**: owner/both, fix, brain_content/tenant_brain, and every
-resolved target checkout name starts `rootcause-brain-`. Otherwise only the human ask appears. Path
+resolved target checkout name starts `replypen-brain-`. Otherwise only the human ask appears. Path
 containment prevents another repo being smuggled through an absolute path or symlink.
 
 Validation warns on new titles sharing ≥60% of significant words with another prior signature.

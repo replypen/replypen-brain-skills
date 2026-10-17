@@ -20,7 +20,7 @@ actions/
 ## AGENTS.md routing index (skeleton)
 
 State the runtime boundary near the top: production has `bash` plus its scenario terminal tool, no
-`rc` binary, and read-only `/brain`; ground through `/brain` scripts and injected `lib.*` capabilities.
+`rp` binary, and read-only `/brain`; ground through `/brain` scripts and injected `lib.*` capabilities.
 
 | Customer symptom language | Check | Evidence to open | Action / no-action rule |
 |---|---|---|---|

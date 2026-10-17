@@ -11,12 +11,12 @@ inventory. It needs the host app's source checkout and a local dev instance; it 
 
 Output: a provisional inventory in the brain's operator-only `_internal/ui-guidance/` (excluded from runs)
 until the project's guidance format is live; the brain then documents **ids and workflows**, never CSS.
-Worked example (KampAdmin, Avo/Rails): `rootcause-brain-kampadmin-support/_internal/ui-guidance/`.
+Worked example (KampAdmin, Avo/Rails): `replypen-brain-kampadmin-support/_internal/ui-guidance/`.
 
 ## 1. Help center first: what users already needed pointing to
 
-- Pull the `/kb` snapshot to the laptop: `rc dev console download /kb/<provider> ./kb` (dirs are tarred;
-  see `rc dev console --help`). Never page through `bash run` output: it truncates and says so.
+- Pull the `/kb` snapshot to the laptop: `rp dev console download /kb/<provider> ./kb` (dirs are tarred;
+  see `rp dev console --help`). Never page through `bash run` output: it truncates and says so.
 - Screenshot alt texts are AI descriptions ([knowledge-base.md](../../docs/knowledge-base.md)). Grep them for
   annotations, the strongest signal: `rg -i "arrow|pijl|red box|omkaderd|highlight|circled|markering" kb/`.
   Rank controls by annotation count; extract recurring multi-step flows with exact labels.

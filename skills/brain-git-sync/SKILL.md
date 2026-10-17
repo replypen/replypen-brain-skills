@@ -34,7 +34,7 @@ never overwrite it.
    Omit `--commit-message` when nothing is staged. Each `--verify-command` reruns after every merge and
    before push, so a merged tree is never published untested. Files deliberately left uncommitted cause
    a safe stop — report them rather than hiding them. Before any mutation the primitive checks
-   `rc dev brain status` (`--project` explicit, else the checkout's `.rootcause.toml`); a project whose
+   `rp dev brain status` (`--project` explicit, else the checkout's `.replypen.toml`); a project whose
    `status.brain_source.read_only` is true (a read-only brain alias) is refused outright — sync from
    the source project's own checkout instead.
 

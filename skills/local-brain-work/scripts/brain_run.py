@@ -3,15 +3,15 @@
 # ///
 """Run one brain grounding script the way the workspace container would — fast `uv` or faithful `docker`.
 
-Brain-dir-relative: `cd` into a `rootcause-brain-<project>` checkout and invoke; it operates on `.`.
-Reads `./.env`, resolves `lib` from `rootcause-runtime` (uv) or the published image (docker). No
+Brain-dir-relative: `cd` into a `replypen-brain-<project>` checkout and invoke; it operates on `.`.
+Reads `./.env`, resolves `lib` from `replypen-runtime` (uv) or the published image (docker). No
 `accounts.yml`, no project name, no `code_root`.
 
     uv run brain_run.py skills/records/scripts/lookup_person.py --tenant X --email a@b.com
     uv run brain_run.py -m lib.db --list
     uv run brain_run.py --mode docker skills/records/scripts/lookup_person.py --email a@b.com
     uv run brain_run.py --brief                      # map the brain (env keys, DBs, mirrors, skills)
-    uv run brain_run.py --brain ~/code/rootcause-org/rootcause-brain-kampadmin -m lib.db --list
+    uv run brain_run.py --brain ~/code/replypen/replypen-brain-kampadmin -m lib.db --list
 
 Kit flags come FIRST; everything from the script path (or `-m module`) onward is passed through to the
 script verbatim — including its own `--flags`, even ones that share a kit flag's name."""

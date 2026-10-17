@@ -16,7 +16,7 @@ def connect(dsn=None, *, write=False):
             require_schema(conn)
             yield conn
         return
-    root = Path(os.environ.get('RC_HOST_CHECKOUT', '~/code/rootcause-org/rootcause')).expanduser()
+    root = Path(os.environ.get('RC_HOST_CHECKOUT', '~/code/replypen/replypen')).expanduser()
     path = root / '.agents/skills/support/scripts/db.py'
     if not path.is_file():
         raise ValueError('Set RC_HOST_CHECKOUT to the operator host checkout, or pass --dsn for local testing')

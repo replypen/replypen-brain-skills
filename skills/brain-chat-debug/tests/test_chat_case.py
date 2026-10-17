@@ -1,6 +1,6 @@
 """Offline tests for chat_case.py: synthetic, scrubbed payloads only (no rc, no real ids, no PII).
 
-Pure functions are tested directly; the open/replay wiring runs against a fake `rc` (env `RC`).
+Pure functions are tested directly; the open/replay wiring runs against a fake `rp` (env `RC`).
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ def test_summarise_trace():
 def case_doc(**over):
     turns = [{"n": 1, "run_id": RUN1, "question": "How many people are called Alex?", "answer": "There are 12.",
               "outcome": "replied", "feedback": {"score": 1, "comment": "wrong"}, "share_url": None,
-              "trace_md": ".rootcause/debug/aaaaaaaa-acme.md",
+              "trace_md": ".replypen/debug/aaaaaaaa-acme.md",
               "evidence": cc.summarise_trace(header(), events(), MD)}]
     doc = {"session_id": SESSION, "title": "Alex count", "project": "acme", "tenant": "tenant-a",
            "surface": "embed", "principal": {"kind": "acme_admin", "id": ADMIN}, "expected": "Count, no names.",
@@ -127,7 +127,7 @@ def test_render_case_md():
     assert "| principal | acme_admin / `dddddddd" in md and "| feedback | t1 1★ “wrong” |" in md
     assert "> Count, no names." in md and "## Turn 1" in md and "## Evidence per run" in md
     assert "prompt sections off: principal_scoped (+1 other)" in md
-    assert "--mirror-ref acme-common=dev/<branch>" in md and "replay .rootcause/chatdebug/11111111 --turn 1" in md
+    assert "--mirror-ref acme-common=dev/<branch>" in md and "replay .replypen/chatdebug/11111111 --turn 1" in md
     assert "(not given)" in cc.render_case_md(case_doc(expected=None))
 
 
@@ -183,7 +183,7 @@ if "thread" in argv:
 if "debug" in argv:
     ref = words[words.index("debug") + 1]
     rid = next(r for r in data["traces"] if r in ref or ref.endswith(r))
-    d = Path(".rootcause/debug"); d.mkdir(parents=True, exist_ok=True)
+    d = Path(".replypen/debug"); d.mkdir(parents=True, exist_ok=True)
     stem = d / f"{rid[:8]}-acme"
     Path(f"{stem}.jsonl").write_text("\n".join(json.dumps(x) for x in data["traces"][rid]) + "\n")
     Path(f"{stem}.md").write_text(data["md"])
@@ -196,7 +196,7 @@ def fake_env(tmp_path, monkeypatch, *, logged_in=True, chat=False, zero=False,
              session_created="2026-01-01T09:59:00Z"):
     brain = tmp_path / "brain"
     brain.mkdir(exist_ok=True)
-    (brain / ".rootcause.toml").write_text('project = "acme"\nbase_url = "https://app.example.test"\n')
+    (brain / ".replypen.toml").write_text('project = "acme"\nbase_url = "https://app.example.test"\n')
     script = tmp_path / "fake_rc.py"
     script.write_text(FAKE)
     runs = [] if zero else [{"run_id": RUN1, "created_at": "2026-01-01T10:00:00Z", "share_url": f"https://app.example.test/runs/{RUN1}?t=a"},
@@ -246,7 +246,7 @@ def run(brain: Path, *argv: str) -> int:
 def test_open_zero_run_share(tmp_path, monkeypatch, capsys):
     brain, _ = fake_env(tmp_path, monkeypatch, zero=True)
     assert run(brain, "open", SHARE) == 0
-    md = (brain / ".rootcause/chatdebug/11111111/case.md").read_text()
+    md = (brain / ".replypen/chatdebug/11111111/case.md").read_text()
     assert cc.ZERO_RUNS in md and "Seed message" in md
     assert cc.ZERO_RUNS in capsys.readouterr().out
     assert run(brain, "replay", "11111111") == 2
@@ -256,19 +256,19 @@ def test_open_zero_run_share(tmp_path, monkeypatch, capsys):
 def test_open_share_logged_out_then_raw_replay_needs_principal(tmp_path, monkeypatch, capsys):
     brain, log = fake_env(tmp_path, monkeypatch, logged_in=False)
     assert run(brain, "open", SHARE, "--expected", "Count, no names.") == 0
-    case = json.loads((brain / ".rootcause/chatdebug/11111111/case.json").read_text())
+    case = json.loads((brain / ".replypen/chatdebug/11111111/case.json").read_text())
     assert [t["run_id"] for t in case["turns"]] == [RUN1, RUN2] and case["principal"] is None
     assert case["tenant"] == "tenant-a" and case["seed"] == ["Continuing from **Parent**:"]
     assert any("not logged in" in n for n in case["notes"])
     assert all("://" in c[c.index("debug") + 1] for c in calls(log, "debug"))  # share_url drills, no login
     assert run(brain, "replay", "11111111") == 2
-    assert "rc auth login" in capsys.readouterr().err
+    assert "rp auth login" in capsys.readouterr().err
 
 
 def test_open_session_and_replay_chat_faithful(tmp_path, monkeypatch, capsys):
     brain, log = fake_env(tmp_path, monkeypatch, chat=True)
     assert run(brain, "open", SESSION, "--expected", "Count, no names.") == 0
-    case = json.loads((brain / ".rootcause/chatdebug/11111111/case.json").read_text())
+    case = json.loads((brain / ".replypen/chatdebug/11111111/case.json").read_text())
     assert case["principal"] == {"kind": "acme_admin", "id": ADMIN} and case["surface"] == "embed"
     assert case["turns"][0]["feedback"]["score"] == 1 and case["turns"][1]["evidence"]["commands"]
     capsys.readouterr()
@@ -277,7 +277,7 @@ def test_open_session_and_replay_chat_faithful(tmp_path, monkeypatch, capsys):
     assert ask[:3] == ["ask", "--replay-chat-run", RUN2]
     assert "--principal-kind" not in ask and "--scenario" not in ask
     assert ask[ask.index("--tenant") + 1] == "tenant-a"  # source tenant forwarded, never the ambient one
-    md = next((brain / ".rootcause/chatdebug/11111111/replays").glob("*-baseline.md")).read_text()
+    md = next((brain / ".replypen/chatdebug/11111111/replays").glob("*-baseline.md")).read_text()
     assert cc.CHAT_FAITHFUL in md and "not chat-equivalent" not in md and "New answer." in md
     out = capsys.readouterr().out
     assert "baseline · mode chat" in out and "⟦pii" not in out and "New answer" not in out
@@ -294,7 +294,7 @@ def test_replay_raw_fallback_baseline_then_candidate(tmp_path, monkeypatch, caps
     assert "--scenario" in ask and "raw" in ask and "--simulation" in ask and "--tenant" in ask
     assert run(brain, "replay", "11111111", "--turn", "2", "--brain-ref", "dev/fix",
                "--mirror-ref", "acme-common=dev/fix", "--note", "pii fix") == 0
-    replays = brain / ".rootcause/chatdebug/11111111/replays"
+    replays = brain / ".replypen/chatdebug/11111111/replays"
     cand = next(replays.glob("*-candidate.md")).read_text()
     assert "not chat-equivalent" in cand and "| historical (chat) | baseline " in cand and "| candidate " in cand
     rec = json.loads(next(replays.glob("*-candidate.json")).read_text())
@@ -318,7 +318,7 @@ def test_dry_scope_and_widen(tmp_path, monkeypatch, capsys):
     assert "--dry-scope" in ask and "--replay-chat-run" not in ask and "--principal-id" in ask
     assert "kind acme_admin" in capsys.readouterr().out
     assert run(brain, "widen", "11111111", "--tenants", "t1, t2", "--as", "regular-admin") == 0
-    rows = (brain / ".rootcause/chatdebug/11111111/questions-chat-11111111.tsv").read_text().splitlines()
+    rows = (brain / ".replypen/chatdebug/11111111/questions-chat-11111111.tsv").read_text().splitlines()
     assert rows[0] == "id\ttenant\tquestion\tas" and len(rows) == 3
     assert rows[1].split("\t")[1] == "t1" and rows[2].split("\t")[3] == "regular-admin"
     assert "New question: Give me 3 links" in rows[1]
@@ -346,7 +346,7 @@ def test_chat_replay_tenant_explicit_match_and_conflict(tmp_path, monkeypatch, c
 def test_open_finds_session_created_days_before_first_question(tmp_path, monkeypatch, capsys):
     brain, log = fake_env(tmp_path, monkeypatch, session_created="2025-12-27T08:00:00Z")
     assert run(brain, "open", SESSION) == 0
-    case = json.loads((brain / ".rootcause/chatdebug/11111111/case.json").read_text())
+    case = json.loads((brain / ".replypen/chatdebug/11111111/case.json").read_text())
     assert case["principal"] == {"kind": "acme_admin", "id": ADMIN} and case["surface"] == "embed"
     search = calls(log, "search")[-1]
     assert "--since" not in search and search[search.index("--until") + 1] == "2026-01-01"

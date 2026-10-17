@@ -3,7 +3,7 @@
 # ///
 """Run a brain's pytest tiers the way the workspace container would — offline by default, live on demand.
 
-Brain-dir-relative: `cd` into a `rootcause-brain-<project>` checkout and invoke; operates
+Brain-dir-relative: `cd` into a `replypen-brain-<project>` checkout and invoke; operates
 on `./skills`. Tiers (from `lib.livecheck`):
 
   * **offline (default)** — `-m "not live"`: hermetic L1 fixture tests + the brain description lint + action-script hygiene lint

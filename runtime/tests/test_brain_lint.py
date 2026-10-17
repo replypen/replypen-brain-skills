@@ -56,7 +56,7 @@ def test_frontmatter_corpus_is_complete() -> None:
 
 @pytest.mark.parametrize("name", sorted(EXPECTED))
 def test_frontmatter_corpus(name: str) -> None:
-    """The shared corpus rootcause's treeview.DocDescription replays byte-for-byte."""
+    """The shared corpus replypen's treeview.DocDescription replays byte-for-byte."""
     want = EXPECTED[name]
     full = md_description_full(CORPUS / name)
     assert (full or "") == want["description_full"]
@@ -198,7 +198,7 @@ def test_lint_brain_allows_python_in_supported_and_ignored_dirs(tmp_path: Path) 
         "tests/test_faq.py",
         ".agents/skills/local/scripts/helper.py",
         ".claude/skills/local/scripts/helper.py",
-        ".rootcause/cache/helper.py",
+        ".replypen/cache/helper.py",
         ".git/hooks/helper.py",
         ".venv/lib/helper.py",
         "_internal/tools/helper.py",
@@ -543,7 +543,7 @@ def test_mirror_surfaces_are_never_honored(tmp_path: Path) -> None:
 def test_tags_in_pruned_and_run_hidden_paths_are_never_read(tmp_path: Path) -> None:
     _git_brain(tmp_path)
     tag = "---\ninclude_in: [agent]\n---\nbody\n"
-    _write(tmp_path / ".rootcause/notes.md", tag)
+    _write(tmp_path / ".replypen/notes.md", tag)
     _write(tmp_path / "_internal/plan.md", tag)
     _write(tmp_path / "_internal/untagged.md", "---\ndescription: |\n  x\n---\n")
     _write(tmp_path / "docs/visible.md", tag)
@@ -552,8 +552,8 @@ def test_tags_in_pruned_and_run_hidden_paths_are_never_read(tmp_path: Path) -> N
 
     found = _fm(tmp_path, "brain")
 
-    assert sorted(found) == [".rootcause/notes.md", "_internal/plan.md"]
-    assert "skips that dir" in found[".rootcause/notes.md"][0].message
+    assert sorted(found) == [".replypen/notes.md", "_internal/plan.md"]
+    assert "skips that dir" in found[".replypen/notes.md"][0].message
     assert "run-hidden path" in found["_internal/plan.md"][0].message
 
 
@@ -637,15 +637,15 @@ def test_detect_repo_kind(tmp_path: Path) -> None:
     mirror, other = tmp_path / "customer/app", tmp_path / "customer/unrelated"
     for repo in (brain, tenant, mirror, other):
         repo.mkdir(parents=True)
-    _write(brain / ".rootcause.toml", 'project = "p"\n\n[mirrors]\napp = "../../customer/app"\n')
-    _write(tenant / ".rootcause.toml", 'project = "p"\ntenant = "x"\n')
+    _write(brain / ".replypen.toml", 'project = "p"\n\n[mirrors]\napp = "../../customer/app"\n')
+    _write(tenant / ".replypen.toml", 'project = "p"\ntenant = "x"\n')
 
     assert detect_repo_kind(brain)[0] == "brain"
     assert detect_repo_kind(tenant)[0] == "tenant"
-    assert detect_repo_kind(mirror) == ("mirror", "listed in brain/.rootcause.toml [mirrors]")
+    assert detect_repo_kind(mirror) == ("mirror", "listed in brain/.replypen.toml [mirrors]")
     assert detect_repo_kind(other)[0] == "brain"
-    # A source repo may carry `project =` only to scope `rc`; being someone's mirror wins.
-    _write(mirror / ".rootcause.toml", 'project = "p-staff"\n')
+    # A source repo may carry `project =` only to scope `rp`; being someone's mirror wins.
+    _write(mirror / ".replypen.toml", 'project = "p-staff"\n')
     assert detect_repo_kind(mirror)[0] == "mirror"
     # lint_brain detects on its own when no kind is passed.
     _write(mirror / "lib/notes.md", "---\ninclude_in: [agent]\n---\nx\n")

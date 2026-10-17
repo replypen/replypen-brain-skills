@@ -179,7 +179,7 @@ def test_inherited_prompt_path_still_validated(tmp_path):
 
 
 def test_owner_prompt_privacy_and_ship_authority(tmp_path, sample):
-    brain = tmp_path / "rootcause-brain-test"
+    brain = tmp_path / "replypen-brain-test"
     brain.mkdir()
     (brain / "policy.md").write_text("policy")
     finding = sample.findings[1]

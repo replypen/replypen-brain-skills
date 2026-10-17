@@ -8,9 +8,9 @@
     uv run skills/brain-grounding-intake/scripts/collect.py --db staging [--out DIR]
     uv run skills/brain-grounding-intake/scripts/collect.py --from schema.json --out DIR
 
-`rc dev console database query` refuses MySQL today, so the schema is read by a Python script
-running on the box through `rc dev console bash run -`, which writes JSON under
-`/tmp/rootcause-out/` that `rc dev console file get` fetches. `--from` skips the console and
+`rp dev console database query` refuses MySQL today, so the schema is read by a Python script
+running on the box through `rp dev console bash run -`, which writes JSON under
+`/tmp/replypen-out/` that `rp dev console file get` fetches. `--from` skips the console and
 only reduces a JSON you already have; `--dry-run` prints the remote command and stops.
 
 Read-only: information_schema, then bounded value samples. Nothing is written anywhere but
@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 from datetime import date
@@ -29,10 +30,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from scan import find_brain_root, read_toml  # noqa: E402
+from scan import _marker, find_brain_root, read_toml  # noqa: E402
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
 
 PROBE = Path(__file__).resolve().parent / "probe.py"
-REMOTE_DIR = "/tmp/rootcause-out"
+REMOTE_DIR = "/tmp/replypen-out"
 LOG_NAME = re.compile(r"log|logging|history|jobs|queue|tracker|statistic|temp|cache|session"
                       r"|_deleted|archive", re.I)
 LOG_COLUMNS = ("already_sent", "processed_at", "sent_at")
@@ -65,7 +72,7 @@ def console_bash(brain_root: Path, command: str, timeout: int, label: str = "col
                                      "--profile-max-rows.") -> str:
     """Run one bash payload on the box, return its stdout. `query.py` reuses this."""
     proc = subprocess.run(
-        ["rc", "-o", "json", "dev", "console", "bash", "run", "--timeout", str(timeout), "-"],
+        [_cli(), "-o", "json", "dev", "console", "bash", "run", "--timeout", str(timeout), "-"],
         input=command, cwd=str(brain_root), text=True, capture_output=True, check=False)
     try:
         result = json.loads(proc.stdout or "{}")
@@ -73,7 +80,7 @@ def console_bash(brain_root: Path, command: str, timeout: int, label: str = "col
         result = {}
     if proc.returncode != 0 and not result:
         sys.stderr.write(proc.stderr)
-        raise SystemExit(f"{label}: `rc dev console bash run` failed (exit {proc.returncode})")
+        raise SystemExit(f"{label}: `rp dev console bash run` failed (exit {proc.returncode})")
     if result.get("timed_out"):
         raise SystemExit(f"{label}: hit the {timeout}s console timeout. {timeout_hint}")
     if result.get("exit_code"):
@@ -84,7 +91,7 @@ def console_bash(brain_root: Path, command: str, timeout: int, label: str = "col
 
 def console_get(brain_root: Path, remote: str, local: Path) -> None:
     local.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(["rc", "dev", "console", "file", "get", remote, "--out", str(local)],
+    proc = subprocess.run([_cli(), "dev", "console", "file", "get", remote, "--out", str(local)],
                           cwd=str(brain_root), text=True, capture_output=True, check=False)
     if proc.returncode != 0 or not local.is_file():
         sys.stderr.write(proc.stderr)
@@ -229,9 +236,9 @@ def schema_markdown(schema: dict, rows: list[dict]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Collect and reduce one grounding schema")
-    parser.add_argument("--db", help="the short database key, as `rc dev console database list`")
+    parser.add_argument("--db", help="the short database key, as `rp dev console database list`")
     parser.add_argument("--out", type=Path,
-                        help="output directory, default .rootcause/grounding-intake/<date>")
+                        help="output directory, default .replypen/grounding-intake/<date>")
     parser.add_argument("--from", dest="source", type=Path,
                         help="an already fetched schema.json; skips the console")
     parser.add_argument("--timeout", type=int, default=900)
@@ -240,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     brain_root = find_brain_root()
-    out_dir = Path(args.out or brain_root / ".rootcause" / "grounding-intake"
+    out_dir = Path(args.out or brain_root / ".replypen" / "grounding-intake"
                    / date.today().isoformat()).expanduser()
 
     if args.dry_run:
@@ -255,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
         target.write_text(args.source.read_text(encoding="utf-8"), encoding="utf-8")
     else:
         if not args.db:
-            print("collect: pass --db <key> (see `rc dev console database list`), "
+            print("collect: pass --db <key> (see `rp dev console database list`), "
                   "or --from schema.json", file=sys.stderr)
             return 2
         remote = f"{REMOTE_DIR}/schema-{args.db}.json"
@@ -265,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         console_get(brain_root, remote, target)
 
     schema = json.loads(target.read_text(encoding="utf-8"))
-    schema.setdefault("project", str(read_toml(brain_root / ".rootcause.toml").get("project")
+    schema.setdefault("project", str(read_toml(_marker(brain_root)).get("project")
                                      or brain_root.name))
     target.write_text(json.dumps(schema, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     rows = table_facts(schema)

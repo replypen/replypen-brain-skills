@@ -1,6 +1,6 @@
 ---
 name: brain-harvest
-description: "Turn a mailbox's historical sent mail into durable brain knowledge plus persona/triage settings, locally from a brain checkout with the public rc CLI. Use when onboarding a mailbox's past replies, seeding or growing a brain from a sent-history export, or when drafts look foreign (font/signature probe in voice-format.md)."
+description: "Turn a mailbox's historical sent mail into durable brain knowledge plus persona/triage settings, locally from a brain checkout with the public rp CLI. Use when onboarding a mailbox's past replies, seeding or growing a brain from a sent-history export, or when drafts look foreign (font/signature probe in voice-format.md)."
 ---
 
 # brain-harvest — synthesize a brain from historical sent mail
@@ -11,8 +11,8 @@ full sent corpus once, partitions it deterministically, and distils durable patt
 **locally in your coding-agent session** so it uses your stronger-model subscription instead of a hosted
 tier; the corpus lands on the laptop only for the session.
 
-Public-CLI only: no RootCause private source, host shell, SSM, raw registry SQL, or private operator
-scripts. If a needed read/write is not exposed through `rc`, finish with a support request through
+Public-CLI only: no ReplyPen private source, host shell, SSM, raw registry SQL, or private operator
+scripts. If a needed read/write is not exposed through `rp`, finish with a support request through
 [`brain-publish`](../brain-publish/SKILL.md).
 
 **Privacy is the hard rule.** The corpus is real customer mail. Only *distilled patterns* may land in
@@ -33,9 +33,9 @@ mailbox overrides only to confirm they do not shadow the chosen values.
   the design this pipeline implements and the **rationale authority** for the §-numbered rules below
   (§5 sent-only bias, §5a eras, §6 scope, §7 privacy, §8 ordering, §10 evaluation).
 - [`docs/brain-harvest-v2-migration.md`](../../docs/brain-harvest-v2-migration.md) — what changed from
-  the v1 manual flow, the deliberate reversals/narrowings, and the open `rc`/server gaps.
+  the v1 manual flow, the deliberate reversals/narrowings, and the open `rp`/server gaps.
 - [`docs/brain-model.md`](../../docs/brain-model.md) — what belongs in a brain and its layout.
-- [`docs/rc-cli.md`](../../docs/rc-cli.md) — public command scope, incl. harvest/export syntax.
+- [`docs/rp-cli.md`](../../docs/rp-cli.md) — public command scope, incl. harvest/export syntax.
 - [`docs/side-effects.md`](../../docs/side-effects.md) · [`docs/support-boundary.md`](../../docs/support-boundary.md).
 - [`acquire.md`](acquire.md) — per-provider corpus acquisition (Gmail templates, Intercom, IMAP).
 - [`voice-format.md`](voice-format.md) — the standalone draft font + signature probe.
@@ -46,11 +46,11 @@ mailbox overrides only to confirm they do not shadow the chosen values.
 
 ## Scratch root
 
-One gitignored root holds **everything sensitive** for the run. `.rootcause/` is wholesale-gitignored in
+One gitignored root holds **everything sensitive** for the run. `.replypen/` is wholesale-gitignored in
 a brain checkout, but the scripts re-verify with `git check-ignore` and refuse to write a stageable root.
 
 ```
-.rootcause/harvest/<tag>/     # <tag> = a local scratch label, never the export id
+.replypen/harvest/<tag>/     # <tag> = a local scratch label, never the export id
   corpus/ threads/ manifest.jsonl clusters.json ledger.json holdout.json run.json
   replay-cases.json diagnostics.{json,md} templates.json
   drafts/ critic/ brief/ settings-verification/
@@ -61,7 +61,7 @@ SKILL=<absolute path to skills/brain-harvest>
 LBW=<absolute path to skills/local-brain-work>   # brain_structure.py lives here
 TAG=<operator-chosen-local-run-tag>
 EXPORT_ID=<actual-rc-export-id>
-SCRATCH=.rootcause/harvest/$TAG
+SCRATCH=.replypen/harvest/$TAG
 ```
 
 ## Workflow
@@ -74,26 +74,26 @@ irreversible transition is scratch deletion in step 12, which is why it happens 
 
 Inventory scope and existing configuration first, so project/tenant mistakes fail early and synthesis
 knows what grounding/persona/triage already exist before proposing homes. **Never infer "no grounding"
-from a local repo search.** If `rc dev brain status -o json` shows `status.brain_source.read_only == true`, stop —
+from a local repo search.** If `rp dev brain status -o json` shows `status.brain_source.read_only == true`, stop —
 learning for a read-only brain alias happens only from the source project; consumer runs are QA
 evidence, not learning input.
 
 ```bash
-rc auth status && rc auth access && rc project mailbox ls
+rp auth status && rp auth access && rp project mailbox ls
 git status --short --branch && git pull --ff-only
 
-rc project settings behavior get -o json
-rc project triage policy get -o json
-rc project triage rules ls -o json
-rc dev console database list -o json   # grounding databases already wired
-rc dev console capabilities            # cataloged brain scripts / tools
-rc fleet health                        # mirrors mounted, and their freshness
+rp project settings behavior get -o json
+rp project triage policy get -o json
+rp project triage rules ls -o json
+rp dev console database list -o json   # grounding databases already wired
+rp dev console capabilities            # cataloged brain scripts / tools
+rp fleet health                        # mirrors mounted, and their freshness
 ```
 
 Acquire the corpus per provider — see [`acquire.md`](acquire.md).
 
 Then bind the target. The unbound form (`preflight --scratch` alone) is a local diagnostic that degrades
-to WARN without `rc`; `prepare` requires the bound form:
+to WARN without `rp`; `prepare` requires the bound form:
 
 ```bash
 uv run --no-project python "$SKILL/scripts/prepare_harvest.py" preflight \
@@ -201,10 +201,10 @@ rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes p
 |---|---|
 | Product fact, routing, terminology, source-of-truth pointer, repeatable investigation/playbook | Brain files. |
 | Missing reusable script, action instructions, action selection rules | Brain files or `actions/<id>/`. |
-| Voice, language, signature, formality, wording preference, "sound more like us" | Persona settings via `rc project settings behavior`. |
+| Voice, language, signature, formality, wording preference, "sound more like us" | Persona settings via `rp project settings behavior`. |
 | Drafts look foreign: wrong font, missing signature/logo | `channel.draft_font_css` + `channel.signature_html` — see [`voice-format.md`](voice-format.md). |
-| Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rc project triage policy`. |
-| Deterministic draft blacklist/whitelist by sender/subject/header | Triage hard rule via `rc project triage rules` (`skip` / `force_process`). |
+| Which inbound mail should become a draft, broad draft/no-draft guidance | Triage policy via `rp project triage policy`. |
+| Deterministic draft blacklist/whitelist by sender/subject/header | Triage hard rule via `rp project triage rules` (`skip` / `force_process`). |
 | Shared project channel promotion, or a missing public surface | [`brain-publish`](../brain-publish/SKILL.md). |
 
 Onboarding-shaped outputs land where the mechanical seeder points: `notes/onboarding-inbox.md` (survey
@@ -229,12 +229,12 @@ tenant/project — reconcile or surface any mailbox override that shadows them.
 
 ```bash
 # tenant when tenant-bound, otherwise project
-rc project tenant settings set <slug> persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
-rc project settings behavior set persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
+rp project tenant settings set <slug> persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
+rp project settings behavior set persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
 
-rc project triage policy set "Draft customer support + billing questions; skip vendor newsletters and automated alerts."
-rc project triage rules add effect=force_process match_kind=sender_domain pattern="partner.com" reason="partner mailbox — always answered"
-rc project triage rules add effect=skip match_kind=subject_contains pattern="unsubscribe" reason="presence-without-prose-reply, N occurrences"
+rp project triage policy set "Draft customer support + billing questions; skip vendor newsletters and automated alerts."
+rp project triage rules add effect=force_process match_kind=sender_domain pattern="partner.com" reason="partner mailbox — always answered"
+rp project triage rules add effect=skip match_kind=subject_contains pattern="unsubscribe" reason="presence-without-prose-reply, N occurrences"
 ```
 
 For tenant triage, use the explicit global `--project <project> --tenant <slug>` selectors on both reads
@@ -242,7 +242,7 @@ and the write. For every change marked `applied`, save the immediate pre/post `g
 under `$SCRATCH/settings-verification/` and record their filenames, SHA-256 digests, timestamps, resolved
 scope and exact target in `reduced.json` (post-read within five minutes); `review` hashes both and
 reconciles them to preflight. Pending recommendations use `"verification": null`. A temporary rule created
-only to verify the contract must be removed with `rc project triage rules rm <id>` before finishing.
+only to verify the contract must be removed with `rp project triage rules rm <id>` before finishing.
 
 **Skip-evidence gate (§5).** A sent-history corpus proves only what the mailbox *answered*, and
 unanswered inbound mail is never exported — so **absence proves nothing** and no skip rule may be inferred
@@ -269,8 +269,8 @@ uv run --no-project python "$SKILL/scripts/brain_lint.py" --all --strict  # whol
 ```
 
 Secrets, raw-thread shape, payment links/IBANs, contact details, order/invoice/tracking/account
-identifiers, opaque-ID or raw-filename leakage into tracked files, and `rc` command roots hard-block. (The
-kit checkout is exempt from the `rc`-command rule because its local-development skills intentionally
+identifiers, opaque-ID or raw-filename leakage into tracked files, and `rp` command roots hard-block. (The
+kit checkout is exempt from the `rp`-command rule because its local-development skills intentionally
 document the CLI; a brain checkout is not.)
 
 **A history-rewrite decision must be explicit.** If a legacy onboarding path committed raw mail (e.g. a
@@ -292,8 +292,8 @@ push to `main`/publish, not dev refs), push, and replay every reserved question 
 ```bash
 git checkout -b dev/<branch> && git commit -m "wip: harvest draft"
 git push origin dev/<branch>
-rc ask "<held-out inbound question>" --brain-ref dev/<branch>
-rc run debug <run-id>
+rp ask "<held-out inbound question>" --brain-ref dev/<branch>
+rp run debug <run-id>
 ```
 
 Have a comparison agent score each answer against its paired historical answer (0–4: factual agreement,
@@ -342,13 +342,13 @@ without `--yes`. Then finalize the commit including the generated
 [harvest record](templates/harvest-record.md), fast-forward to `main` via
 [`brain-git-sync`](../brain-git-sync/SKILL.md), and run the full
 [`brain-publish`](../brain-publish/SKILL.md) flow (dev-ref replay, server sync, channel promote,
-exact-SHA verification). Settings-only changes: record the exact `rc` commands and the verification run
+exact-SHA verification). Settings-only changes: record the exact `rp` commands and the verification run
 id. The harvest record is the watermark for a future incremental `--since` re-harvest.
 
 ## Fallback: the v1 manual path (one release only)
 
 Only for a corpus `prepare_harvest.py` genuinely cannot parse (a `harvest_format` outside v1/v2/v3): fall
-back to `rc project corpus download --split` into a gitignored dir, read its `INDEX.md`, cluster from
+back to `rp project corpus download --split` into a gitignored dir, read its `INDEX.md`, cluster from
 thread metadata, then the same fan-out → critic-first → reduce → homes → lint → verify → publish → delete
 sequence. Privacy, critic-before-reduce and post-approval cleanup still apply; only the deterministic
 manifest/ledger/holdout machinery is unavailable. Never use it to bypass rejected v3 structure or bad

@@ -32,7 +32,7 @@ oauth:
 help_md: |
   Reads myPonto/Ponto Connect bank accounts, balances, settled transactions, and pending transactions
   for financial support diagnosis. OAuth only; account-information scope is read-only (`ai`) and the
-  run loop only issues GETs. Ponto Connect also requires a client certificate; rootcause attaches it
+  run loop only issues GETs. Ponto Connect also requires a client certificate; ReplyPen attaches it
   host-side through the API broker, so it is not visible inside the run.
 
   Best first step: list linked accounts, then use an account id to inspect transactions. Pass

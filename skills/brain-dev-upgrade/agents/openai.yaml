@@ -1,4 +1,4 @@
 interface:
   display_name: "Brain Dev: Upgrade"
-  short_description: "Update the brain skills kit and rc"
-  default_prompt: "Use $brain-dev-upgrade to update the brain skills kit and rootcause rc CLI."
+  short_description: "Update the brain skills kit and rp"
+  default_prompt: "Use $brain-dev-upgrade to update the brain skills kit and ReplyPen rp CLI."

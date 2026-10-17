@@ -232,7 +232,7 @@ def test_chat_inspiration_runs_in_check_scoped_to_root_file(tmp_path: Path) -> N
 
 @pytest.mark.parametrize("brain", ["kampadmin", "dentai", "pro-backup"])
 def test_real_brain_galleries_have_no_fail(brain: str) -> None:
-    path = REAL_BRAINS / f"rootcause-brain-{brain}" / "chat_inspiration.md"
+    path = REAL_BRAINS / f"replypen-brain-{brain}" / "chat_inspiration.md"
     if not path.is_file():
         pytest.skip(f"{path} not checked out")
     cats, found = brain_hygiene.parse_chat_inspiration(path.read_text("utf-8"))

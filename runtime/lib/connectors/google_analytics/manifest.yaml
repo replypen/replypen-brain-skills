@@ -143,7 +143,7 @@ onboarding_md: |
      Analytics → Admin → Property access management → the account, role **Viewer**;
      Search Console → Settings → Users and permissions → the account, **Full**.
   4. On your laptop, install the ReplyPen runtime kit (one line, see the kit README:
-     `bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh)`)
+     `bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/main/install.sh)`)
      and run:
 
          python -m lib.connectors.google_analytics mint --client-json client.json

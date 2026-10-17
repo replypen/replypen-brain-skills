@@ -1,4 +1,4 @@
 interface:
   display_name: "Brain Dev: Harvest"
   short_description: "Synthesize a brain from a mailbox's sent history"
-  default_prompt: "Use $brain-harvest to harvest a mailbox's answered-email corpus and distil it into brain knowledge with public rc."
+  default_prompt: "Use $brain-harvest to harvest a mailbox's answered-email corpus and distil it into brain knowledge with public rp."

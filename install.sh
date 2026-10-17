@@ -2,7 +2,7 @@
 # Install the Brain Dev kit LOCALLY into a brain repo — the kit content is gitignored.
 #
 # Why the kit content stays untracked:
-#   - Prod materializes a filtered run view of the committed brain (rootcause internal/brain/visible.go)
+#   - Prod materializes a filtered run view of the committed brain (replypen internal/brain/visible.go)
 #     and the grounding agent rg/find/ls's the whole tree. Committed harness = run-time pollution; an
 #     untracked one can never reach /brain.
 #   - Committing the kit into each brain also re-creates the multi-copy skill drift this repo kills.
@@ -17,15 +17,19 @@
 # Do not also install this kit as a user/global Claude Code or Codex plugin; that creates a second,
 # project-agnostic discovery path and makes Brain Dev appear in unrelated repos.
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/rootcause-org/rootcause-brain-skills/main/install.sh) [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.12.4 ./install.sh ~/code/rootcause-org/rootcause-brain-foo
+#   bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/main/install.sh) [BRAIN_DIR]
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.13.0 ./install.sh ~/code/replypen/replypen-brain-foo
 #   ./install.sh --latest-version
 set -euo pipefail
 
-KIT="${RC_BRAIN_KIT:-$HOME/.rootcause-brain-skills}"
-TAG="${RC_BRAIN_KIT_TAG:-v0.12.4}"
-REPO="https://github.com/rootcause-org/rootcause-brain-skills"
-LATEST_TAG_ENDPOINT="https://api.github.com/repos/rootcause-org/rootcause-brain-skills/git/matching-refs/tags/v"
+KIT="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}"
+# Pre-rebrand clone path. Brains installed before the rename hold links into it; those links stay
+# installer-owned, and the old path survives as a symlink to the new clone.
+LEGACY_KIT="$HOME/.rootcause-brain-skills"
+LEGACY_REPO="https://github.com/rootcause-org/rootcause-brain-skills"
+TAG="${RC_BRAIN_KIT_TAG:-v0.13.0}"
+REPO="https://github.com/replypen/replypen-brain-skills"
+LATEST_TAG_ENDPOINT="https://api.github.com/repos/replypen/replypen-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -106,7 +110,8 @@ done
 
 is_brain_dir() {
   local dir="$1"
-  [ -d "$dir/skills" ] || [ -d "$dir/playbooks" ] || [ -f "$dir/projection.yaml" ] || [ -f "$dir/.rootcause.toml" ]
+  [ -d "$dir/skills" ] || [ -d "$dir/playbooks" ] || [ -f "$dir/projection.yaml" ] ||
+    [ -f "$dir/.replypen.toml" ] || [ -f "$dir/.rootcause.toml" ]
 }
 
 find_brain_dir() {
@@ -136,10 +141,10 @@ fi
 
 # Sanity-check this is a brain checkout. Accept all layouts: legacy (skills/), the projection-based
 # PROJECT layout (playbooks/ + projection.yaml), and a nested TENANT brain — which holds only a free-form
-# NL delta + sealed .env now (its values live in the rootcause DB record, no tenant.json), so its marker
-# is the committed .rootcause.toml (project∪tenant binding).
+# NL delta + sealed .env now (its values live in the ReplyPen DB record, no tenant.json), so its marker
+# is the committed .replypen.toml (project∪tenant binding).
 is_brain_dir "$BRAIN" || {
-  echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml or .rootcause.toml — not a brain checkout?" >&2; exit 1; }
+  echo "error: $BRAIN has no skills/ or playbooks/ or projection.yaml or .replypen.toml/.rootcause.toml — not a brain checkout?" >&2; exit 1; }
 
 EXCLUDE="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude 2>/dev/null)" || {
   echo "error: $BRAIN is not a Git checkout" >&2
@@ -147,6 +152,20 @@ EXCLUDE="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/excl
 }
 BRAIN_PREFIX="$(git -C "$BRAIN" rev-parse --show-prefix)"
 IGNORE_ROOT="/$BRAIN_PREFIX"
+
+# 0. One-time move of the pre-rebrand shared clone (idempotent; also when refresh-brains passes the
+#    default path as RC_BRAIN_KIT): old real dir + new absent → move it, leave old → new so existing
+#    brain links, hooks and scripts keep resolving.
+if [ "$KIT" = "$HOME/.replypen-brain-skills" ] && [ -d "$LEGACY_KIT" ] && [ ! -L "$LEGACY_KIT" ] && [ ! -e "$KIT" ]; then
+  echo "kit: moving $LEGACY_KIT -> $KIT (old path kept as a symlink)"
+  mv "$LEGACY_KIT" "$KIT"
+  ln -s "$KIT" "$LEGACY_KIT"
+fi
+if [ -d "$KIT/.git" ]; then
+  case "$(git -C "$KIT" remote get-url origin 2>/dev/null || true)" in
+    "$LEGACY_REPO"|"$LEGACY_REPO.git") git -C "$KIT" remote set-url origin "$REPO" ;;
+  esac
+fi
 
 # 1. One pinned clone on disk (shared by every brain). Pin the shared clone to a tag, never float main.
 #    If RC_BRAIN_KIT points at the checkout running this install.sh, treat it as a developer/local
@@ -201,7 +220,7 @@ is_kit_link() {
   [ -L "$path" ] || return 1
   target="$(readlink "$path")"
   case "$target" in
-    "$KIT"/skills/*|"$KIT"/commands/*) return 0 ;;
+    "$KIT"/skills/*|"$KIT"/commands/*|"$LEGACY_KIT"/skills/*|"$LEGACY_KIT"/commands/*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -226,7 +245,17 @@ for old in \
   "$BRAIN/.agents/skills/brain-feedback-review" \
   "$BRAIN/.claude/skills/brain-feedback-review" \
   "$BRAIN/.agents/skills/brain-schema-intake" \
-  "$BRAIN/.claude/skills/brain-schema-intake"
+  "$BRAIN/.claude/skills/brain-schema-intake" \
+  "$BRAIN/.agents/skills/rc-debug" \
+  "$BRAIN/.claude/skills/rc-debug" \
+  "$BRAIN/.agents/skills/rc-fleet" \
+  "$BRAIN/.claude/skills/rc-fleet" \
+  "$BRAIN/.agents/skills/rc-health" \
+  "$BRAIN/.claude/skills/rc-health" \
+  "$BRAIN/.agents/skills/rc-mailbox-cockpit" \
+  "$BRAIN/.claude/skills/rc-mailbox-cockpit" \
+  "$BRAIN/.agents/skills/rc-script-wrapper" \
+  "$BRAIN/.claude/skills/rc-script-wrapper"
 do
   is_kit_link "$old" && rm "$old"
 done
@@ -243,10 +272,17 @@ if [ -L "$BRAIN/.agents/skills" ]; then
 fi
 mkdir -p "$BRAIN/.agents/skills" "$BRAIN/.claude"
 
+# A link this installer made, at the current or the pre-rebrand clone path.
+is_own_link() {
+  local dst="$1" src="$2" target
+  target="$(readlink "$dst")"
+  [ "$target" = "$src" ] || { [ "${src#"$KIT"/}" != "$src" ] && [ "$target" = "$LEGACY_KIT/${src#"$KIT"/}" ]; }
+}
+
 preflight_link() {
   local src="$1"
   local dst="$2"
-  if [ -L "$dst" ] && [ "$(readlink "$dst")" != "$src" ]; then
+  if [ -L "$dst" ] && ! is_own_link "$dst" "$src"; then
     echo "error: $dst is a user-managed symlink; refusing to overwrite it" >&2
     exit 1
   elif [ ! -L "$dst" ] && [ -e "$dst" ]; then
@@ -289,7 +325,7 @@ elif [ -d "$CLAUDE_SKILLS" ]; then
   while IFS= read -r -d '' entry; do
     name="$(basename "$entry")"
     src="$KIT/skills/$name"
-    if [ ! -L "$entry" ] || [ ! -f "$src/SKILL.md" ] || [ "$(readlink "$entry")" != "$src" ]; then
+    if [ ! -L "$entry" ] || [ ! -f "$src/SKILL.md" ] || ! is_own_link "$entry" "$src"; then
       CLAUDE_MODE="directory"
       CLAUDE_MIGRATE=0
       break
@@ -333,7 +369,7 @@ if [ "$CLAUDE_MODE" = "alias" ]; then
       [ -d "$src" ] || continue
       [ -f "$src/SKILL.md" ] || continue
       dst="$CLAUDE_SKILLS/$(basename "$src")"
-      [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ] && rm "$dst"
+      [ -L "$dst" ] && is_own_link "$dst" "$src" && rm "$dst"
     done
     rmdir "$CLAUDE_SKILLS"
   fi
@@ -356,12 +392,14 @@ mkdir -p "$(dirname "$EXCLUDE")"
 touch "$EXCLUDE"
 BRAIN_ID="${BRAIN_PREFIX%/}"
 [ -n "$BRAIN_ID" ] || BRAIN_ID="."
-EXCLUDE_BEGIN="# rootcause-brain-skills: begin managed local install ($BRAIN_ID)"
-EXCLUDE_END="# rootcause-brain-skills: end managed local install ($BRAIN_ID)"
+EXCLUDE_BEGIN="# replypen-brain-skills: begin managed local install ($BRAIN_ID)"
+EXCLUDE_END="# replypen-brain-skills: end managed local install ($BRAIN_ID)"
+LEGACY_EXCLUDE_BEGIN="# rootcause-brain-skills: begin managed local install ($BRAIN_ID)"
+LEGACY_EXCLUDE_END="# rootcause-brain-skills: end managed local install ($BRAIN_ID)"
 EXCLUDE_TMP="$(mktemp "${EXCLUDE}.tmp.XXXXXX")"
-if ! awk -v begin="$EXCLUDE_BEGIN" -v end="$EXCLUDE_END" '
-  $0 == begin { managed = 1; next }
-  managed && $0 == end { managed = 0; next }
+if ! awk -v begin="$EXCLUDE_BEGIN" -v end="$EXCLUDE_END" -v lbegin="$LEGACY_EXCLUDE_BEGIN" -v lend="$LEGACY_EXCLUDE_END" '
+  $0 == begin || $0 == lbegin { managed = 1; next }
+  managed && ($0 == end || $0 == lend) { managed = 0; next }
   !managed { print }
   END { if (managed) exit 2 }
 ' "$EXCLUDE" >"$EXCLUDE_TMP"; then
@@ -372,6 +410,7 @@ fi
 mv "$EXCLUDE_TMP" "$EXCLUDE"
 {
   echo "$EXCLUDE_BEGIN"
+  echo "${IGNORE_ROOT}.replypen/"
   echo "${IGNORE_ROOT}.rootcause/"
   for src in "$KIT"/skills/*; do
     [ -d "$src" ] || continue
@@ -392,12 +431,13 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
 # 4b. Managed pre-commit hook: brain_hygiene.py --staged (conflict markers, projection `{{ }}`,
 #     `/Users/` paths, dead links, customer-copy em dashes, mermaid) fails at commit time instead of
 #     at push. Never replaces a user-owned hook or a core.hooksPath setup; says so instead.
-HOOK_MARK="# rootcause-brain-skills managed pre-commit hook"
+HOOK_MARK="# replypen-brain-skills managed pre-commit hook"
+LEGACY_HOOK_MARK="# rootcause-brain-skills managed pre-commit hook"
 HOOKS_PATH="$(git -C "$BRAIN" config core.hooksPath || true)"
 HOOK="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
 if [ -n "$BRAIN_PREFIX" ]; then
   echo "pre-commit hook: skipped (brain is a subdirectory of its repo)"
-elif [ -n "$HOOKS_PATH" ] || { [ -e "$HOOK" ] && ! grep -qF "$HOOK_MARK" "$HOOK"; }; then
+elif [ -n "$HOOKS_PATH" ] || { [ -e "$HOOK" ] && ! grep -qF -e "$HOOK_MARK" -e "$LEGACY_HOOK_MARK" "$HOOK"; }; then
   echo "pre-commit hook: kept your own hook; add this line to it for early hygiene feedback:"
   echo "  python3 \"$KIT/skills/local-brain-work/scripts/brain_hygiene.py\" --staged"
 else
@@ -428,7 +468,7 @@ for path in .agents/skills .agents/docs .claude/skills .claude/docs; do
       echo "# Local operator files an agent should copy into new managed worktrees."
       echo "# Keep this allowlist tight: no caches, build output, logs, or generated artifacts."
       echo
-      echo "# Brain Dev kit discovery paths (ignored symlinks into ~/.rootcause-brain-skills)."
+      echo "# Brain Dev kit discovery paths (ignored symlinks into ~/.replypen-brain-skills)."
     } >"$WTI"
     WTI_CHANGED=1
   fi

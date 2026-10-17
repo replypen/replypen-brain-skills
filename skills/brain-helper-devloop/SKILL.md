@@ -1,6 +1,6 @@
 ---
 name: brain-helper-devloop
-description: "The feedback loop for adding or changing a brain/mirror helper script: design from real tickets, build read-only and verdict-first, prove on real data (mirror-try, scope-check), push a dev ref, ask synthetic questions with rc ask, read the trace to see whether the agent picked the helper up unprompted, fix developer experience instead of adding prompt rules, publish, re-ask live. Use when a support topic needs a deterministic helper or case runbook and you want evidence that production runs actually use it."
+description: "The feedback loop for adding or changing a brain/mirror helper script: design from real tickets, build read-only and verdict-first, prove on real data (mirror-try, scope-check), push a dev ref, ask synthetic questions with rp ask, read the trace to see whether the agent picked the helper up unprompted, fix developer experience instead of adding prompt rules, publish, re-ask live. Use when a support topic needs a deterministic helper or case runbook and you want evidence that production runs actually use it."
 ---
 
 # brain-helper-devloop — build a helper the run agent actually reaches for
@@ -14,7 +14,7 @@ Each step links the skill that owns the mechanics; this file owns the order and 
 
 ## 1. Design from tickets, not from the spec sentence
 
-- Start from 5–8 **real** tickets of the topic (support dump, `rc run list`, help-centre threads).
+- Start from 5–8 **real** tickets of the topic (support dump, `rp run list`, help-centre threads).
   Write down per ticket: the admin's opening symptom, what the human actually replied, which record
   ids they looked at. The reply is your expected answer; the spec line is intent, not a contract.
 - Read the **source rule** before porting it (the model/service in the mirror), not the KB paraphrase:
@@ -71,7 +71,7 @@ Each step links the skill that owns the mechanics; this file owns the order and 
 |---|---|---|
 | offline pytest / `brain_test.py` | the ported rule | [local-brain-work](../local-brain-work/SKILL.md) |
 | `mirror_try.py` on the real ticket ids | the staged helper on real scoped data, before vs after | [mirror-try](../mirror-try/SKILL.md) |
-| ONE mirror-try as the regular admin principal | which sections must degrade, before any `rc ask` | [scope-check](../scope-check/SKILL.md) |
+| ONE mirror-try as the regular admin principal | which sections must degrade, before any `rp ask` | [scope-check](../scope-check/SKILL.md) |
 
 Shared mirror checkout: `--diff --only <your paths>` keeps other agents' uncommitted edits out; or
 commit and use `--ref <branch> --base <sha>` (pin the base once `origin/main` moved). The narrow
@@ -89,9 +89,9 @@ pickup of a wrong answer.
 - Push the brain change to `dev/<branch>` and the mirror change to a `dev/<branch>` of the mirror
   repo (`git push origin HEAD:refs/heads/dev/<branch>` from your worktree; `main`/`stable` stay
   untouched). Both ride one test run: `--brain-ref dev/<branch>` for the brain,
-  `--mirror-ref <repo>=dev/<branch>` (or `=<40-char sha>`) per changed mirror (rc ≥ 1.38). No mirror
-  publish, no `rc dev mirror refresh`, no moving tip: the run mounts exactly that commit and
-  `rc run debug` shows `Mirror <repo>: dev/<branch> @ <sha> · override`.
+  `--mirror-ref <repo>=dev/<branch>` (or `=<40-char sha>`) per changed mirror (rp ≥ 1.38). No mirror
+  publish, no `rp dev mirror refresh`, no moving tip: the run mounts exactly that commit and
+  `rp run debug` shows `Mirror <repo>: dev/<branch> @ <sha> · override`.
 - Derive 5–8 **synthetic admin questions** from the tickets into `questions.tsv` (`id`, `tenant`,
   `question`, optional `as` = roster label): the admin's words, chat style, anonymised, with the real
   record ids a ticket needs. Never invent ids. Keep the question path-free — do not name your helper
@@ -105,8 +105,8 @@ pickup of a wrong answer.
     --brain-ref dev/<branch> --mirror-ref <mirror>=dev/<branch>
   ```
 
-  Results land in `.rootcause/devloop/<topic>/runs/<id>.json`. A single question stays
-  `rc ask … --brain-ref … --mirror-ref …` ([brain-ask](../brain-ask/SKILL.md)); the narrow-admin
+  Results land in `.replypen/devloop/<topic>/runs/<id>.json`. A single question stays
+  `rp ask … --brain-ref … --mirror-ref …` ([brain-ask](../brain-ask/SKILL.md)); the narrow-admin
   pickup test is the `as` column (or `--principal-kind/--principal-id`). Raw scenario may answer in
   another language: judge pickup, not prose.
 - Tickets drift (half are usually fixed in prod by now): derive each question and expected answer
@@ -114,8 +114,8 @@ pickup of a wrong answer.
 
 ## 5. Read the trace for pickup, not only for correctness
 
-`devloop.py report` reads every run's trace and tables the mechanical part; `rc run debug <run_id>`
-([rc-debug](../rc-debug/SKILL.md)) is the drill-down for one run:
+`devloop.py report` reads every run's trace and tables the mechanical part; `rp run debug <run_id>`
+([rp-debug](../rp-debug/SKILL.md)) is the drill-down for one run:
 
 ```bash
 uv run --no-project python "$DL" report --tag <topic> --helper <helper>.py \
@@ -162,7 +162,7 @@ uv run --no-project python "$PWD/.agents/skills/brain-git-sync/scripts/git_land.
   --refresh-mirror <mirror> --project <project> [--project <sibling project>…]
 ```
 
-(`--commit <sha>` lands a commit you already made in a worktree.) Then one `rc ask` **without**
+(`--commit <sha>` lands a commit you already made in a worktree.) Then one `rp ask` **without**
 `--brain-ref`/`--mirror-ref` and confirm in its trace `brain_resolved` is the published SHA, the
 mirror line shows the landed SHA and the helper still gets called. Done means live, not "ready to
 publish". Before publishing: every `skills/**` description ≤ 1024 chars with a first sentence that

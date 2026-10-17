@@ -5,7 +5,7 @@
 """Run the same brain commands as several real identities and report a pass/fail matrix.
 
 The closest-to-production test tier: each command runs in a REAL production sandbox
-(`rc dev console bash run`) bound to one principal, so it sees exactly the projection a hosted run
+(`rp dev console bash run`) bound to one principal, so it sees exactly the projection a hosted run
 for that person sees. A helper that only ever ran as the tenant-wide operator passes here and fails
 for a parent — that is the whole point.
 
@@ -144,10 +144,10 @@ def run_cell(
         return Result(audience.label, command.name, False, 1, "rc failed", str(exc), stderr=exc.stderr)
     if payload is None:
         # No payload at all ⇒ the CLI itself refused (bad scope, missing principal flags on an older
-        # `rc`, transport error) — not a verdict about the brain command.
+        # `rp`, transport error) — not a verdict about the brain command.
         err = RcError(done.stderr or done.stdout, stderr=done.stderr, returncode=done.returncode)
         reason = (
-            "rc has no --principal-kind on `dev console bash run` yet — upgrade rc"
+            "rc has no --principal-kind on `dev console bash run` yet — upgrade rp"
             if unsupported_flag(err, "--principal-kind")
             else "rc failed"
         )

@@ -16,6 +16,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -28,6 +29,17 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Iterable, Sequence
 from zoneinfo import ZoneInfo
+
+
+def _cli() -> str:
+    """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
+    return "rp" if shutil.which("rp") else "rc"
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
 
 UTC = ZoneInfo("UTC")
 DEFAULT_TZ = "Europe/Brussels"
@@ -349,7 +361,7 @@ def bash_cluster(command: str, stderr: str) -> str:
 
 
 def json_objects(text: str) -> list[Any]:
-    """Every top-level JSON value in a blob. `rc fleet health` prints two documents."""
+    """Every top-level JSON value in a blob. `rp fleet health` prints two documents."""
     decoder = json.JSONDecoder()
     found: list[Any] = []
     index = 0
@@ -373,7 +385,7 @@ _ACTION_KV = re.compile(r'(\w+)=("(?:[^"\\]|\\.)*"|\{.*?\}(?=\s+\w+=|\s*$)|[^\s]
 
 
 def parse_action_lines(text: str) -> list[dict[str, Any]]:
-    """Parse `rc fleet actions --format agent` ACTION lines (the only source of error_message).
+    """Parse `rp fleet actions --format agent` ACTION lines (the only source of error_message).
 
     Each line is `ACTION k=v k="v with spaces" params={...}`; values are JSON-quoted.
     """
@@ -477,7 +489,7 @@ class Rc:
         if self.offline:
             self.note_error("offline", " ".join(args), "not in cache")
             return None
-        command = ["rc", *args]
+        command = [_cli(), *args]
         last = ""
         for attempt in range(3):
             if attempt:
@@ -608,7 +620,7 @@ def find_brain_root(start: Path | None = None) -> Path:
 def project_name(brain_root: Path, rc_status: dict[str, Any] | None = None) -> str:
     if rc_status and rc_status.get("project"):
         return str(rc_status["project"])
-    toml_path = brain_root / ".rootcause.toml"
+    toml_path = _marker(brain_root)
     if toml_path.exists():
         try:
             data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
@@ -617,13 +629,16 @@ def project_name(brain_root: Path, rc_status: dict[str, Any] | None = None) -> s
         if data.get("project"):
             return str(data["project"])
     name = brain_root.name
-    return name[len("rootcause-brain-"):] if name.startswith("rootcause-brain-") else name
+    for prefix in ("replypen-brain-", "rootcause-brain-"):
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return name
 
 
 def auth_status(cwd: Path) -> dict[str, Any]:
     try:
         done = subprocess.run(
-            ["rc", "auth", "status", "-o", "json"], capture_output=True, text=True, timeout=60, cwd=cwd
+            [_cli(), "auth", "status", "-o", "json"], capture_output=True, text=True, timeout=60, cwd=cwd
         )
         docs = json_objects(done.stdout)
         return docs[0] if docs and isinstance(docs[0], dict) else {}
@@ -633,7 +648,7 @@ def auth_status(cwd: Path) -> dict[str, Any]:
 
 def rc_version(cwd: Path) -> str:
     try:
-        done = subprocess.run(["rc", "--version"], capture_output=True, text=True, timeout=30, cwd=cwd)
+        done = subprocess.run([_cli(), "--version"], capture_output=True, text=True, timeout=30, cwd=cwd)
         return done.stdout.strip().splitlines()[0] if done.stdout.strip() else "unknown"
     except (OSError, subprocess.TimeoutExpired, IndexError):
         return "unknown"

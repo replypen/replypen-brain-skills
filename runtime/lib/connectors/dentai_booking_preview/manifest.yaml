@@ -20,7 +20,7 @@ read_endpoints:
 help_md: |
   Tenant-bound read plane of DentAI's single availability/booking engine: slot search, dry-run
   booking verdicts, and the patient-appointment cache read-through (`refresh-patient`: re-mirror one
-  patient of THIS tenant from ClickDoc). The raw token stays in rootcause's broker; ordinary runs only
+  patient of THIS tenant from ClickDoc). The raw token stays in ReplyPen's broker; ordinary runs only
   see the broker route. The project-brain wrapper is `skills/scheduling/scripts/search_availability.py`.
   DentAI enforces the token scope server-side: this credential can search, dry-run and refresh the
   cache, never mutate PMS appointments.

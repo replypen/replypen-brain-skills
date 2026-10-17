@@ -81,6 +81,6 @@ dashboard settings, and the bespoke GraphQL/RPC connectors.
 but bridges botocore's per-attempt `before-send`/`needs-retry` hooks into the same event and adds
 `X-Request-ID` after signing (an intentionally unsigned correlation header).
 
-The sole exemption is `lib.telemetry`: PostHog's best-effort exporter is rootcause-owned internal
+The sole exemption is `lib.telemetry`: PostHog's best-effort exporter is ReplyPen-owned internal
 telemetry, not project grounding/customer traffic. It remains visible to the egress gateway backstop
 but does not emit a recursive HTTP audit event.
