@@ -60,6 +60,7 @@ from .action_lint import lint_actions
 from .brain_doc import FRONTMATTER_CAP
 from .brain_doc import frontmatter_lines as _frontmatter_lines
 from .brain_doc import include_in as _include_in
+from .brain_doc import mirrored_corpus as _mirrored_corpus
 from .brain_doc import strip_frontmatter as _strip_frontmatter
 
 
@@ -431,6 +432,8 @@ HARD_LOAD_CAPS = {  # role -> (include_in tags, per-file cap, total cap)
 # 2000+1000-char preview (replypen internal/tool/tool.go defaultBashSpillThreshold). The advisory
 # stays at 16 KB so it names genuinely oversized docs; AGENTS.md is pasted whole, uncapped, every run.
 ON_DEMAND_DOC_CAP = 16 << 10
+# The chat gallery is parsed by the host for the UI, not read by the agent with bash.
+_DOC_SIZE_EXEMPT_FILES = frozenset({"chat_inspiration.md"})
 _DOC_SIZE_IGNORED_DIRS = frozenset({".agents", ".claude", ".replypen", ".rootcause", ".git", ".venv", "_internal",
                                     "node_modules", "__pycache__"})
 
@@ -486,7 +489,8 @@ def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
             findings.append(Finding(rel, "WARN",
                 f"AGENTS.md is {_kb(size)}: pasted whole into every run, every extra byte is tax on "
                 "every thread and buries the routing", "doc-size"))
-        elif not loaded and size > ON_DEMAND_DOC_CAP:
+        elif (not loaded and size > ON_DEMAND_DOC_CAP and rel not in _DOC_SIZE_EXEMPT_FILES
+              and not _mirrored_corpus(text)):
             findings.append(Finding(rel, "WARN",
                 f"{_kb(size)} doc will not be read at once: a bash read shows only a ~3 KB preview "
                 "past 6000 chars, and models often stop at the first screen", "doc-size"))
@@ -914,13 +918,18 @@ def _walk_symlinks(root: Path) -> list[str]:
     return sorted(set(found))
 
 
+# The kit's documented alias: the committed link lets Claude Code find the gitignored kit install.
+_KIT_SKILLS_ALIAS = (".claude/skills", "../.agents/skills")
+
+
 def _check_symlinks(root: Path) -> list[Finding]:
     """FAIL symlinks that can never point at brain content; WARN merely dangling relative ones.
 
     A committed `.claude/skills -> ../.agents/skills` alias over a gitignored target is the supported
     layout: the link dangles in a fresh checkout, and the host skips dangling relative in-repo links
-    when it materializes a run view. Absolute or escaping targets stay fatal — they would reach
-    outside the brain if they resolved at all.
+    when it materializes a run view, so that exact alias is silent (`_KIT_SKILLS_ALIAS`); any other
+    dangling link still WARNs. Absolute or escaping targets stay fatal — they would reach outside the
+    brain if they resolved at all.
     """
     fix = "remove the symlink or track its target; untracked targets dangle in run worktrees"
     dangling = ("dangling in checkouts (target untracked); harmless, the host skips it when building "
@@ -950,6 +959,8 @@ def _check_symlinks(root: Path) -> list[Finding]:
                 f"symlink target {target!r} escapes the brain root — {fix}",
                 "symlink-broken",
             ))
+            continue
+        if (rel, target.rstrip("/")) == _KIT_SKILLS_ALIAS:
             continue
         if tracked is None:
             if not link.exists():  # follows the link; git-less fallback can only prove disk existence
@@ -1022,7 +1033,16 @@ def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]
     # Bind the sibling lint when this plugin loads, before collected brain tests can replace the
     # top-level ``lib`` module in ``sys.modules`` with a test double.
     findings += [Finding(f.path, f.level, f.message, f.rule) for f in lint_actions(root)]
-    return findings
+    # One run-hidden filter for every caller (CLI, pytest tier, publish gate): paths the host drops from
+    # every run view (`run_hidden`: root .replypenignore/.rcignore + always-hidden names) are operator-only,
+    # and the host skips them before it inspects anything, symlinks included (treeview visible.go). A path
+    # merely named `_internal/` is NOT hidden unless an ignore rule says so, so it is still judged.
+    # `_HIDDEN_REPORTED` rules exist to say a declaration there is never read, so they keep reporting.
+    return [f for f in findings if f.rule in _HIDDEN_REPORTED or not hidden(f.path.split(":", 1)[0])]
+
+
+# Rules that still report on run-hidden paths (see the filter at the end of `lint_brain`).
+_HIDDEN_REPORTED = frozenset({"frontmatter-scope"})
 
 
 def _rel(root: Path, p: Path) -> str:

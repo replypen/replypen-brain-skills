@@ -778,7 +778,7 @@ def language_code(setting: Any) -> str | None:
 
 
 def _persona_language(payload: Any) -> Any:
-    """`persona.language` out of an `rc … settings get` envelope (resolved, provenance-wrapped)."""
+    """`persona.language` out of an `rp … settings get` envelope (resolved, provenance-wrapped)."""
     if not isinstance(payload, dict):
         return None
     for section in (payload.get("resolved"), payload.get("settings"), payload):

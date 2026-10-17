@@ -56,6 +56,12 @@ runtime** can still see that literal, so keep boundary code shape-tolerant — n
 (`if isinstance(v, str): ...`) instead of assuming one shape, and never iterate the value blind (a
 literal string iterates as characters).
 
+PII masking of free text is **streaming**: a text cell (an appointment title, a note) is masked only
+with names the run has already seen in a declared PII column, in that row or an earlier one. Select
+free text that may name a person in the **same row** as that person's declared name columns (join
+them in), never first with the name fetched by a later per-row query: DentAI's reminder titles leaked
+the raw patient name on ~99% of lines that way.
+
 If a fact changes with the customer's app state or source code, prefer a grounding script or mirror
 lookup over copying it into prose. If a fact is a stable support policy, product concept, customer
 promise, or decision tree, put it in the brain with tests where practical.
@@ -194,8 +200,8 @@ Standing rule for every role: **tag sparingly**. Each tagged doc is a per-run to
 the caps are a safety net, not a budget. Past a cap the body is cut ("read the rest with bash") and
 models rarely read on; on-demand docs fare no better — a bash read over 6000 chars shows only a ~3 KB
 preview. Lint WARN `doc-size` flags tagged docs over their cap and `AGENTS.md`/on-demand docs over
-16 KB; the commit/push hygiene gate adds a NOTICE (`doc-spill`) when a change pushes an on-demand doc
-past 6000 bytes. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
+16 KB (not `chat_inspiration.md` or mirrored `source_url:`/`video_url:` pages); the commit/push
+hygiene gate FAILs (`doc-spill`) when a change pushes an on-demand doc's whole file past 6000 bytes. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
 "Open X for Y" line. `AGENTS.md` inclusion depends on its mount:
 
 | Path | Grounding pre-step | Main agent |

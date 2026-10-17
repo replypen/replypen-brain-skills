@@ -20,7 +20,13 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable
+
+
+def _marker(root: Path) -> Path:
+    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
+    new = root / ".replypen.toml"
+    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
+
 
 RUNTIME = (Path(__file__).resolve().parents[3] / "runtime").resolve()
 if RUNTIME.is_dir():
@@ -46,7 +52,7 @@ def _reexec_with_pyyaml() -> int:
 
 
 try:
-    from lib.brain_lint import REPO_KINDS, detect_repo_kind, format_report, lint_brain, run_hidden
+    from lib.brain_lint import REPO_KINDS, detect_repo_kind, format_report, lint_brain
 except ModuleNotFoundError as exc:
     if exc.name != "yaml":
         raise
@@ -74,16 +80,17 @@ def _select(paths: list[str], brain: Path) -> set[str]:
     return selected
 
 
-def _run_hidden(brain: Path) -> Callable[[str], bool]:
-    """Run-hidden trees (`.replypenignore` / `.rcignore` and the host's always-hidden paths, via the
-    git-free `lib.brain_lint.run_hidden`, plus the conventional `_internal/`): maintainer-only content
-    absent from every run, so no linter judges it — except the rules that exist to say a declaration
-    there is never read (`_ALWAYS_REPORTED`)."""
-    hidden = run_hidden(brain)
-    return lambda rel: rel.startswith("_internal/") or hidden(rel)
+def _knowledge_brain(brain: Path) -> bool:
+    """A knowledge-only brain (no skills/ or actions/, e.g. a help-centre corpus): `.replypen.toml`
+    declares `project =` and runs write its `journal/`. Source repos carry `project =` only to scope
+    `rp` and have no journal, so they stay out."""
+    import tomllib
 
-
-_ALWAYS_REPORTED = frozenset({"frontmatter-scope"})
+    try:
+        cfg = tomllib.loads(_marker(brain).read_text("utf-8"))
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return False
+    return bool(cfg.get("project")) and not cfg.get("tenant") and (brain / "journal").is_dir()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -101,14 +108,13 @@ def main(argv: list[str] | None = None) -> int:
 
     brain = Path(args.brain).expanduser().resolve() if args.brain else Path.cwd().resolve()
     kind, reason = (args.kind, "--as") if args.kind else detect_repo_kind(brain)
-    if kind == "brain" and not (brain / "skills").is_dir() and not (brain / "actions").is_dir():
+    if (kind == "brain" and not (brain / "skills").is_dir() and not (brain / "actions").is_dir()
+            and not _knowledge_brain(brain)):
         print(f"error: no skills/ or actions/ under {brain} — is this a brain checkout? "
               "(lint a tenant overlay or mirror with --as tenant|mirror)", file=sys.stderr)
         return 1
 
-    findings = lint_brain(brain, kind)
-    hidden = _run_hidden(brain)
-    findings = [f for f in findings if f.rule in _ALWAYS_REPORTED or not hidden(f.path.split(":", 1)[0])]
+    findings = lint_brain(brain, kind)  # run-hidden paths are already filtered in the core
     if args.paths and not args.all:
         selected = _select(args.paths, brain)
         dirs = tuple(p for p in selected if p.endswith("/"))

@@ -604,7 +604,7 @@ def build_command(case: dict[str, Any], ref: str, timeout: str, sender: str | No
     command = [_cli(), "ask", build_question(case),
                "--scenario", "email", "--simulation",
                "--subject", build_subject(case), "--from", frm,
-               "--timeout", timeout, "-o", "json"]
+               "--timeout", timeout, "-o", "json", "--raw-output"]
     if ref != "main":
         command += ["--brain-ref", ref]
     return command
@@ -615,7 +615,7 @@ def elide_command(command: list[str]) -> list[str]:
 
 
 def snapshot_persona(scratch: Path, root: Path) -> None:
-    command = [_cli(), "project", "settings", "behavior", "get", "-o", "json"]
+    command = [_cli(), "project", "settings", "behavior", "get", "-o", "json", "--raw-output"]
     try:
         done = subprocess.run(command, cwd=str(root), capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as exc:

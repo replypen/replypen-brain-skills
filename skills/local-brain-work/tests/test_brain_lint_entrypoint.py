@@ -125,3 +125,23 @@ def test_entrypoint_reports_tags_on_run_hidden_paths(tmp_path: Path) -> None:
 
     assert run.returncode == 1
     assert "maint/plan.md — `include_in` on a run-hidden path" in run.stdout
+
+
+def test_entrypoint_lints_a_knowledge_only_brain(tmp_path: Path) -> None:
+    """`project =` plus a run journal is a brain without skills/ (help-centre corpus); a source repo
+    that only scopes `rc` with `project =` still needs `--as`."""
+    brain, source = tmp_path / "helpdesk", tmp_path / "app"
+    for repo in (brain, source):
+        repo.mkdir()
+        (repo / ".rootcause.toml").write_text('project = "helpdesk"\n', "utf-8")
+        (repo / "AGENTS.md").write_text("# Router\n", "utf-8")
+    (brain / "journal").mkdir()
+
+    as_brain = subprocess.run([sys.executable, str(SCRIPT), "--brain", str(brain)],
+                              text=True, capture_output=True, check=False)
+    as_source = subprocess.run([sys.executable, str(SCRIPT), "--brain", str(source)],
+                               text=True, capture_output=True, check=False)
+
+    assert as_brain.returncode == 0, as_brain.stdout + as_brain.stderr
+    assert as_brain.stdout.strip() == "brain lint: clean"
+    assert as_source.returncode == 1 and "--as tenant|mirror" in as_source.stderr

@@ -218,7 +218,7 @@ def _brain_source(repo: Path, project: str, reporter: Reporter) -> dict[str, obj
     """Best-effort `status.brain_source` from `rp dev brain status -o json`. Returns None (never
     blocking) when `rp` is unavailable, fails, or the field is absent — a server that predates
     the read-only brain alias, or a project that owns its own brain, both read as no alias."""
-    cmd = [_cli(), "dev", "brain", "status", "-o", "json"]
+    cmd = [_cli(), "dev", "brain", "status", "-o", "json", "--raw-output"]
     if project:
         cmd = [cmd[0], "--project", project, *cmd[1:]]
     try:
@@ -495,11 +495,24 @@ def _verify(repo: Path, commands: Sequence[str], reporter: Reporter) -> None:
 HYGIENE_DIR = Path(__file__).resolve().parents[2] / "local-brain-work" / "scripts"
 
 
+def _knowledge_brain(repo: Path) -> bool:
+    """A knowledge-only brain (no skills/ or actions/, e.g. a help-centre corpus): `.replypen.toml`
+    declares `project =` and runs write its `journal/`. Source repos carry `project =` only to scope
+    `rp` and have no journal, so they stay out."""
+    import tomllib
+
+    try:
+        cfg = tomllib.loads(_marker(repo).read_text("utf-8"))
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return False
+    return bool(cfg.get("project")) and not cfg.get("tenant") and (repo / "journal").is_dir()
+
+
 def _hygiene_gate(repo: Path, base: str, reporter: Reporter) -> None:
     """Built-in pre-push gate (brain_hygiene.py) for every brain checkout; no --verify-command
     needed. Skipped for the kit itself and for repos that are not brains."""
     is_kit = (repo / "runtime" / "lib").is_dir() and (repo / "plugin.json").is_file()
-    if is_kit or not ((repo / "skills").is_dir() or (repo / "actions").is_dir()):
+    if is_kit or not ((repo / "skills").is_dir() or (repo / "actions").is_dir() or _knowledge_brain(repo)):
         return
     if not (HYGIENE_DIR / "brain_hygiene.py").is_file():
         raise SyncError(f"brain hygiene gate missing at {HYGIENE_DIR}; reinstall the kit "
