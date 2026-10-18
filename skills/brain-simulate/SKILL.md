@@ -1,6 +1,6 @@
 ---
 name: brain-simulate
-description: "Measure how well a ReplyPen brain behaves today: replay representative, deliberately hard real inbound cases through the production prompt API (`rp ask --simulation`), grade each draft against the human's historical reply on content and tone, and render a self-contained HTML report with run-trace links and copy-paste steering prompts. Use for 'how good is the brain now', a before/after check of a dev/<branch> brain, or to find which cases are blocked on grounding vs brain/persona gaps."
+description: "Measure how well a ReplyPen brain behaves today: replay representative, deliberately hard real inbound cases through the production prompt API (`rp ask --simulation`), grade each draft against the human's historical reply on content and tone, and render a self-contained HTML report with run-trace links and copy-paste steering prompts. Use for 'how good is the brain now', a before/after check of a dev/<branch> brain, to find which cases are blocked on grounding vs brain/persona gaps, or to PROVE a brain fix on a seeded fixture dossier when the real thread is retention-scrubbed or its record already changed (fixture cases with deterministic action/draft checks)."
 ---
 
 # brain-simulate — replay real cases, grade the drafts, steer the brain
@@ -24,6 +24,11 @@ Honest scoring: a case the brain can only answer with one precise question or a 
 no write path yet) is a **valid, gradable outcome** — `blocked-on-grounding` with a high routing
 score — not a failure. The report separates those from brain/persona gaps so the owner sees what a
 brain edit fixes and what needs a grounding request.
+
+> [!TIP]
+> **Can't prove a fix on the real case?** Original thread scrubbed by retention, booking already
+> cancelled, nothing to act on: don't wait for the next real mail. Replay a [fixture case](#fixture-cases)
+> against a seeded dossier and get a verdict today.
 
 ## Layout
 
@@ -119,6 +124,42 @@ the new drafts, `report --ref dev/<branch> --compare main` for the per-case delt
 [`brain-publish`](../brain-publish/SKILL.md) when the delta holds; `history.jsonl` keeps the trend
 per project. Grounding recommendations become a support request, not a brain edit
 ([docs/support-boundary.md](../../docs/support-boundary.md)).
+
+## Fixture cases
+
+A fixture case is a **synthetic**, committed manual case aimed at a **seeded dossier**: a fake family
+with a known booking in the project's demo tenant, created by a project-side seed script. Same
+pipeline as above, three extra fields:
+
+| field | effect |
+|---|---|
+| `tenant` | `--tenant` for this case (the demo tenant) |
+| `from` | sender address = the fixture parent's email, so grounding finds the family |
+| `expect` | deterministic checks, graded at `run` and re-graded at `score`/`report` (edit, no re-run) |
+
+```json
+"expect": {
+  "actions": [{"slug": "cancel_subscription", "description_matches": ["€\\s?25\\b"]}],
+  "only_listed_actions": true,
+  "draft_matches": ["attest"], "draft_forbids": ["korting"],
+  "note_matches": ["attest"], "note_forbids": []
+}
+```
+
+Regexes are case-insensitive. `actions: []` asserts *no* proposal. Action params are hash-only on the
+API, so amounts are matched on the preflight preview (`description`). A ✗ caps the judge verdict
+below `pass`. Run output shows `✓ 8/8` per case, failed checks listed under it.
+
+When to write one: a review card / ticket whose done-when needs a state the real record no longer
+has, any action-proposal behaviour (which action, which amounts, none at all), and every rule
+that should hold for *all* tenants. Overlay-only rules (one tenant's skill) need a fixture in that
+tenant, or the next real case. Keep the dossier pristine: simulations never execute, and the seed
+script resets it if someone did.
+
+Because the content is synthetic, fixture files may be committed (in a run-excluded path, e.g.
+`_internal/simulate/`); scratch output stays gitignored as always. KampAdmin's set:
+`replypen-brain-kampadmin/_internal/simulate/demo-fixtures.json`, seeded by the KampAdmin repo's
+`scripts/replypen_sim/demo_fixtures.rb`.
 
 ## Related
 

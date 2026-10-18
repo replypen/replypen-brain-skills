@@ -144,7 +144,9 @@ Only these are first-class:
   the model judges it into persisted owner/technical review queues.
 - `brain-simulate` — replay representative real inbound cases through `rp ask --simulation`, grade
   each draft against the human's historical reply, render an HTML report with run links and
-  copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff.
+  copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff. Fixture cases (synthetic,
+  committed, seeded demo dossier, `expect` checks on draft + action proposals) prove a fix when the
+  real thread or record is gone.
 - `brain-helpcenter-suggestions` — one window of real customer questions (email runs, in-app chat
   runs, Help Scout) held against the public help-centre inventory: Python collects the corpus and
   every article body, the model classifies in two passes and writes one small markdown file per

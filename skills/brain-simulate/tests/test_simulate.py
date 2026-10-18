@@ -191,6 +191,76 @@ def test_dry_run_builds_the_expected_command(tmp_path, capsys):
     assert command[command.index("--from") + 1] == f"simulate-{ids[0][:8].lower()}@example.test"
 
 
+FIXTURE_CASE = {
+    "id": "fx-annulatie", "tenant": "demo", "from": "sim@example.com", "subject": "Re: annulatie",
+    "inbound": "Doe maar zo, attest volgt.\n\n> Sarah: €25 kost, €125 spaarpot, €25 terug op attest",
+    "human_reply": "Dag Lotte, geannuleerd: €25 kost, €125 in je spaarpot, €25 terug op attest.",
+    "expect": {"draft_matches": ["€\\s?25", "attest"], "draft_forbids": ["€\\s?20"],
+               "note_matches": ["attest"],
+               "actions": [{"slug": "cancel_subscription", "description_matches": ["€25", "€125"]}]},
+}
+FIXTURE_PAYLOAD = dict(
+    ASK_PAYLOAD, draft_markdown="Dag Lotte, geannuleerd: €25 kosten, €125 tegoed. Attest → €25 terug.",
+    notes=[{"key": "summary", "body": "- 👀 attest opvolgen"}, {"key": "proposals", "body": ""}],
+    proposed_actions=[{"id": "p1", "slug": "cancel_subscription", "label": "Inschrijving annuleren",
+                       "description": "Finn · annuleren, €25 kosten, €125 tegoed",
+                       "resource_url": "https://admin.example/subscriptions/1"}])
+
+
+def acquire_fixture(tmp_path: Path, case: dict) -> dict:
+    path = tmp_path / "fixtures.json"
+    path.write_text(json.dumps([case]), encoding="utf-8")
+    assert cli(tmp_path, "acquire", "--source", "manual", "--cases", str(path)) == 0
+    return load(tmp_path, "cases.json")[0]
+
+
+def test_fixture_case_carries_sender_tenant_and_expect(tmp_path):
+    case = acquire_fixture(tmp_path, FIXTURE_CASE)
+    assert case["id"] == "fx-annulatie" and case["expect"]["actions"][0]["slug"] == "cancel_subscription"
+    command = sim.build_command(case, "dev/x", "5m", "global@example.test")
+    assert command[command.index("--from") + 1] == "sim@example.com"
+    assert command[command.index("--tenant") + 1] == "demo"
+
+
+def test_fixture_checks_pass_and_fail(tmp_path):
+    case = acquire_fixture(tmp_path, FIXTURE_CASE)
+    record = sim.result_record(case, "main", FIXTURE_PAYLOAD, 1, ["rp", "ask", "q"])
+    assert record["note_markdown"] == "- 👀 attest opvolgen"
+    assert record["proposed_actions"][0]["description"].endswith("€125 tegoed")
+    assert all(c["ok"] for c in record["checks"]) and sim.checks_label(record) == "✓ 6/6"
+
+    worse = dict(FIXTURE_PAYLOAD, draft_markdown="Dag Lotte, €20 korting vervalt.",
+                 proposed_actions=FIXTURE_PAYLOAD["proposed_actions"] + [
+                     {"slug": "adjust_subscription_pricing", "description": "+€20"}])
+    failed = {c["check"] for c in sim.result_record(case, "main", worse, 1, ["rp"])["checks"]
+              if not c["ok"]}
+    assert failed == {"draft has /€\\s?25/", "draft has /attest/", "draft lacks /€\\s?20/",
+                      "no unlisted action proposals"}
+
+
+def test_pass_score_contradicted_by_failing_checks_is_rejected(tmp_path, capsys):
+    case = acquire_fixture(tmp_path, FIXTURE_CASE)
+    assert cli(tmp_path, "select", "--pick", f"{case['id']}|cancellation|hard|fixture") == 0
+    worse = dict(FIXTURE_PAYLOAD, draft_markdown="Dag Lotte, €20 korting vervalt.")
+    sim.write_json(scratch(tmp_path) / "runs" / "main" / f"{case['id']}.json",
+                   sim.result_record(case, "main", worse, 1, ["rp"]))
+    score = json.loads((FIXTURES / "score.json").read_text())
+    sim.write_json(scratch(tmp_path) / "scores" / "main" / f"{case['id']}.json",
+                   dict(score, case_id=case["id"], verdict="pass"))
+    assert cli(tmp_path, "score", "--validate") != 0
+    assert "fixture checks fail" in capsys.readouterr().err
+    assert cli(tmp_path, "report") == 0
+    assert "| unscored ✗" in (scratch(tmp_path) / "report.md").read_text()
+
+
+def test_fixture_expect_is_validated(tmp_path):
+    bad = dict(FIXTURE_CASE, expect={"draft_matches": ["(unclosed"], "typo": []})
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps([bad]), encoding="utf-8")
+    with pytest.raises(sim.SimError, match="unknown key 'typo'.*bad regex"):
+        sim.acquire_manual(str(path))
+
+
 def test_multi_turn_question_joins_with_a_rule(tmp_path):
     cases = acquire_helpscout(tmp_path)
     burst = next(c for c in cases if len(c["inbound"]) == 2)

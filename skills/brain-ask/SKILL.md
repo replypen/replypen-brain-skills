@@ -86,3 +86,8 @@ MAIL
 Use `--session` only for *investigation* continuity (which scripts already ran), never for thread
 history. If a run still picks up a stale journal note, report it as a grounding pre-pass artefact, not a
 brain bug.
+
+Same follow-up again after the next brain edit, or the real record no longer has the state to test
+(already cancelled, thread scrubbed)? Make it a committed
+[fixture case](../brain-simulate/SKILL.md#fixture-cases) on a seeded demo dossier, with deterministic
+checks on the draft and the proposed actions.

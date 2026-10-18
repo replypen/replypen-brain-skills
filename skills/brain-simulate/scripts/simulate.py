@@ -10,7 +10,7 @@ in a mailbox (see docs/side-effects.md).
 
     simulate.py acquire --source helpscout --pages .replypen/simulate/raw/'page*.json'
     simulate.py acquire --source harvest --corpus corpus.md [--append]
-    simulate.py acquire --source manual --cases my-cases.json
+    simulate.py acquire --source manual --cases my-cases.json   # incl. committed fixture cases
     simulate.py plan [--seed 7] [--target 10] [--force]
     simulate.py select --pick 'S1234…|how-to|medium|covers the menu-path answer' [--pick …]
     simulate.py run [--ref main|dev/<branch>] [--parallel 2] [--only ID,ID] [--dry-run] [--force]
@@ -75,6 +75,8 @@ TRANSIENT_RE = re.compile(
     r"timeout|timed out|temporar|rate.?limit|throttl|too many requests|"
     r"unavailable|connection|network|EOF|502|503|504", re.I)
 DURATION_RE = re.compile(r"^(\d+)\s*([smh]?)$")
+# Fixture-case `expect` keys: regex lists over the draft/note, plus expected action proposals.
+EXPECT_TEXT_KEYS = ("draft_matches", "draft_forbids", "note_matches", "note_forbids")
 
 
 # --- small helpers --------------------------------------------------------------------------
@@ -390,8 +392,87 @@ def acquire_manual(cases_file: str) -> tuple[list[dict], int, dict[str, int]]:
         )
         if isinstance(item.get("id"), str) and item["id"].strip():
             case["id"] = item["id"].strip()
+        for key in ("from", "tenant"):
+            if isinstance(item.get(key), str) and item[key].strip():
+                case[key] = item[key].strip()
+        if item.get("expect") is not None:
+            problems = expect_problems(item["expect"])
+            if problems:
+                raise SimError(f"cases[{index}].expect: " + "; ".join(problems))
+            case["expect"] = item["expect"]
         cases.append(case)
     return cases, len(data), dropped
+
+
+def expect_problems(expect: Any) -> list[str]:
+    if not isinstance(expect, dict):
+        return ["must be an object"]
+    problems = [f"unknown key {key!r}" for key in expect
+                if key not in (*EXPECT_TEXT_KEYS, "actions", "only_listed_actions")]
+    patterns: list[Any] = []
+    for key in EXPECT_TEXT_KEYS:
+        value = expect.get(key, [])
+        if not isinstance(value, list):
+            problems.append(f"{key} must be a list of regexes")
+        else:
+            patterns += value
+    actions = expect.get("actions", [])
+    if not isinstance(actions, list) or not all(isinstance(a, dict) and a.get("slug") for a in actions):
+        problems.append("actions must be a list of {slug, description_matches?}")
+    else:
+        for action in actions:
+            patterns += action.get("description_matches") or []
+    for pattern in patterns:
+        try:
+            re.compile(pattern)
+        except (re.error, TypeError) as exc:
+            problems.append(f"bad regex {pattern!r}: {exc}")
+    return problems
+
+
+def fixture_checks(case: dict[str, Any], record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Deterministic checks of a fixture case's `expect` against one run; [] for ordinary cases."""
+    expect = case.get("expect")
+    if not expect or record.get("status") != "done":
+        return []
+    found = lambda pattern, text: re.search(pattern, text or "", re.I) is not None  # noqa: E731
+    checks = []
+    for key in EXPECT_TEXT_KEYS:
+        field, mode = key.split("_")
+        text = record.get(f"{field}_markdown")
+        for pattern in expect.get(key) or []:
+            hit = found(pattern, text)
+            checks.append({"check": f"{field} {'has' if mode == 'matches' else 'lacks'} /{pattern}/",
+                           "ok": hit if mode == "matches" else not hit})
+    proposed = list(record.get("proposed_actions") or [])
+    for want in expect.get("actions") or []:
+        match = next((a for a in proposed if a.get("slug") == want["slug"] and all(
+            found(p, a.get("description")) for p in want.get("description_matches") or [])), None)
+        if match is not None:
+            proposed.remove(match)
+        label = " ".join([want["slug"], *[f"/{p}/" for p in want.get("description_matches") or []]])
+        checks.append({"check": f"proposes {label}", "ok": match is not None,
+                       "detail": "" if match else "; ".join(
+                           f"{a.get('slug')}: {a.get('description')}"
+                           for a in record.get("proposed_actions") or []) or "no proposal"})
+    if expect.get("actions") is not None and expect.get("only_listed_actions", True):
+        checks.append({"check": "no unlisted action proposals", "ok": not proposed,
+                       "detail": "; ".join(f"{a.get('slug')}: {a.get('description')}" for a in proposed)})
+    return checks
+
+
+def stale_pass(score: dict[str, Any] | None, record: dict[str, Any] | None) -> bool:
+    """A `pass` that a (re-graded) failing fixture check contradicts."""
+    return bool(score) and score.get("verdict") == "pass" and any(
+        not c["ok"] for c in (record or {}).get("checks") or [])
+
+
+def checks_label(record: dict[str, Any] | None) -> str:
+    checks = (record or {}).get("checks") or []
+    if not checks:
+        return ""
+    passed = sum(1 for c in checks if c["ok"])
+    return f"{'✓' if passed == len(checks) else '✗'} {passed}/{len(checks)}"
 
 
 def sort_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -600,11 +681,14 @@ def build_subject(case: dict[str, Any]) -> str:
 
 
 def build_command(case: dict[str, Any], ref: str, timeout: str, sender: str | None) -> list[str]:
-    frm = sender or f"simulate-{case['id'][:8].lower()}@example.test"
+    # A fixture case's own sender wins: grounding looks the family up by that address.
+    frm = case.get("from") or sender or f"simulate-{case['id'][:8].lower()}@example.test"
     command = [_cli(), "ask", build_question(case),
                "--scenario", "email", "--simulation",
                "--subject", build_subject(case), "--from", frm,
                "--timeout", timeout, "-o", "json", "--raw-output"]
+    if case.get("tenant"):
+        command += ["--tenant", case["tenant"]]
     if ref != "main":
         command += ["--brain-ref", ref]
     return command
@@ -677,18 +761,33 @@ def run_one(case: dict[str, Any], ref: str, args: argparse.Namespace, root: Path
 def result_record(case: dict[str, Any], ref: str, payload: dict[str, Any], attempts: int,
                   command: list[str], error: str = "") -> dict[str, Any]:
     metadata = payload.get("metadata") or {}
-    return {
+    record = {
         "case_id": case["id"], "ref": ref,
         "run_id": payload.get("run_id"),
         "run_url": payload.get("run_url") or metadata.get("run_url"),
         "status": payload.get("status"), "category": payload.get("category"),
         "outcome": payload.get("outcome"), "metadata_outcome": metadata.get("outcome"),
         "draft_markdown": payload.get("draft_markdown") or "",
-        "note_markdown": payload.get("note_markdown") or payload.get("note") or "",
+        "note_markdown": note_text(payload),
+        # Params are hash-only on the API; the preflight preview in `description` carries the amounts.
+        "proposed_actions": [{key: action.get(key) for key in
+                              ("slug", "label", "description", "resource_url")}
+                             for action in payload.get("proposed_actions") or []],
         "turns": payload.get("turns"), "bash_total": payload.get("bash_total"),
         "duration_ms": payload.get("duration_ms"), "attempts": attempts,
         "error": error, "command": elide_command(command), "ran_at": now_iso(),
     }
+    record["checks"] = fixture_checks(case, record)
+    return record
+
+
+def note_text(payload: dict[str, Any]) -> str:
+    """`rp ask -o json` nests the note as notes[{key, body}]; older payloads had a flat field."""
+    flat = payload.get("note_markdown") or payload.get("note")
+    if flat:
+        return flat
+    return "\n\n".join(n.get("body") or "" for n in payload.get("notes") or []
+                        if isinstance(n, dict) and (n.get("body") or "").strip())
 
 
 def cmd_run(args: argparse.Namespace, scratch: Path, root: Path) -> int:
@@ -736,7 +835,7 @@ def cmd_run(args: argparse.Namespace, scratch: Path, root: Path) -> int:
                 print(f"  {case['id']} {record['status']} "
                       f"turns={record.get('turns')} attempts={record['attempts']}", file=sys.stderr)
 
-    print(f"{'case':18} {'status':7} {'turns':>5} {'dur':>7}  run")
+    print(f"{'case':18} {'status':7} {'turns':>5} {'dur':>7} {'checks':>7}  run")
     failed = 0
     for case in picked:
         path = out_dir / f"{case['id']}.json"
@@ -747,8 +846,12 @@ def cmd_run(args: argparse.Namespace, scratch: Path, root: Path) -> int:
             failed += 1
         duration = record.get("duration_ms")
         print(f"{case['id']:18} {str(record['status']):7} {str(record.get('turns') or '-'):>5} "
-              f"{(str(round(duration / 1000)) + 's') if duration else '-':>7}  "
+              f"{(str(round(duration / 1000)) + 's') if duration else '-':>7} "
+              f"{checks_label(record) or '-':>7}  "
               f"{record.get('run_url') or record.get('error', '')[:80]}")
+        for check in record.get("checks") or []:
+            if not check["ok"]:
+                print(f"    ✗ {check['check']}  {check.get('detail') or ''}".rstrip())
     print(f"\nsimulation runs only — nothing was sent, no action executed. Results in {out_dir}")
     return 1 if failed else 0
 
@@ -803,6 +906,17 @@ def judge_bundle(case: dict[str, Any], entry: dict[str, Any], record: dict[str, 
     lines += ["", "## Our draft", "", (record.get("draft_markdown") or "(no draft)").strip(), ""]
     if record.get("note_markdown"):
         lines += ["## Our note", "", record["note_markdown"].strip(), ""]
+    if record.get("proposed_actions"):
+        lines += ["## Proposed actions (reviewer confirms; simulation never executes)", ""]
+        lines += [f"- `{a.get('slug')}`: {a.get('description')}" for a in record["proposed_actions"]]
+        lines.append("")
+    if record.get("checks"):
+        lines += [f"## Fixture checks (deterministic) — {checks_label(record)}", "",
+                  "A failed check caps the verdict below `pass`.", ""]
+        lines += [f"- {'✓' if c['ok'] else '✗'} {c['check']}"
+                  + (f" — {c['detail']}" if not c["ok"] and c.get("detail") else "")
+                  for c in record["checks"]]
+        lines.append("")
     if record.get("status") != "done":
         lines += ["## Run error", "", "```", (record.get("error") or "")[-800:], "```", ""]
     return "\n".join(lines) + "\n"
@@ -873,12 +987,17 @@ def load_scores(scratch: Path, ref: str, ids: list[str]) -> dict[str, dict[str, 
     return out
 
 
-def load_runs(scratch: Path, ref: str, ids: list[str]) -> dict[str, dict[str, Any]]:
+def load_runs(scratch: Path, ref: str, ids: list[str],
+              by_id: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
+    """With `by_id`, fixture checks are re-graded from the current case, so an edited `expect`
+    needs no re-run."""
     out = {}
     for cid in ids:
         path = scratch / "runs" / ref_slug(ref) / f"{cid}.json"
         if path.exists():
             out[cid] = read_json(path, "run result")
+            if by_id and cid in by_id:
+                out[cid]["checks"] = fixture_checks(by_id[cid], out[cid])
     return out
 
 
@@ -886,7 +1005,7 @@ def cmd_score(args: argparse.Namespace, scratch: Path) -> int:
     selection, _cases, by_id = load_selection(scratch)
     ids = [e["id"] for e in selection["cases"]]
     entries = {e["id"]: e for e in selection["cases"]}
-    runs = load_runs(scratch, args.ref, ids)
+    runs = load_runs(scratch, args.ref, ids, by_id)
 
     if args.validate:
         problems: list[str] = []
@@ -904,6 +1023,9 @@ def cmd_score(args: argparse.Namespace, scratch: Path) -> int:
                 print(f"{cid:18} {'MISSING':22}")
                 continue
             problems += score_problems(score, cid, args.ref)
+            if stale_pass(score, runs.get(cid)):
+                problems.append(f"{cid}: verdict pass but fixture checks fail "
+                                f"({checks_label(runs.get(cid))}); re-judge")
             values = score.get("scores") or {}
             grid = " ".join(str(values.get(dim, "?")) for dim in DIMS)
             print(f"{cid:18} {str(score.get('verdict')):22} {grid:11} {score.get('lever')}")
@@ -1108,6 +1230,7 @@ def render_case_row(case: dict, entry: dict, record: dict | None, score: dict | 
             if record and record.get("run_url") else '<span class="muted">-</span>')
     failed = bool(record) and record.get("status") != "done"
     detail = "" if failed else (
+        f'<span class="muted">{e(checks_label(record))}</span>'
         f'<span class="grid muted">{e(grid)}</span>'
         f'<span class="muted">{e(record.get("turns") if record else "-")} turns</span>')
     head = (f'<summary><span class="t">{e(entry.get("type_tag"))}</span>'
@@ -1131,6 +1254,12 @@ def render_case_row(case: dict, entry: dict, record: dict | None, score: dict | 
             f'<div class="col"><h3>Our draft</h3>{draft}</div></div>')
 
     items = [("Selected because", entry.get("reason"))]
+    if record and record.get("proposed_actions"):
+        items.append(("Proposed actions", "\n".join(
+            f"- `{a.get('slug')}`: {a.get('description')}" for a in record["proposed_actions"])))
+    if record and record.get("checks"):
+        items.append((f"Fixture checks {checks_label(record)}", "\n".join(
+            f"- {'✓' if c['ok'] else '✗'} {c['check']}" for c in record["checks"])))
     if score:
         items += [("Rationale", score.get("rationale")), ("Gap", score.get("gap")),
                   ("Lever", score.get("lever")), ("Blocked on", score.get("blocked_on") or "-")]
@@ -1287,7 +1416,8 @@ def render_markdown(context: dict[str, Any]) -> str:
         values = (score or {}).get("scores") or {}
         grid = " | ".join(str(values.get(dim, "·")) for dim in DIMS)
         lines.append(f"| {cid} | {entry.get('type_tag')} | {entry.get('difficulty')} | "
-                     f"{verdict_of(cid, context['scores'], context['runs'])} | {grid} | "
+                     f"{verdict_of(cid, context['scores'], context['runs'])} "
+                     f"{checks_label(record)} | {grid} | "
                      f"{(record or {}).get('run_url') or (record or {}).get('status') or '-'} |")
     if context["compare_rows"]:
         lines += ["", f"## Compare {context['ref']} → {context['compare']}", "",
@@ -1337,8 +1467,11 @@ def cmd_report(args: argparse.Namespace, scratch: Path) -> int:
     selection, _cases, by_id = load_selection(scratch)
     ids = [entry["id"] for entry in selection["cases"]]
     entries = {entry["id"]: entry for entry in selection["cases"]}
-    runs = load_runs(scratch, args.ref, ids)
+    runs = load_runs(scratch, args.ref, ids, by_id)
     scores = load_scores(scratch, args.ref, ids)
+    for cid in [cid for cid, score in scores.items() if stale_pass(score, runs.get(cid))]:
+        warn(f"{cid}: pass score ignored, fixture checks now fail ({checks_label(runs[cid])}); re-judge")
+        del scores[cid]
     persona_path = scratch / "persona.json"
     persona_raw = read_json(persona_path, "persona.json").get("persona", {}) if persona_path.exists() else {}
     persona = {key: (value.get("value") if isinstance(value, dict) else value)
@@ -1351,7 +1484,7 @@ def cmd_report(args: argparse.Namespace, scratch: Path) -> int:
     compare_rows: list[dict[str, Any]] = []
     compare_html = ""
     if args.compare:
-        other_runs = load_runs(scratch, args.compare, ids)
+        other_runs = load_runs(scratch, args.compare, ids, by_id)
         other_scores = load_scores(scratch, args.compare, ids)
         compare_rows = build_compare_rows(order, scores, runs, other_scores, other_runs)
         compare_html = render_compare(compare_rows, args.ref, args.compare)
