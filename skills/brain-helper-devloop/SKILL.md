@@ -208,7 +208,7 @@ Playbook:
 3. **Classify each helper:** keep · improve (argv, `--help`, verdict line, a crash, speed — many source
    reads/help calls mean the interface is unclear) · merge (two helpers answering one symptom) ·
    retire (propose only: zero observations in EVERY consuming project's report and no routing line;
-   a mirror helper is shared, `kampadmin-rootcause-common`-style) · new (an SQL group with ≥3 customer
+   a mirror helper is shared, `kampadmin-replypen-common`-style) · new (an SQL group with ≥3 customer
    runs across ≥2 tenants and no real "maybe covered by" helper).
 4. **Before a new helper,** check for a stale routing or chat-suggestion line that steers runs away
    from an existing one; "maybe covered by" is a lexical hint, verify it.

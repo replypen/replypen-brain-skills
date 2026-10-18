@@ -484,7 +484,7 @@ is a different mechanism).
 
 ```markdown
 ## 📝 Inschrijvingen
-skills: records, /mirrors/kampadmin-rootcause-common/skills/columns
+skills: records, /mirrors/kampadmin-replypen-common/skills/columns
 Elke lijst: één rij per inschrijving, status als eerste kolom.
 - **Wachtlijst bekijken** — Voor welke activiteiten staat er een wachtlijst?
   - skills: subscription-stats
