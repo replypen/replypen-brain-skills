@@ -132,3 +132,13 @@ def test_heredoc_traceback_is_not_blamed_on_a_chained_helper():
     assert usage.foreign_traceback(heredoc, H)
     assert not usage.foreign_traceback(deep, H)
     assert not usage.foreign_traceback(heredoc + [f'  File "{H}", line 9'], H)
+
+
+def test_vocab_reduced_path_rejoins_its_unique_inventory_helper():
+    rows = {p: {} for p in ("/brain/skills/databases/scripts/backup_status.py",
+                            "/brain/skills/databases/scripts/restore_report.py",
+                            "/brain/skills/platform-api/scripts/platform_api_read.py")}
+    resolve = usage.resolver(rows)
+    assert resolve("/brain/skills/databases/scripts/⟨vocab⟩_status.py", "path").endswith("backup_status.py")
+    assert resolve("/brain/skills/platform-⟨vocab⟩/scripts/platform_⟨vocab⟩_read.py", "path").endswith("api_read.py")
+    assert resolve("/brain/skills/databases/scripts/⟨vocab⟩.py", "path") == "/brain/skills/databases/scripts/⟨vocab⟩.py"

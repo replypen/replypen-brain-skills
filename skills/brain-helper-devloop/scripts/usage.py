@@ -192,6 +192,9 @@ def inventory(root: Path, mirrors: dict[str, Path]) -> tuple[dict[str, dict], li
     return rows, missing
 
 
+VOCAB = "⟨vocab⟩"
+
+
 def resolver(rows: dict[str, dict]):
     by_name = defaultdict(list)
     for path in rows:
@@ -204,6 +207,12 @@ def resolver(rows: dict[str, dict]):
             hits = by_stem.get(token.rsplit(".", 1)[-1]) or []
             return hits[0] if len(hits) == 1 else None
         token = re.sub(r"^\$\{?\w+\}?/", "", token).replace("/./", "/")
+        if VOCAB in token:  # scrubbed run: re-join a privacy-reduced path when one inventory path fits
+            pat = re.compile(("" if token.startswith("/") else ".*/")
+                             + ".+?".join(re.escape(part) for part in token.split(VOCAB)) + "$")
+            hits = [p for p in rows if pat.match(p)]
+            if len(hits) == 1:
+                return hits[0]
         if token.startswith(MOUNTS):
             return token
         if token.startswith("/"):
