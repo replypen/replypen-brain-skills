@@ -410,9 +410,8 @@ fi
 # bump-workspace-pin.py there and commit it. We bump on EVERY release, not only runtime-changing ones:
 # keeping pin == newest tag unconditionally is what removes the whole "stranded release" class.
 #
-# Blast radius is deliberately tiny: we add only the pin files, refuse to run at all if any of them
-# already carries someone else's uncommitted edit, and only push when our commit is the sole one ahead
-# of origin/main (parallel agents share that checkout). Any failure is a loud non-zero exit, never a
+# Blast radius is deliberately tiny: a throwaway worktree at origin/main, only the pin files committed,
+# and only that one commit pushed (the shared checkout and its parallel agents' work are never touched). Any failure is a loud non-zero exit, never a
 # silent skip — a stranded pin must cost you the release's exit code.
 prod_bump() {
   local target="$1"
@@ -431,48 +430,42 @@ prod_bump() {
     return 1
   fi
   if [ "$DRY" = 1 ]; then
-    echo "  + (cd $prod && scripts/bump-workspace-pin.py $target) && git commit the pin files"
+    echo "  + worktree $prod@origin/main: scripts/bump-workspace-pin.py $target && commit + push the pin files"
     return 0
   fi
 
-  local dirty
-  dirty="$(git -C "$prod" status --porcelain -- "${paths[@]}")"
-  if [ -n "$dirty" ]; then
-    echo "  ⚠ ReplyPen already has uncommitted changes in the pin paths — refusing to sweep them:" >&2
-    echo "$dirty" >&2
-    echo "    resolve those, then: (cd $prod && scripts/bump-workspace-pin.py $target)" >&2
-    return 1
-  fi
-
+  # Never the shared checkout: it can be stale (an old bump script) or carry parallel agents' unpushed
+  # commits, which strands the pin. Bump in a throwaway worktree at a fresh origin/main instead.
+  git -C "$prod" fetch -q origin main || { echo "  ⚠ cannot fetch replypen origin/main" >&2; return 1; }
+  local wt="/tmp/rc-pin-$$"
+  git -C "$prod" worktree add -q --detach "$wt" origin/main || return 1
   # raw.githubusercontent can lag a freshly pushed tag by seconds; the bump fetches the lock from there.
-  local attempt=1
-  until (cd "$prod" && "$bump" "$target"); do
+  local attempt=1 rc=0
+  until (cd "$wt" && MISE_TRUSTED_CONFIG_PATHS="$wt" scripts/bump-workspace-pin.py "$target"); do
     if [ "$attempt" -ge 5 ]; then
       echo "  ⚠ bump-workspace-pin.py $target failed after $attempt attempts" >&2
-      return 1
+      rc=1; break
     fi
     echo "  … retry $attempt: tag may not be visible on raw.githubusercontent yet; waiting 10s"
     attempt=$((attempt + 1)); sleep 10
   done
-
-  if [ -z "$(git -C "$prod" status --porcelain -- "${paths[@]}")" ]; then
+  if [ "$rc" = 0 ] && [ -z "$(git -C "$wt" status --porcelain -- "${paths[@]}")" ]; then
     echo "  replypen pin already at $target — nothing to commit"
-    return 0
+  elif [ "$rc" = 0 ]; then
+    git -C "$wt" add -- "${paths[@]}"
+    git -C "$wt" commit -q -m "chore(runtime): bump workspace pin to $target" \
+      -m "Automated by replypen-brain-skills refresh-brains.sh at release $target."
+    # origin/main may move meanwhile: replay only our own unpushed pin commit, bounded.
+    local push=1
+    until git -C "$wt" push -q origin HEAD:main; do
+      [ "$push" -ge 3 ] && { echo "  ⚠ pin commit push rejected $push times" >&2; rc=1; break; }
+      git -C "$wt" pull -q --rebase origin main || { rc=1; break; }
+      push=$((push + 1))
+    done
+    [ "$rc" = 0 ] && echo "  pushed to replypen main: $(git -C "$wt" log -1 --oneline) → ship it: scripts/promote.py --from main --to stable"
   fi
-  git -C "$prod" add -- "${paths[@]}"
-  git -C "$prod" commit -q -m "chore(runtime): bump workspace pin to $target" \
-    -m "Automated by replypen-brain-skills refresh-brains.sh at release $target."
-  echo "  committed in ReplyPen: $(git -C "$prod" log -1 --oneline)"
-
-  git -C "$prod" fetch -q origin main 2>/dev/null || true
-  if [ "$(git -C "$prod" rev-list --count origin/main..HEAD 2>/dev/null || echo 99)" = 1 ] \
-     && git -C "$prod" push -q origin HEAD:main 2>/dev/null; then
-    echo "  pushed to replypen main → ship it: (cd $prod && scripts/promote.py --from main --to stable)"
-  else
-    echo "  ⚠ left the pin commit local (replypen main carries other unpushed work, or the push was rejected)" >&2
-    echo "    in $prod: review 'git log origin/main..HEAD', push, then scripts/promote.py --from main --to stable" >&2
-  fi
-  return 0
+  git -C "$prod" worktree remove --force "$wt"
+  return "$rc"
 }
 
 PROD_BUMP_FAILED=0
