@@ -488,6 +488,10 @@ def kit_version() -> str:
         return done.stdout.strip() if done.returncode == 0 else ""
 
     here = git("describe", "--tags") or "?"
+    try:  # an installed kit only knows the tags it fetched at install: refresh, bounded and best-effort
+        git("fetch", "-q", "--tags", "origin", "main")
+    except subprocess.TimeoutExpired:
+        pass
     latest = (git("tag", "-l", "v*", "--sort=-v:refname").splitlines() or [""])[0]
     ahead = git("rev-list", "--count", f"{latest}..origin/main") if latest else ""
     extra = [f"latest {latest}"] if latest and latest != here else []

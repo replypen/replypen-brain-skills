@@ -451,10 +451,13 @@ prod_bump() {
   done
   if [ "$rc" = 0 ] && [ -z "$(git -C "$wt" status --porcelain -- "${paths[@]}")" ]; then
     echo "  replypen pin already at $target — nothing to commit"
+  elif [ "$rc" = 0 ] && ! { git -C "$wt" add -- "${paths[@]}" &&
+      git -C "$wt" commit -q -m "chore(runtime): bump workspace pin to $target" \
+        -m "Automated by replypen-brain-skills refresh-brains.sh at release $target."; }; then
+    # errexit is off in here (called under `||`): an unchecked failed commit would push the old HEAD.
+    echo "  ⚠ could not commit the pin bump in $wt" >&2
+    rc=1
   elif [ "$rc" = 0 ]; then
-    git -C "$wt" add -- "${paths[@]}"
-    git -C "$wt" commit -q -m "chore(runtime): bump workspace pin to $target" \
-      -m "Automated by replypen-brain-skills refresh-brains.sh at release $target."
     # origin/main may move meanwhile: replay only our own unpushed pin commit, bounded.
     local push=1
     until git -C "$wt" push -q origin HEAD:main; do
