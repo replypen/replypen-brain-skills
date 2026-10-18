@@ -190,7 +190,9 @@ Mirrors come from `.replypen.toml` `[mirrors]`; per-run records cache under
 `usage.md`: coverage, one row per helper (customer runs · tenants · test runs · launches · exit≠0 /
 exit 2 · tracebacks · enclosing-bash duration · `--help` calls · source reads, `+N pre` = grounding
 pre-step), the unobserved inventory folded, then repeated ad-hoc SQL grouped by table set with run
-links. Counts are launch sites from command text (`execution.py`, shared with `report`): a loop or a
+links. Inventory = brain `.py` + mirror `.py` under a `skills/` dir or with a `# name:` header (a
+mirror's one-off scripts are counted, not listed); "maybe covered by" = helpers whose SQL
+(`FROM`/`JOIN`) names every table of the group, most specific first. Counts are launch sites from command text (`execution.py`, shared with `report`): a loop or a
 `subprocess.run` inside a heredoc is one site; reads and `--help` never count as use.
 
 Playbook:
