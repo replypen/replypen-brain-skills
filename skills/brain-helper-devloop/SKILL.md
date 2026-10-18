@@ -201,6 +201,8 @@ Playbook:
    `⚠ not in checkout` = the agent guessed a wrong path or the helper moved: a routing/docstring fix.
 2. **Read 2 traces per top row and per flagged row** (exit≠0, tracebacks, many reads/help, top SQL
    group) with [`rp run debug`](../rp-debug/SKILL.md). A number without a read trace is not a finding.
+   `exit 2` with an empty `tb` is often a swallowed exception (a `run_cli`-style wrapper prints
+   `error: <Type>: …` to stdout): read that line before calling it an argv mistake.
 3. **Classify each helper:** keep · improve (argv, `--help`, verdict line, a crash, speed — many source
    reads/help calls mean the interface is unclear) · merge (two helpers answering one symptom) ·
    retire (propose only: zero observations in EVERY consuming project's report and no routing line;
