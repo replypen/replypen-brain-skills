@@ -189,7 +189,8 @@ def inventory(root: Path, mirrors: dict[str, Path]) -> tuple[dict[str, dict], li
         for rel in tracked_py(repo):
             if SKIP_PARTS & set(Path(rel).parts[:-1]):
                 # Not a grounding helper (actions/, .agents/, …), but it exists: a launch is not "⚠ not in checkout".
-                rows[mount + rel] = {"path": mount + rel, "source": "excluded", "entry": False, "idents": set()}
+                rows[mount + rel] = {"path": mount + rel, "source": "excluded", "entry": False,
+                                     "helper": False, "tables": set()}
                 continue
             text = (repo / rel).read_text(errors="replace")
             rows[mount + rel] = {"path": mount + rel, "source": source,
