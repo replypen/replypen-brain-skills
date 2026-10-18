@@ -1406,4 +1406,7 @@ def build_clusters(runs, actions, events, http, ledger, focus_iso: str, tz) -> l
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+    import kit_fresh  # re-execs from origin/main when the installed kit is behind
+    kit_fresh.ensure(__file__)
     raise SystemExit(main())

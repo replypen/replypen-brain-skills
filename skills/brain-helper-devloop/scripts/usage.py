@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -481,6 +482,8 @@ def render(report: dict) -> str:
 # --- cli ------------------------------------------------------------------------------------
 def kit_version() -> str:
     """`kit v0.13.4 (latest v0.13.5 · main +2 unreleased)`: a report made with a stale kit undercounts."""
+    if os.environ.get("RP_KIT_FRESH", "0") != "0":  # kit_fresh re-exec'd us from a main snapshot
+        return f"kit origin/main @ {os.environ['RP_KIT_FRESH'][:8]}"
     kit = Path(__file__).resolve().parents[3]
 
     def git(*args):
@@ -614,4 +617,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+    import kit_fresh  # re-execs from origin/main when the installed kit is behind
+    kit_fresh.ensure(__file__)
     sys.exit(main())

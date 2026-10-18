@@ -221,6 +221,12 @@ bump did not land, replypen CI (`scripts/check_workspace_pin.py`) goes red on un
 replypen's `promote.py` preflight **FAILs** while lib commits sit past the pin (even unpushed local
 ones) — but don't rely on the gates; release as you go.
 
+Local scripts don't wait for a release: analysis/report entry points (`usage.py`, the fleet-report,
+harvest, helpcenter-suggestions, grounding-intake and source-routing collectors) call
+`scripts/kit_fresh.py` `ensure(__file__)` in their `__main__` block, which re-execs them from an
+`origin/main` snapshot when the installed clone is behind. A new entry point that reads production data
+adds the same 3 lines.
+
 One version line moves together:
 
 - plugin manifests;

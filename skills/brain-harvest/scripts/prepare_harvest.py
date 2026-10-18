@@ -2958,4 +2958,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+    import kit_fresh  # re-execs from origin/main when the installed kit is behind
+    kit_fresh.ensure(__file__)
     raise SystemExit(main())
