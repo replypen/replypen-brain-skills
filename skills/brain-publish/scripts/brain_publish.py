@@ -307,8 +307,11 @@ def render(receipt: dict, code: int) -> str:
                           for p in receipt["published"] if p["changed"])
         lines = [head] + ([f"  moved: {moved}"] if moved else [])
     elif status == "dry_run":
-        lines = [f"DRY-RUN {receipt['project']}: would publish {' then '.join(receipt['moves'])} @ {sha} "
-                 f"(origin/main); local {receipt['sync']['local_vs_origin_main']}"]
+        live = [c for c in receipt["moves"] if (receipt.get("before") or {}).get(c) == sha]
+        todo = [c for c in receipt["moves"] if c not in live]
+        what = (f"would publish {' then '.join(todo)} @ {sha}" if todo
+                else f"nothing to publish, {', '.join(live)} already live @ {sha}")
+        lines = [f"DRY-RUN {receipt['project']}: {what} (origin/main); local {receipt['sync']['local_vs_origin_main']}"]
     else:
         lines = [f"{status.upper()} at {receipt.get('stage')}: {receipt.get('error')}"]
         if receipt.get("uncertain"):

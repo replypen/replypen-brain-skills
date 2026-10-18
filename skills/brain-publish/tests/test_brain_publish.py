@@ -133,6 +133,12 @@ class BrainPublishTest(unittest.TestCase):
         self.assertEqual((code, receipt["status"], receipt["moves"]), (0, "dry_run", ["stable"]))
         self.assertEqual(self.published(), [])
 
+    def test_dry_run_says_already_live(self) -> None:
+        self.rc_state(channels={"stable": self.head})
+        code, receipt = self.publish("--dry-run")
+        self.assertEqual(code, 0)
+        self.assertIn("nothing to publish, stable already live", bp.render(receipt, code))
+
     def test_used_edge_behind_is_aligned_first(self) -> None:
         self.rc_state(channels={"stable": self.old, "edge": self.old}, consumers={"stable": 2, "edge": 1})
         code, receipt = self.publish()
