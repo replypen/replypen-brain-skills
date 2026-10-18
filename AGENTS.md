@@ -283,6 +283,5 @@ Pre-rebrand names that still work on purpose (installed brains, laptops and host
 - `rootcause-runtime @ git+…rootcause-org/rootcause-brain-skills@vX` pin: coherence check still accepts it on an unmigrated host.
 - `.rcignore`, `rc:branch`, `# rc: no-import-smoke`, `data-rc-guide`: markers committed in brains / customer apps.
 - `lib.rc_client` and its names: public `lib` API imported by brain scripts.
-- `kampadmin-rootcause-common`: customer mirror name (mirror names are immutable).
 - `rootcause-sites.workers.dev`, Cloudflare "Rootcause Sites", GitHub App `rootcause-app`: external infra names.
 - `RootCause` model in brain-fleet-report: the diagnostic "root cause", not the brand.

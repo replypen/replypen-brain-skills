@@ -59,7 +59,7 @@ never overwrite it.
 
 ## Landing from a shared checkout
 
-Parallel agents share one checkout (a mirror like `kampadmin-rootcause-common`, this kit): never
+Parallel agents share one checkout (a mirror like `kampadmin-replypen-common`, this kit): never
 commit, amend or stash there. `scripts/git_land.py` lands only your change via a throwaway detached
 worktree at `origin/main` (hooks run, push retried on a race, never forced, worktree always removed):
 

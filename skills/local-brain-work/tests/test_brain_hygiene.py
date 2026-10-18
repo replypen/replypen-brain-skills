@@ -326,7 +326,7 @@ GRAMMAR_EXAMPLE = """---
 surfaces: [chat, dashboard_chat]
 ---
 ## 📝 Inschrijvingen
-skills: records, /mirrors/kampadmin-rootcause-common/skills/columns
+skills: records, /mirrors/kampadmin-replypen-common/skills/columns
 Elke lijst: één rij per inschrijving, status als eerste kolom.
 - **Wachtlijst bekijken** — Voor welke activiteiten staat er een wachtlijst?
   - skills: subscription-stats
@@ -336,7 +336,7 @@ Elke lijst: één rij per inschrijving, status als eerste kolom.
 """
 CAT_NOTE = "Elke lijst: één rij per inschrijving, status als eerste kolom."
 CAT_SKILLS = ["/brain/skills/records/SKILL.md",
-              "/mirrors/kampadmin-rootcause-common/skills/columns/SKILL.md"]
+              "/mirrors/kampadmin-replypen-common/skills/columns/SKILL.md"]
 
 
 def test_chat_inspiration_grammar_example_notes_and_skills() -> None:
