@@ -112,3 +112,15 @@ def test_input_rerenders_offline(tmp_path):
     (tmp_path / "in.json").write_text(json.dumps(report))
     assert usage.main(["--input", str(tmp_path / "in.json"), "--out", str(tmp_path / "out")]) == 0
     assert (tmp_path / "out" / "usage.md").read_text().startswith("# Helper usage — acme")
+
+
+def test_scrubbed_events_fall_back_to_kept_command_and_count_blind():
+    events = "\n".join(json.dumps(e) for e in [
+        {"tool": "bash", "seq": 1, "command": "", "kept": {"v": 1, "command": "python /brain/skills/x/scripts/a.py --email ⟨str⟩"}},
+        {"tool": "bash", "seq": 2, "command": "", "kept": None},
+        {"tool": "bash", "seq": 3, "command": "python /brain/skills/x/scripts/b.py"},
+    ])
+    scrub: dict = {}
+    cmds = [b["cmd"] for b in usage.reduce_events(events, scrub)]
+    assert cmds == ["python /brain/skills/x/scripts/a.py --email ⟨str⟩", "python /brain/skills/x/scripts/b.py"]
+    assert scrub == {"kept": 1, "blind": 1}

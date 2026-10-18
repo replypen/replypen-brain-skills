@@ -196,6 +196,8 @@ links. Counts are launch sites from command text (`execution.py`, shared with `r
 Playbook:
 
 1. **Coverage first.** `fetch failed` > 0, `missing checkouts`, or a short window → numbers are a floor.
+   Runs older than ~14 days are scrubbed: `scrubbed runs` keep only a privacy-reduced command (read via
+   `rp run debug`; `⟨vocab⟩` can hide a helper path), `blind runs` keep none. Many of either → a floor too.
    `⚠ not in checkout` = the agent guessed a wrong path or the helper moved: a routing/docstring fix.
 2. **Read 2 traces per top row and per flagged row** (exit≠0, tracebacks, many reads/help, top SQL
    group) with [`rp run debug`](../rp-debug/SKILL.md). A number without a read trace is not a finding.

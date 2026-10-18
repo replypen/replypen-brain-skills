@@ -29,6 +29,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 from collections import defaultdict
@@ -38,7 +39,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from execution import is_prestep, normalise_sql, sites, sql_strings, sql_tables
 
-SCHEMA = 2
+SCHEMA = 3
 WORKERS = 8
 PENDING = {"queued", "running", "pending", "submitted", "starting", ""}
 MOUNTS = ("/brain/", "/tenant/", "/mirrors/", "/skills/")
@@ -94,20 +95,41 @@ def traceback_tail(text: str) -> list[str]:
     return [line for line in text.splitlines() if line.strip()][-5:]
 
 
-def reduce_events(lines: str) -> list[dict]:
+def bash_command(ev: dict) -> tuple[str, str]:
+    """(command, provenance). After the host's 14-day scrub `command` is empty; `rp run debug` still
+    carries the privacy-reduced `kept.command` (vocab words become ⟨vocab⟩, so some paths no longer match)."""
+    if ev.get("command"):
+        return ev["command"], "raw"
+    kept = ev.get("kept")
+    cmd = kept.get("command") if isinstance(kept, dict) else None
+    return (cmd, "kept") if cmd else ("", "blind")
+
+
+def reduce_events(lines: str, scrub: dict | None = None) -> list[dict]:
     out = []
     for line in lines.splitlines():
         try:
             ev = json.loads(line)
         except ValueError:
             continue
-        cmd = ev.get("command") or ""
-        if ev.get("tool") != "bash" or not KEEP_CMD.search(cmd):
+        if ev.get("tool") != "bash":
+            continue
+        cmd, how = bash_command(ev)
+        if scrub is not None and how != "raw":
+            scrub[how] = scrub.get(how, 0) + 1
+        if not KEEP_CMD.search(cmd):
             continue
         out.append({"seq": -1 if is_prestep(ev) else ev.get("seq"), "exit": ev.get("exit_code"),
                     "ms": ev.get("duration_ms"), "cmd": cmd,
                     "tb": traceback_tail(f"{ev.get('stdout') or ''}\n{ev.get('stderr') or ''}")})
     return out
+
+
+def debug_events(run_id: str, root: Path) -> str:
+    with tempfile.TemporaryDirectory() as tmp:
+        rp(["run", "debug", run_id, "--out-dir", tmp], root)
+        found = sorted(Path(tmp).glob("*.jsonl"))
+        return found[0].read_text() if found else ""
 
 
 def reduce_trace(text: str) -> dict:
@@ -125,9 +147,13 @@ def load_record(run: dict, cache: Path, root: Path, refresh: bool, need_trace: b
         if rec.get("schema") != SCHEMA or not rec.get("terminal"):
             rec = None
     if rec is None:
+        events = rp(["run", "events", run["run_id"], "--stream"], root)
+        if any(e.get("tool") == "bash" and not e.get("command") for e in map(json.loads, events.splitlines())):
+            events = debug_events(run["run_id"], root)  # scrubbed run: only debug keeps `kept.command`
+        scrub: dict = {}
         rec = {"schema": SCHEMA, "run_id": run["run_id"],
                "terminal": str(run.get("status") or "").lower() not in PENDING,
-               "bash": reduce_events(rp(["run", "events", run["run_id"], "--stream"], root)), "trace": None}
+               "bash": reduce_events(events, scrub), "scrub": scrub, "trace": None}
     if need_trace and rec["trace"] is None and any(b["seq"] is None or b["seq"] >= 0 for b in rec["bash"]):
         rec["trace"] = reduce_trace(rp(["run", "trace", run["run_id"], "--brief", "-o", "json", "--raw-output"], root))
     path.write_text(json.dumps(rec, ensure_ascii=False))
@@ -335,6 +361,9 @@ def render(report: dict) -> str:
     out += [f"| {k.replace('_', ' ')} | {v} |" for k, v in c.items() if k not in ("since", "until")]
     out += ["", "> [!NOTE]", "> Launch sites from command text: exit/duration belong to the enclosing bash; a loop "
             "is one site. Rows rank by customer runs; test = simulation / prompt / staff domain."]
+    if c.get("scrubbed_runs") or c.get("blind_runs"):
+        out += ["> Scrubbed runs (older than ~14 d) only keep a privacy-reduced command (⟨vocab⟩ can hide a helper"
+                " path); blind runs keep none. Counts are a floor: cache a window while it is fresh, re-run monthly."]
     if report["mirrors"]:
         out += ["> A mirror helper is shared by every project that mounts the mirror: retire only with zero "
                 "observations in each consumer's report."]
@@ -436,6 +465,8 @@ def build(args, root: Path) -> dict:
         "runs_with_bash": len(todo), "events_fetched": len(records), "fetch_failed": len(failed),
         "traces": sum(1 for r in records.values() if r.get("trace")),
         "non_terminal": sum(1 for r in records.values() if not r.get("terminal")),
+        "scrubbed_runs": sum(1 for r in records.values() if r.get("scrub", {}).get("kept")),
+        "blind_runs": sum(1 for r in records.values() if r.get("scrub", {}).get("blind")),
         "inventory": f"{len(rows)} .py ({sum(r['entry'] for r in rows.values())} entry points)",
     }
     if missing:
