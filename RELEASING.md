@@ -28,13 +28,13 @@
 > `promote.py` tell a byte-identical pin from a real drift. `./refresh-brains.sh --classify` prints the
 > newest release's `runtime_changed=0|1` without side effects.
 >
-> **Prod is consumed automatically.** Step 3 runs the sibling checkout's own
-> `replypen/scripts/bump-workspace-pin.py <tag>` and commits the pin there (only
-> `runtime/Dockerfile`, `runtime/requirements.lock`, `dashboard-overlay`), pushing when our commit is
-> the only one ahead of `origin/main`. It bumps on *every* release, not only runtime-changing ones —
-> pin == newest tag unconditionally is what kills the stranded-release class. It refuses to run if
-> those paths already carry someone else's uncommitted edits (that shared checkout has parallel
-> agents), and **any failure exits the release non-zero** with a banner saying prod is still on the old
+> **Prod is consumed automatically.** Step 3 bumps the pin in a throwaway worktree at a freshly
+> fetched replypen `origin/main` (`/tmp/rc-pin-*`; the shared checkout is never touched, it is often
+> stale or carries parallel agents' work), runs that tree's `scripts/bump-workspace-pin.py <tag>`,
+> commits only `runtime/Dockerfile`, `runtime/requirements.lock`, `dashboard-overlay` and pushes that one
+> commit to `main`. It bumps on *every* release, not only runtime-changing ones —
+> pin == newest tag unconditionally is what kills the stranded-release class. **Any failure exits the
+> release non-zero** with a banner saying prod is still on the old
 > pin. `--no-prod-bump` opts out; `--no-push` skips it (the tag isn't resolvable yet). Actually
 > *promoting* ReplyPen stays the operator's call.
 >
