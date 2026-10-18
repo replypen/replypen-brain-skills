@@ -173,8 +173,10 @@ def tracked_py(repo: Path) -> list[str]:
         files = out.split()
     except (OSError, subprocess.CalledProcessError):
         files = [str(p.relative_to(repo)) for p in repo.rglob("*.py")]
-    return [f for f in files if not SKIP_PARTS & set(Path(f).parts[:-1])
-            and not Path(f).name.startswith("test_") and Path(f).name != "conftest.py"]
+    return [f for f in files if not Path(f).name.startswith("test_") and Path(f).name != "conftest.py"]
+
+
+SQL_REF = re.compile(r"\b(?:from|join)\s+(?:\"?\w+\"?\.)?\"?([A-Za-z_]\w*)", re.I)
 
 
 def inventory(root: Path, mirrors: dict[str, Path]) -> tuple[dict[str, dict], list[str]]:
@@ -185,10 +187,19 @@ def inventory(root: Path, mirrors: dict[str, Path]) -> tuple[dict[str, dict], li
             missing.append(f"{source}: {repo}")
             continue
         for rel in tracked_py(repo):
+            if SKIP_PARTS & set(Path(rel).parts[:-1]):
+                # Not a grounding helper (actions/, .agents/, …), but it exists: a launch is not "⚠ not in checkout".
+                rows[mount + rel] = {"path": mount + rel, "source": "excluded", "entry": False,
+                                     "helper": False, "tables": set()}
+                continue
             text = (repo / rel).read_text(errors="replace")
             rows[mount + rel] = {"path": mount + rel, "source": source,
                                  "entry": "__main__" in text or "argparse" in text,
-                                 "idents": set(re.findall(r"[a-z_][a-z0-9_]*", text.lower()))}
+                                 # a mirror's one-off scripts are not helpers: skills/ dir or catalog header
+                                 "helper": source == "brain" or "skills" in Path(rel).parts
+                                           or "# name:" in "\n".join(text.splitlines()[:40]),
+                                 # tables the code queries (FROM/JOIN), not prose mentions
+                                 "tables": {m.lower() for m in SQL_REF.findall(text)}}
     return rows, missing
 
 
@@ -248,7 +259,8 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
         if path not in helpers:
             inv = rows.get(path) or {}
             helpers[path] = {"path": path, "source": inv.get("source", "not in inventory"),
-                             "entry": inv.get("entry", True), "runs": defaultdict(set), "tenants": set(),
+                             "entry": inv.get("entry", True), "helper": inv.get("helper", True),
+                             "runs": defaultdict(set), "tenants": set(),
                              "launches": 0, "loop_sites": 0, "imports": 0, "help": 0, "reads": 0,
                              "prestep_reads": 0, "exit_nonzero": 0, "exit_2": 0, "tracebacks": [],
                              "ms": [], "last_seen": None, "bash": set()}
@@ -318,14 +330,16 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
                                           "question": trace.get("question", ""), "customer": who == "customer"})
 
     for path, inv in rows.items():
-        helper(path)
+        if inv["source"] != "excluded":
+            helper(path)
     table = []
     for h in helpers.values():
-        if h["source"] == "not in inventory" and not (h["launches"] or h["imports"] or h["help"]):
+        if h["source"] in ("not in inventory", "excluded") and not (h["launches"] or h["imports"] or h["help"]):
             continue  # reading some non-helper source file is not helper usage
         runs_by = {k: len(v) for k, v in h["runs"].items()}
         table.append({
             "path": h["path"], "source": h["source"], "kind": "entry" if h["entry"] else "library",
+            "helper": h["helper"],
             "customer_runs": runs_by.get("customer", 0), "test_runs": runs_by.get("test", 0),
             "unknown_runs": runs_by.get("unknown", 0), "tenants": len(h["tenants"]),
             "launches": h["launches"], "loop_sites": h["loop_sites"], "imports": h["imports"],
@@ -340,18 +354,20 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
 
     # A helper that mentions every observed table (a shared db lib) "covers" nothing: rank by specificity.
     seen_tables = {t.rsplit(".", 1)[-1] for g in groups.values() for t in g["tables"]}
-    entries = [(p, inv["idents"], len(inv["idents"] & seen_tables)) for p, inv in rows.items() if inv["entry"]]
+    launched = {r["path"] for r in table if r["launches"] or r["imports"]}
+    entries = [(p, inv["tables"], len(inv["tables"] & seen_tables)) for p, inv in rows.items()
+               if inv["entry"] and (inv.get("helper", True) or p in launched)]
     discovery = []
     for g in groups.values():
         runs_by = {k: len(v) for k, v in g["runs"].items()}
         bare = [t.rsplit(".", 1)[-1] for t in g["tables"]]
-        covered = sorted((width, p) for p, ids, width in entries if all(t in ids for t in bare))
+        covered = sorted((width, p not in launched, p) for p, ids, width in entries if all(t in ids for t in bare))
         examples = sorted(g["examples"], key=lambda e: not e["customer"])[:2]
         discovery.append({
             "tables": g["tables"], "customer_runs": runs_by.get("customer", 0), "test_runs": runs_by.get("test", 0),
             "unknown_runs": runs_by.get("unknown", 0), "tenants": len(g["tenants"]), "queries": g["queries"],
             "shapes": len(g["shapes"]), "failed": g["failed"], "slow": g["slow"], "examples": examples,
-            "sql": g["sql"][max(g["shapes"], key=g["shapes"].get)], "maybe_covered_by": [p for _, p in covered[:3]],
+            "sql": g["sql"][max(g["shapes"], key=g["shapes"].get)], "maybe_covered_by": [c[-1] for c in covered[:3]],
             "score": runs_by.get("customer", 0) * max(1, len(g["tenants"])),
         })
     discovery.sort(key=lambda g: (-g["score"], -g["customer_runs"], -g["queries"]))
@@ -394,7 +410,9 @@ def render(report: dict) -> str:
             launches = f"{launches} ({r['loop_sites']} loop)"
         median = f"{secs(r['median_ms'])} ({r['duration_n']})" if r["median_ms"] is not None else ""
         src = "brain" if r["source"] == "brain" else "mirror"
-        if r["source"] == "not in inventory":
+        if r["source"] == "excluded":
+            src = "non-helper dir"
+        elif r["source"] == "not in inventory":
             src = next((v for k, v in MOUNT_LABEL.items() if r["path"].startswith(k)), "⚠ not in checkout")
         reads = f"{r['source_reads'] or ''} (+{r['prestep_reads']} pre)".lstrip() if r["prestep_reads"] else r["source_reads"]
         out.append("| " + " | ".join(cell(v) for v in (
@@ -402,12 +420,16 @@ def render(report: dict) -> str:
             r["exit_nonzero"], r["exit_2"], r["traceback_count"], median, secs(r["p90_ms"]),
             r["help_calls"], reads, (r["last_seen"] or "")[:10])) + " |")
     idle = [r for r in report["helpers"] if r not in seen]
-    if idle:
+    others = [r for r in idle if not r.get("helper", True)]
+    idle = [r for r in idle if r.get("helper", True)]
+    if idle or others:
         out += ["", f"<details><summary>Not observed in window: {len(idle)} "
                 f"({sum(r['kind'] == 'entry' for r in idle)} entry points)</summary>", ""]
         for r in idle:
             pre = f" · {r['prestep_reads']} pre-step reads" if r["prestep_reads"] else ""
             out.append(f"- `{r['path']}`{' (library)' if r['kind'] == 'library' else ''}{pre}")
+        if others:
+            out.append(f"- + {len(others)} other mirror .py not shown: outside `skills/`, no `# name:` header")
         out += ["", "</details>"]
     tbs = [(r["path"].rsplit("/", 1)[-1], t) for r in report["helpers"] for t in r["tracebacks"]]
     if tbs:
@@ -482,7 +504,8 @@ def build(args, root: Path) -> dict:
         "non_terminal": sum(1 for r in records.values() if not r.get("terminal")),
         "scrubbed_runs": sum(1 for r in records.values() if r.get("scrub", {}).get("kept")),
         "blind_runs": sum(1 for r in records.values() if r.get("scrub", {}).get("blind")),
-        "inventory": f"{len(rows)} .py ({sum(r['entry'] for r in rows.values())} entry points)",
+        "inventory": f"{sum(r['source'] != 'excluded' for r in rows.values())} .py "
+                     f"({sum(r['entry'] for r in rows.values())} entry points)",
     }
     if missing:
         coverage["missing_checkouts"] = "; ".join(missing)

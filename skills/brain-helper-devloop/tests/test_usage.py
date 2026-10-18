@@ -79,9 +79,9 @@ def rec(rid, cmds, email="admin@customer.be", tenant="t1"):
 
 
 def test_aggregate_cohorts_inventory_and_discovery():
-    rows = {H: {"path": H, "source": "acme-common", "entry": True, "idents": {"people", "subscriptions"}},
+    rows = {H: {"path": H, "source": "acme-common", "entry": True, "tables": {"people", "subscriptions"}},
             "/brain/skills/x/scripts/idle.py": {"path": "/brain/skills/x/scripts/idle.py", "source": "brain",
-                                                "entry": True, "idents": set()}}
+                                                "entry": True, "tables": set()}}
     sql = "python - <<'PY'\nfrom lib import db\ndb.query('select * from people where id=%s', [1])\nPY"
     runs = [run("r1"), run("r2"), run("r3", kind="prompt"), run("r4")]
     records = {
@@ -142,3 +142,22 @@ def test_vocab_reduced_path_rejoins_its_unique_inventory_helper():
     assert resolve("/brain/skills/databases/scripts/⟨vocab⟩_status.py", "path").endswith("backup_status.py")
     assert resolve("/brain/skills/platform-⟨vocab⟩/scripts/platform_⟨vocab⟩_read.py", "path").endswith("api_read.py")
     assert resolve("/brain/skills/databases/scripts/⟨vocab⟩.py", "path") == "/brain/skills/databases/scripts/⟨vocab⟩.py"
+
+
+def test_coverage_needs_a_queried_table_and_skips_mirror_one_offs(tmp_path):
+    (tmp_path / "skills/x/scripts").mkdir(parents=True)
+    (tmp_path / "skills/x/scripts/lookup.py").write_text(
+        'import argparse\nSQL = "select id from people p join subscriptions s on s.person_id = p.id"\n')
+    (tmp_path / "skills/x/scripts/prose.py").write_text('"""Mentions people in prose only."""\nimport argparse\n')
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts/one_off.py").write_text('import argparse\nq = "select * from people"\n')
+    (tmp_path / "scripts/cataloged.py").write_text('# name: cataloged\nimport argparse\nq = "select * from people"\n')
+    rows, _ = usage.inventory(tmp_path / "brain-missing", {"acme": tmp_path})
+    m = "/mirrors/acme/"
+    assert rows[m + "skills/x/scripts/lookup.py"]["tables"] >= {"people", "subscriptions"}
+    assert "people" not in rows[m + "skills/x/scripts/prose.py"]["tables"]
+    assert not rows[m + "scripts/one_off.py"]["helper"] and rows[m + "scripts/cataloged.py"]["helper"]
+    sql = "python - <<'PY'\nfrom lib import db\ndb.query('select * from people where id=%s', [1])\nPY"
+    _, discovery = usage.aggregate([run("r1")], {"r1": rec("r1", [(1, 0, sql)])}, rows, [], None, "https://x")
+    covered = [p.rsplit("/", 1)[-1] for p in discovery[0]["maybe_covered_by"]]
+    assert covered == ["cataloged.py", "lookup.py"]  # most specific first; one_off.py and prose.py never
