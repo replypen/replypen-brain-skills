@@ -1,6 +1,6 @@
 ---
 name: brain-helper-devloop
-description: "The feedback loop for adding or changing a brain/mirror helper script: design from real tickets, build read-only and verdict-first, prove on real data (mirror-try, scope-check), push a dev ref, ask synthetic questions with rp ask, read the trace to see whether the agent picked the helper up unprompted, fix developer experience instead of adding prompt rules, publish, re-ask live. Use when a support topic needs a deterministic helper or case runbook and you want evidence that production runs actually use it."
+description: "The feedback loop for adding or changing a brain/mirror helper script: design from real tickets, build read-only and verdict-first, prove on real data (mirror-try, scope-check), push a dev ref, ask synthetic questions with rp ask, read the trace to see whether the agent picked the helper up unprompted, fix developer experience instead of adding prompt rules, publish, re-ask live. Also measures live usage: how often production runs actually execute each brain/mirror helper and which ad-hoc SQL they keep hand-rolling (keep/improve/merge/retire/new). Use when a support topic needs a deterministic helper or case runbook, when you want evidence that production runs actually use it, or to audit a brain's helper set."
 ---
 
 # brain-helper-devloop — build a helper the run agent actually reaches for
@@ -173,3 +173,42 @@ the shared checkout. Shared files commit whole: a sibling may already have lande
 (`git grep origin/main` first), and a routing-line conflict in `AGENTS.md` is normal — keep both lines.
 
 Per-topic lessons and open gaps live in the brain's `_internal/devloop-lessons.md` (backlog).
+
+## Live usage — which helpers do real runs execute?
+
+The steps above prove pickup on questions you wrote; `usage.py` measures it on every production run in
+a window, per brain checkout (run it once per consuming project; you combine):
+
+```bash
+U="$PWD/.agents/skills/brain-helper-devloop/scripts/usage.py"
+uv run --no-project python "$U" --since <YYYY-MM-DD> [--until …] --staff-domain <your-domain> \
+  --out .replypen/helper-usage/report          # [--tenant t] [--kind chat …] [--mirror NAME=PATH]
+```
+
+Mirrors come from `.replypen.toml` `[mirrors]`; per-run records cache under
+`.replypen/helper-usage/<project>/`, so a rerun only fetches new runs (~1 min per 1000 runs cold).
+`usage.md`: coverage, one row per helper (customer runs · tenants · test runs · launches · exit≠0 /
+exit 2 · tracebacks · enclosing-bash duration · `--help` calls · source reads, `+N pre` = grounding
+pre-step), the unobserved inventory folded, then repeated ad-hoc SQL grouped by table set with run
+links. Counts are launch sites from command text (`execution.py`, shared with `report`): a loop or a
+`subprocess.run` inside a heredoc is one site; reads and `--help` never count as use.
+
+Playbook:
+
+1. **Coverage first.** `fetch failed` > 0, `missing checkouts`, or a short window → numbers are a floor.
+   `⚠ not in checkout` = the agent guessed a wrong path or the helper moved: a routing/docstring fix.
+2. **Read 2 traces per top row and per flagged row** (exit≠0, tracebacks, many reads/help, top SQL
+   group) with [`rp run debug`](../rp-debug/SKILL.md). A number without a read trace is not a finding.
+3. **Classify each helper:** keep · improve (argv, `--help`, verdict line, a crash, speed — many source
+   reads/help calls mean the interface is unclear) · merge (two helpers answering one symptom) ·
+   retire (propose only: zero observations in EVERY consuming project's report and no routing line;
+   a mirror helper is shared, `kampadmin-rootcause-common`-style) · new (an SQL group with ≥3 customer
+   runs across ≥2 tenants and no real "maybe covered by" helper).
+4. **Before a new helper,** check for a stale routing or chat-suggestion line that steers runs away
+   from an existing one; "maybe covered by" is a lexical hint, verify it.
+5. **Change through the loop above** (steps 1–7), never by deleting on numbers alone.
+6. **Re-measure** the same window length after the publish and compare rows.
+
+Cohorts: test = simulation, kind `prompt`, or a principal email in `--staff-domain`; a staff member
+asking from a customer address still counts as customer, so read the run link before trusting a 1.
+

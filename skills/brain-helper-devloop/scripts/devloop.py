@@ -38,7 +38,6 @@ import argparse
 import concurrent.futures
 import json
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -50,6 +49,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scope-check" / "scripts"))
 from roster import RosterError, brain_project, resolve_principal
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from execution import helper_calls, is_main_bash, is_prestep  # noqa: F401  (shared launch parser)
+
 
 def _cli() -> str:
     """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
@@ -58,8 +60,6 @@ def _cli() -> str:
 MAX_PARALLEL = 3
 PENDING = {"queued", "running", "pending", "submitted", "starting", ""}
 ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "$", "$(", "`", "\n"}
-LAUNCHERS = {"python", "python3", "uv", "run", "timeout", "env", "bash", "sh", "exec", "nice", "time"}
 HEAD = 120
 
 
@@ -252,77 +252,6 @@ def load_trace(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not lines:
         raise DevloopError(f"{path} is empty")
     return lines[0], lines[1:]
-
-
-def is_prestep(event: dict[str, Any]) -> bool:
-    return bool(event.get("grounding")) or str(event.get("disp") or "").startswith("P")
-
-
-def is_main_bash(event: dict[str, Any]) -> bool:
-    return (event.get("tool") == "bash" and not is_prestep(event)
-            and not str(event.get("disp") or "").startswith("C"))
-
-
-def tokens(line: str) -> list[str]:
-    line = re.sub(r"(^|\s)\d+(?=[<>])", r"\1", line)  # `2>&1`: drop the fd number, keep `>&1`
-    try:
-        lex = shlex.shlex(line, posix=True, punctuation_chars=True)
-        lex.whitespace_split = True
-        return list(lex)
-    except ValueError:  # unbalanced quotes (heredoc bodies, partial lines)
-        return re.sub(r"([;|&()])", r" \1 ", line).split()
-
-
-HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][\w.-]*)\2")
-ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
-
-
-def without_heredocs(command: str) -> list[str]:
-    """Command lines minus heredoc bodies: `cat <<'EOF'` prints its body, it never runs it."""
-    lines, pending = [], []
-    for line in command.splitlines():
-        if pending:
-            if line.lstrip("\t" if pending[0][0] else "") == pending[0][1]:
-                pending.pop(0)
-            continue
-        lines.append(line)
-        pending = [(bool(m.group(1)), m.group(3)) for m in HEREDOC.finditer(line)]
-    return lines
-
-
-def segments(command: str):
-    for line in without_heredocs(command):
-        seg: list[str] = []
-        for tok in tokens(line):
-            if tok in SEPARATORS or (tok and set(tok) <= set(";|&()$`")):
-                if seg:
-                    yield seg
-                seg = []
-            else:
-                seg.append(tok)
-        if seg:
-            yield seg
-
-
-def helper_calls(command: str, helper: str) -> list[list[str]]:
-    """argv after the helper path for every execution of `helper` in `command`."""
-    calls = []
-    for seg in segments(command):
-        for i, tok in enumerate(seg):
-            before = seg[:i]
-            if helper not in tok or (ASSIGNMENT.match(tok) and all(ASSIGNMENT.match(t) for t in before)):
-                continue  # `HELPER=/path/x.py` only assigns a variable
-            launched = all(t in LAUNCHERS or t.startswith("python3.") or "=" in t or t.isdigit()
-                           or (t.startswith("-") and t != "-c") for t in before)
-            if launched and (not before or before[-1] != "-c"):
-                argv = []
-                for t in seg[i + 1:]:
-                    if t[:1] in ("<", ">"):
-                        break
-                    argv.append(t)
-                calls.append(argv)
-                break
-    return calls
 
 
 def mentions(text: str, fragment: str | None) -> bool:

@@ -161,7 +161,8 @@ Only these are first-class:
   and the database description line.
 - `brain-helper-devloop` — the helper feedback loop: tickets → read-only verdict-first helper →
   `mirror-try`/`scope-check` → `rp ask` synthetic questions on a dev ref → `rp run debug` for
-  unprompted pickup → DX fixes, never steering → `brain-publish` → live re-ask.
+  unprompted pickup → DX fixes, never steering → `brain-publish` → live re-ask; plus `usage.py`:
+  live helper launch counts per brain and repeated ad-hoc SQL over a window of production runs.
 - `mirror-try` — compare staged mirror helpers and sibling imports on real scoped production data.
 - `prod-console` — direct guarded production primitives through `rp dev console capabilities`,
   `rp dev console database`, `rp dev console bash`, and `rp dev console action`.
