@@ -46,6 +46,9 @@ SKIP_PARTS = {".agents", ".claude", "tests", "__pycache__", "_internal", "action
 KEEP_CMD = re.compile(r"\.py\b|\bselect\b|\bpsql\b|\bimport\b", re.I)
 SLOW_MS = 30_000
 MOUNT_LABEL = {"/skills/": "shared /skills", "/tenant/": "tenant overlay"}
+# Every rp call gets this scope: a checkout's pinned tenant (.replypen/local.toml, legacy
+# .rootcause/local.toml) would otherwise silently narrow a project-wide window to one tenant.
+SCOPE = ["--scope", "project"]
 
 
 class UsageError(Exception):
@@ -57,7 +60,7 @@ def rp(args: list[str], root: Path, tries: int = 3) -> str:
     cli = "rp" if shutil.which("rp") else "rc"
     for attempt in range(tries):
         try:
-            done = subprocess.run([cli, *args], cwd=root, capture_output=True, text=True, timeout=300)
+            done = subprocess.run([cli, *args, *SCOPE], cwd=root, capture_output=True, text=True, timeout=300)
         except FileNotFoundError as exc:
             raise UsageError("`rp` is not on PATH (brain-dev-upgrade)") from exc
         except subprocess.TimeoutExpired:
@@ -73,7 +76,6 @@ def rp(args: list[str], root: Path, tries: int = 3) -> str:
 def list_runs(args, root: Path) -> tuple[list[dict], int]:
     base = ["run", "list", "--since", args.since, "--limit", "100", "-o", "json", "--raw-output"]
     base += ["--until", args.until] if args.until else []
-    base += ["--tenant", args.tenant] if args.tenant else []
     runs, cursor, pages = {}, None, 0
     while True:
         page = json.loads(rp(base + (["--before", cursor] if cursor else []), root))
@@ -394,6 +396,8 @@ def build(args, root: Path) -> dict:
     if not project:
         raise UsageError(f"{root} has no .replypen.toml project: run from a brain checkout")
     base_url = (meta.get("base_url") or "https://app.replypen.com").rstrip("/")
+    if args.tenant:
+        SCOPE[:] = ["--tenant", args.tenant]
     mirrors = {n: (root / p).resolve() for n, p in (meta.get("mirrors") or {}).items()}
     for pair in args.mirror or []:
         name, sep, path = pair.partition("=")
