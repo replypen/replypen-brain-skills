@@ -102,7 +102,7 @@ def test_summarise_trace():
     assert ev["brain_resolved"] == "channel:stable @ 0123456789ab"
     assert ev["mirrors"] == [{"name": "acme-common", "ref": "dev/fix", "sha": "abcdef012345", "override": True}]
     assert ev["sections_off_relevant"] == ["principal_scoped"] and "obscure_x" in ev["sections_off"]
-    assert [c["label"] for c in ev["commands"]] == ["db query"]  # prestep + reads excluded
+    assert [c["label"] for c in ev["commands"]] == ["db query"]  # grounding + reads excluded
     assert ev["commands"][0]["stdout"] == "{'count': 12}"
     assert ev["files_read"] == ["/mirrors/acme-common/docs/people.md"]
     assert ev["flags"] == ["[2] slow turn 1.3s"]

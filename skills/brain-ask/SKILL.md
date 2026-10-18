@@ -64,7 +64,7 @@ the new run with a digest of the prior turns' *command labels* ("ran: search_pat
 Draft+Note") — never the sender's words, the offered options, or the previous draft. Prompt-mode runs
 also never open the thread-coherence / sender-history prompt sections; those need a real ingested mailbox
 thread. Consequences seen in prod: a bare follow-up ("Doe maar 21 september om 15u05") arrives with *no*
-thread context, and the grounding pre-pass may fill the vacuum with a journal file from an unrelated
+thread context, and the grounding step may fill the vacuum with a journal file from an unrelated
 earlier run — same-evening test runs about the same patient are the classic trap — silently steering
 intent.
 
@@ -84,7 +84,7 @@ MAIL
 ```
 
 Use `--session` only for *investigation* continuity (which scripts already ran), never for thread
-history. If a run still picks up a stale journal note, report it as a grounding pre-pass artefact, not a
+history. If a run still picks up a stale journal note, report it as a grounding step artefact, not a
 brain bug.
 
 Same follow-up again after the next brain edit, or the real record no longer has the state to test

@@ -258,7 +258,7 @@ def decorate(events: list[dict]) -> list[dict]:
     p = n = 0
     in_grounding = True
     for e in events:
-        # The grounding pre-step records in a negative seq band, but the sign alone is not the signal:
+        # The grounding step records in a negative seq band, but the sign alone is not the signal:
         # runs recorded before the MaxRunEventSeq fix seeded the main loop's seq from the grounding
         # band's max, so their main-loop rows are negative too. The reliable boundary is the pass's
         # terminal row (submit_selection / grounding_aborted) — everything after it is the main loop.
@@ -286,10 +286,10 @@ def decorate(events: list[dict]) -> list[dict]:
                 for k, v in args.items()
             )
             e["label"] = "reply"
-        elif e["tool"] == "grounding_aborted":  # the pre-step died — args carry the reason
+        elif e["tool"] == "grounding_aborted":  # the grounding step died — args carry the reason
             e["command"] = args.get("aborted", "")
             e["label"] = "aborted"
-        else:  # submit_selection — the grounding pre-step's terminal row
+        else:  # submit_selection — the grounding step's terminal row
             sel = args.get("selected") or []
             e["command"] = "skip (judged trivial)" if args.get("skip") else f"selected {len(sel)} docs"
             e["label"] = "submit_selection"
@@ -344,8 +344,8 @@ def flags(bundle: dict) -> list[str]:
     if any(e["grounding"] for e in events) and _selected_docs(events) is None:
         aborted = next((e for e in events if e["tool"] == "grounding_aborted"), None)
         out.append(
-            f"grounding pre-step aborted: `{aborted['command']}` — its work was discarded" if aborted
-            else "grounding pre-step ran but never reached submit_selection — "
+            f"grounding step aborted: `{aborted['command']}` — its work was discarded" if aborted
+            else "grounding step ran but never reached submit_selection — "
                  "its work was discarded (main loop started unseeded)")
 
     for e in events:
@@ -509,7 +509,7 @@ def render_index(bundle: dict) -> str:
     L += _render_outcome(run)
 
     # Warm inputs (continued session): the two blocks we injected at run START — the digest fed to the
-    # main loop + the seed fed to the grounding pre-pass. Operator-only context, never the sender's words.
+    # main loop + the seed fed to the grounding step. Operator-only context, never the sender's words.
     # Both '' on a cold/first turn, so the section appears only when something seeded the run.
     digest, seed = (run.get("warm_start_digest") or ""), (run.get("grounding_seed") or "")
     if digest or seed:
@@ -517,7 +517,7 @@ def render_index(bundle: dict) -> str:
         if digest:
             L += ["**Prior-investigations digest** (fed to the main loop):", "", _fence(digest), ""]
         if seed:
-            L += ["**Grounding seed** (look-here / dead-ends, fed to the pre-pass):", "", _fence(seed), ""]
+            L += ["**Grounding seed** (look-here / dead-ends, fed to the grounding step):", "", _fence(seed), ""]
 
     # Prior turns the brain was replayed this run: the conversation-so-far (verbatim webhook Messages)
     # and our earlier internal notes (verbatim webhook Notes, never sent to the sender). Both absent on
@@ -551,12 +551,12 @@ def render_index(bundle: dict) -> str:
               "", _fence(_trim_system_prompt(sysp)), ""]
 
     if pre:
-        L += ["", f"## Grounding pre-step — P1–P{len(pre)}", ""]
+        L += ["", f"## Grounding step — P1–P{len(pre)}", ""]
         sel = _selected_docs(events)
         if sel and sel.get("summary"):
             L += [f"> {sel['summary']}", ""]  # the model's one-line rationale (why these files — or why none)
         if sel is None:
-            L.append("_no submit_selection recorded — the pre-step ended without selecting "
+            L.append("_no submit_selection recorded — the grounding step ended without selecting "
                      "(budget hit or aborted); the main loop started unseeded_")
         elif sel["docs"]:
             L.append("Selected docs (baked into the main prompt):")
@@ -566,7 +566,7 @@ def render_index(bundle: dict) -> str:
         else:
             L.append("_submitted, but every selected ref failed host-side validation — "
                      "the main loop started unseeded_")
-        # The pre-step is cheap retrieval — one concatenated command block reads faster than a
+        # The grounding step is cheap retrieval — one concatenated command block reads faster than a
         # table. Failures keep their P-number so the Flags section stays cross-referencable.
         cmds = [e["command"] + (f"  # {e['disp']}: exit {e['exit_code']}" if e["exit_code"] else "")
                 for e in pre if e["tool"] == "bash" and e["command"].strip()]

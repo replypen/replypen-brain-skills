@@ -144,7 +144,7 @@ def _stdout_fields(text: Any, limit: int) -> str:
 
 
 def summarise_steps(records: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One flat row per tool call. `seq < 0` is the grounding pre-pass the host runs for the model."""
+    """One flat row per tool call. `seq < 0` is the grounding step the host runs for the model."""
     steps: list[dict[str, Any]] = []
     for record in records:
         if not isinstance(record, dict) or not record.get("tool"):
@@ -296,9 +296,9 @@ def render_run(run: dict[str, Any], data: dict[str, Any], evidence: dict[str, An
     steps = data["steps"]
     grounding = [s for s in steps if s["grounding"]]
     agent = [s for s in steps if not s["grounding"]]
-    out += ["", f"## Trace ({len(agent)} agent steps, {len(grounding)} grounding pre-pass steps)"]
+    out += ["", f"## Trace ({len(agent)} agent steps, {len(grounding)} grounding-step calls)"]
     if grounding:
-        out.append("### Grounding pre-pass (host-run, `seq < 0`)")
+        out.append("### Grounding step (host-run, `seq < 0`)")
         out += step_lines(grounding)
     if agent:
         out.append("### Agent steps")

@@ -179,7 +179,7 @@ the doc's **full body** into a different host-assembled prompt:
 | Tag | Who holds it | What belongs there | Caps (per file / total) |
 |---|---|---|---|
 | `triage` | the **gatekeeper** — the cheap process-vs-skip classifier | decline / ownership / scope knowledge (convention: root `triage.md`) | 8KB / 24KB |
-| `grounding` | the **file-picker** — the cheap retrieval pre-step that chooses which files the main agent starts with | always-load-bearing **orientation** maps: system map, domain glossary | 8KB / 24KB |
+| `grounding` | the **file-picker** — the cheap grounding step that chooses which files the main agent starts with | always-load-bearing **orientation** maps: system map, domain glossary | 8KB / 24KB |
 | `agent` | the **answer-writer** — the main loop, pasted right after `AGENTS.md` | **reference** material the writer must hold in full: schema/column maps, identifier tables, field lists | 16KB / 48KB |
 | `principal` | the **answer-writer**, but only on **principal-scoped** runs (an end user's embedded chat) | the lane doc the model must never skip there (e.g. `skills/account-chat/SKILL.md`) and that would mislead other runs; `[agent, principal]` pastes once | shares `agent`'s caps |
 
@@ -188,7 +188,7 @@ the host never reads: a tag outside its mount's scan scope (below; `triage` outs
 run-hidden paths), a nested/misspelt/multi-line key or one not at byte 0, an unknown role. It lints a
 tenant overlay or mirror repo by its kind (auto-detected; `--as` overrides).
 
-Pick the role by asking **who must hold the doc**. The pre-step only forwards `path:span` refs
+Pick the role by asking **who must hold the doc**. The grounding step only forwards `path:span` refs
 *probabilistically*; if the main agent must **always** have the content — not just when a selector deems
 it relevant — tag `agent`. The tag is a guarantee; span selection is not. Every `agent` doc also reaches
 the selector, marked "already pasted in full to the main agent" (like `AGENTS.md`: re-reads are refused,
@@ -204,7 +204,7 @@ preview. Lint WARN `doc-size` flags tagged docs over their cap and `AGENTS.md`/o
 hygiene gate FAILs (`doc-spill`) when a change pushes an on-demand doc's whole file past 6000 bytes. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
 "Open X for Y" line. `AGENTS.md` inclusion depends on its mount:
 
-| Path | Grounding pre-step | Main agent |
+| Path | Grounding step | Main agent |
 |---|---|---|
 | `/brain/AGENTS.md` | automatic | automatic |
 | `/tenant/AGENTS.md` | selectable; tag `grounding` only to guarantee it | automatic, after the project brain |
@@ -318,11 +318,11 @@ subject/header match, or other deterministic blacklist/whitelist must be configu
 `rp project senders`. Do not duplicate these selectors in `AGENTS.md`, `triage.md`, a skill, or a
 brain test: settings run before brain-guided judgement and are the UI's source of truth.
 
-### Feeding the grounding pre-step (`include_in: [grounding]`)
+### Feeding the grounding step (`include_in: [grounding]`)
 
-A file tagged `include_in: [grounding]` has its **full body hard-loaded into the grounding pre-step's
+A file tagged `include_in: [grounding]` has its **full body hard-loaded into the grounding step's
 turn-1 on every thread** — pasted right after `/brain/AGENTS.md` so the cheap file-selector starts
-**oriented** — and, unlike `AGENTS.md`, it stays fully **selectable**, so the pre-step still forwards its
+**oriented** — and, unlike `AGENTS.md`, it stays fully **selectable**, so the grounding step still forwards its
 `path:span` refs to the main agent when relevant. Reserve it for a project's **always-load-bearing
 overviews** (a system map, the core glossary) and **never** for case runbooks or FAQ items — that
 per-topic content is retrieval's job, fetched on demand.
@@ -346,11 +346,11 @@ run but forwarded its path in just 1 of 3 relevant runs — while the **main** a
 SQL. In the 2026-08-03 fleet review, **76% of 25 sampled SQL failures were guessed identifiers already
 mapped in that file** (`first_name`→`firstname`, `tenants.code`→`client_codename`,
 `admin_users`→`admins`, …). Fix: retag `[grounding, agent]`. Lesson: **a schema map that only reaches
-the retrieval pre-step is invisible to the model that queries the database.**
+the grounding step is invisible to the model that queries the database.**
 
 ### Writing for grounding — author checklist
 
-Before the main loop, a cheap grounding pre-step routes by tree glosses and lexical `rg`, then bakes
+Before the main loop, a cheap grounding step routes by tree glosses and lexical `rg`, then bakes
 its selection into the model's opening turn. Every upfront line is a router hook bought with tokens;
 an irrelevant one is an active distractor. Checklist:
 

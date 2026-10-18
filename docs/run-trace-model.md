@@ -10,7 +10,7 @@ Use `rp run thread <run-id>` when you need that run's provider thread, session, 
 | Mode vs scenario | Email simulation/draft flow vs raw/direct answer. | Header `kind`, question, outcome. |
 | Workspace | One per-run container with `/brain`, `/tenant`, `/mirrors`, `/kb` read-only and `/tmp` writable. | Timeline bash commands and file paths. |
 | Warm start | Prior same-session trail injected into main loop and grounding. | "Warm start" and prior-context sections. |
-| Grounding pre-step | Cheap fail-open file-selection loop before main prompt. | "Grounding pre-step" and `P*` JSONL events. |
+| Grounding step | Cheap fail-open file-selection loop before main prompt. | "Grounding step" and `P*` JSONL events. |
 | System prompt | Per-mode preamble, capabilities, policies, action catalog, stable run clock. | "System prompt"; full text in JSONL header. |
 | Tenant projection | Deterministic compiled `/brain` view from shared brain plus tenant profile values. | "Projection inputs" and `brain_resolved`. |
 | Data scoping | Per-run DB credentials/views limit what grounding scripts can see. | Commands using `lib.db`; DB errors. |
@@ -28,7 +28,7 @@ Use `rp run thread <run-id>` when you need that run's provider thread, session, 
 3. Flags: failures, blocked egress, missing callback, aborted grounding; plus heaviness read off
    turn count and wall-clock duration.
 4. Projection and warm-start sections: what context existed before the main loop.
-5. Grounding pre-step: which files were selected or discarded before the main loop.
+5. Grounding step: which files were selected or discarded before the main loop.
 6. Timeline: non-search main-loop steps; drill JSONL by `disp` for full command/stdout/stderr.
 7. Files read and egress: what the model actually inspected and which external calls were blocked.
 

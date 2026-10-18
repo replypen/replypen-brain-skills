@@ -33,14 +33,14 @@ SQL_START = re.compile(r"^\s*(select|with)\b", re.I | re.M)
 PY_FILE = re.compile(r"""['"]([^'"\s]+\.py)['"]""")
 
 
-def is_prestep(event: dict) -> bool:
+def is_grounding(event: dict) -> bool:
     seq = event.get("seq")
     return (bool(event.get("grounding")) or str(event.get("disp") or "").startswith("P")
             or (isinstance(seq, int) and seq < 0))
 
 
 def is_main_bash(event: dict) -> bool:
-    return (event.get("tool") == "bash" and not is_prestep(event)
+    return (event.get("tool") == "bash" and not is_grounding(event)
             and not str(event.get("disp") or "").startswith("C"))
 
 

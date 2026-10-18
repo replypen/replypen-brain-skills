@@ -95,7 +95,7 @@ def test_aggregate_cohorts_inventory_and_discovery():
     top = helpers[0]
     assert top["path"] == H
     assert (top["customer_runs"], top["test_runs"], top["tenants"]) == (2, 2, 2)
-    assert (top["launches"], top["exit_2"], top["exit_nonzero"], top["prestep_reads"]) == (4, 1, 0, 1)
+    assert (top["launches"], top["exit_2"], top["exit_nonzero"], top["grounding_reads"]) == (4, 1, 0, 1)
     idle = next(h for h in helpers if h["path"].endswith("idle.py"))
     assert idle["launches"] == idle["customer_runs"] == 0
     assert discovery[0]["tables"] == ["people"] and discovery[0]["customer_runs"] == 2

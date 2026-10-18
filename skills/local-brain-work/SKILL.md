@@ -80,7 +80,7 @@ report which rung you reached.
    user/rootfs/env isolation. Catches image/dependency/read-only-mount breakage. Does **not** prove the
    production egress allowlist.
 3. **`rp ask --brain-ref dev/<branch>`** (`brain-ask`) — the real loop: LLM turns, warm start, grounding
-   pre-step, tenant scoping, egress, callback, journal. The only rung that is a production statement.
+   step, tenant scoping, egress, callback, journal. The only rung that is a production statement.
 
 On a project that scopes runs to an asserted end-user, rungs 1–2 all run with YOUR wide view — a
 helper can pass every one of them and still die for a parent or a regular admin. The per-identity

@@ -201,12 +201,12 @@ def md_section(md_text: str | None, heading: str) -> list[str]:
     return out
 
 
-def is_prestep(ev: dict[str, Any]) -> bool:
+def is_grounding(ev: dict[str, Any]) -> bool:
     return bool(ev.get("grounding")) or str(ev.get("disp") or "").startswith("P")
 
 
 def is_main_bash(ev: dict[str, Any]) -> bool:
-    return ev.get("tool") == "bash" and not is_prestep(ev) and not str(ev.get("disp") or "").startswith("C")
+    return ev.get("tool") == "bash" and not is_grounding(ev) and not str(ev.get("disp") or "").startswith("C")
 
 
 PATH_RE = re.compile(r"(/(?:brain|mirrors|kb|tenant|skills)/[^\s'\"|;&)<>]+)")

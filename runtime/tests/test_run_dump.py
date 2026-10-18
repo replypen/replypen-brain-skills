@@ -15,7 +15,7 @@ from lib.run_dump import decorate, emit_jsonl, files_read, flags, render_index  
 
 
 def _bundle(**run_over):
-    """A representative bundle: one grounding pre-step (submit_selection) + a main loop that reads a
+    """A representative bundle: one grounding step (submit_selection) + a main loop that reads a
     brain file, runs a db query, hits a failing step, and replies. ISO-string timestamps (the /trace
     API shape)."""
     run = {
@@ -109,7 +109,7 @@ class RenderIndex(unittest.TestCase):
     def test_sections_present(self):
         md = render_index(_bundle())
         for needle in ("# Run abcd1234 — momentum-tools · ok · prompt",
-                       "## Question", "## Outcome", "**Draft** (", "## Grounding pre-step",
+                       "## Question", "## Outcome", "**Draft** (", "## Grounding step",
                        "## Timeline", "## Flags", "## Files the run read", "## Egress (by host)",
                        "## Drill down"):
             self.assertIn(needle, md)

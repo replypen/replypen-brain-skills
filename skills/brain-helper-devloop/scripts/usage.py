@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from execution import is_prestep, normalise_sql, sites, sql_strings, sql_tables
+from execution import is_grounding, normalise_sql, sites, sql_strings, sql_tables
 
 SCHEMA = 3
 WORKERS = 8
@@ -131,7 +131,7 @@ def reduce_events(lines: str, scrub: dict | None = None) -> list[dict]:
             scrub[how] = scrub.get(how, 0) + 1
         if not KEEP_CMD.search(cmd):
             continue
-        out.append({"seq": -1 if is_prestep(ev) else ev.get("seq"), "exit": ev.get("exit_code"),
+        out.append({"seq": -1 if is_grounding(ev) else ev.get("seq"), "exit": ev.get("exit_code"),
                     "ms": ev.get("duration_ms"), "cmd": cmd,
                     "tb": traceback_tail(f"{ev.get('stdout') or ''}\n{ev.get('stderr') or ''}"),
                     "err": stderr_tail(ev.get("stderr") or "")})
@@ -270,7 +270,7 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
                              "entry": inv.get("entry", True), "helper": inv.get("helper", True),
                              "runs": defaultdict(set), "tenants": set(),
                              "launches": 0, "loop_sites": 0, "imports": 0, "help": 0, "help_chained": 0, "reads": 0,
-                             "prestep_reads": 0, "exit_nonzero": 0, "exit_2": 0, "tracebacks": [],
+                             "grounding_reads": 0, "exit_nonzero": 0, "exit_2": 0, "tracebacks": [],
                              "ms": [], "last_seen": None, "bash": set()}
         return helpers[path]
 
@@ -297,7 +297,7 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
             for site, path in found:
                 h = helper(path)
                 if pre:
-                    h["prestep_reads"] += 1
+                    h["grounding_reads"] += 1
                     continue
                 if site["kind"] == "read":
                     h["reads"] += 1
@@ -362,7 +362,7 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
             "traceback_count": len(h["tracebacks"]), "median_ms": pct(h["ms"], .5),
             "p90_ms": pct(h["ms"], .9), "duration_n": len(h["ms"]), "help_calls": h["help"],
             "help_chained": h["help_chained"],
-            "source_reads": h["reads"], "prestep_reads": h["prestep_reads"], "last_seen": h["last_seen"],
+            "source_reads": h["reads"], "grounding_reads": h["grounding_reads"], "last_seen": h["last_seen"],
             "run_ids": sorted(set().union(*h["runs"].values()))[:20] if h["runs"] else [],
         })
     table.sort(key=lambda r: (-r["customer_runs"], -(r["launches"] + r["imports"]), -r["test_runs"],
@@ -424,7 +424,7 @@ def render(report: dict) -> str:
     head = ("| helper | src | cust runs | tenants | test runs | launches | exit≠0 | exit 2 | tb | "
             "median s (n) | p90 s | help | reads | last seen |")
     seen = [r for r in report["helpers"] if r["launches"] or r["imports"] or r["help_calls"] or r.get("help_chained")
-            or r["source_reads"] or r["prestep_reads"]]
+            or r["source_reads"] or r["grounding_reads"]]
     out += ["", "## Helpers", "", head, "|" + "---|" * 14]
     for r in seen:
         name = r["path"].rsplit("/", 1)[-1]
@@ -437,7 +437,7 @@ def render(report: dict) -> str:
             src = "non-helper dir"
         elif r["source"] == "not in inventory":
             src = next((v for k, v in MOUNT_LABEL.items() if r["path"].startswith(k)), "⚠ not in checkout")
-        reads = f"{r['source_reads'] or ''} (+{r['prestep_reads']} pre)".lstrip() if r["prestep_reads"] else r["source_reads"]
+        reads = f"{r['source_reads'] or ''} (+{r['grounding_reads']} pre)".lstrip() if r["grounding_reads"] else r["source_reads"]
         chained = r.get("help_chained")
         helps = f"{r['help_calls'] or ''} (+{chained} chained)".lstrip() if chained else r["help_calls"]
         out.append("| " + " | ".join(cell(v) for v in (
@@ -451,7 +451,7 @@ def render(report: dict) -> str:
         out += ["", f"<details><summary>Not observed in window: {len(idle)} "
                 f"({sum(r['kind'] == 'entry' for r in idle)} entry points)</summary>", ""]
         for r in idle:
-            pre = f" · {r['prestep_reads']} pre-step reads" if r["prestep_reads"] else ""
+            pre = f" · {r['grounding_reads']} grounding reads" if r["grounding_reads"] else ""
             out.append(f"- `{r['path']}`{' (library)' if r['kind'] == 'library' else ''}{pre}")
         if others:
             out.append(f"- + {len(others)} other mirror .py not shown: outside `skills/`, no `# name:` header")

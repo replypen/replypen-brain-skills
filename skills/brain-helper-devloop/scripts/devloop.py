@@ -21,7 +21,7 @@ ask: `rp ask --no-wait` per question, the run id is persisted at once (`runs/<id
 a finished run is skipped unless `--force`. At most 3 in flight.
 
 report: `rp run debug` per run (skipped when the JSONL exists), then one row per question:
-  surfaced  case/helper path in the grounding pre-step (its commands or submit_selection picks)
+  surfaced  case/helper path in the grounding step (its commands or submit_selection picks)
   opened    case path appears in a main-loop bash command
   called    helper executed by a main-loop bash command (first argv, count, exit, Traceback)
   class     called | opened-not-called | surfaced-not-opened | not-surfaced | no-helper-given
@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scope-check" / "sc
 from roster import RosterError, brain_project, resolve_principal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from execution import helper_calls, is_main_bash, is_prestep  # noqa: F401  (shared launch parser)
+from execution import helper_calls, is_main_bash, is_grounding  # noqa: F401  (shared launch parser)
 
 
 def _cli() -> str:
@@ -263,7 +263,7 @@ def analyse(header: dict[str, Any], events: list[dict[str, Any]], helper: str | 
     targets = [f for f in (case, helper) if f]
     surfaced = False
     for ev in events:
-        if not is_prestep(ev):
+        if not is_grounding(ev):
             continue
         selected = ((ev.get("args") or {}).get("selected") or []) if ev.get("tool") == "submit_selection" else []
         hay = [ev.get("command") or ""] + [str(s.get("path") or "") for s in selected if isinstance(s, dict)]

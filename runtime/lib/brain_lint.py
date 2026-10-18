@@ -1,7 +1,7 @@
 """Offline brain description + action hygiene lint.
 
 Every routable brain file must carry a `description:` the bootstrap tree can render on its line, or
-it is **invisible to the grounding pre-step**: retrieval is `rg`-driven and lexical, so a file whose
+it is **invisible to the grounding step**: retrieval is `rg`-driven and lexical, so a file whose
 tree line has no customer-vocabulary gloss never gets grepped. This lint holds the brain content up to
 that contract:
 

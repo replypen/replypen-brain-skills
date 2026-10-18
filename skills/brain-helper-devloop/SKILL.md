@@ -62,7 +62,7 @@ Each step links the skill that owns the mechanics; this file owns the order and 
 - Register it — each artefact has one job: the brain `AGENTS.md` routing line = helper path + the
   admin's symptom words (this is what pickup matches); the case runbook (`skills/cases/<slug>.md`:
   symptom → call lines → what to say / escalate) = procedure; the module docstring (read by the
-  grounding pre-step) = symptom words + copy-paste CLI examples; the owning `SKILL.md` = one call
+  grounding step) = symptom words + copy-paste CLI examples; the owning `SKILL.md` = one call
   line + one "when". The script name alone never drives pickup.
 
 ## 3. Prove the bytes before proving the agent
@@ -122,13 +122,13 @@ uv run --no-project python "$DL" report --tag <topic> --helper <helper>.py \
   --case skills/cases/<slug>.md --expect-mirror <mirror>=<sha>
 ```
 
-Columns: surfaced (grounding pre-step saw the case/helper) · opened (main loop read the case file) ·
+Columns: surfaced (grounding step saw the case/helper) · opened (main loop read the case file) ·
 called (helper argv, call count, exit, Traceback) · brain/mirror SHA ✓/✗ against the expectation ·
 answer head · an empty `right` column. Those are command-text matches (a read attempt, not a proven
 read); the four judgements per run are still yours:
 
 1. **Opened** — did the main loop read your SKILL/case file? (files-read section; grounding
-   pre-step selections are hints, not proof).
+   step selections are hints, not proof).
 2. **Called** — which helper actually answered, with sane arguments? (timeline `bash` commands; a
    sibling topic's helper answering an overlapping symptom is an ownership question, not a miss).
 3. **Right** — does the answer match what the human replied? Note what it still got wrong.
@@ -191,7 +191,7 @@ Mirrors come from `.replypen.toml` `[mirrors]` (runs launching an undeclared `/m
 `usage.md`: coverage, one row per helper (customer runs · tenants · test runs · launches · exit≠0 /
 exit 2 (charged to the helper stderr names, else the command's last launch site) · tracebacks ·
 enclosing-bash duration · `--help`-only bash calls (`+N chained` = `x.py --help; x.py …`, no extra turn) · source reads, `+N pre` = grounding
-pre-step), the unobserved inventory folded, then repeated ad-hoc SQL grouped by table set with run
+step), the unobserved inventory folded, then repeated ad-hoc SQL grouped by table set with run
 links. Inventory = brain `.py` + mirror `.py` under a `skills/` dir or with a `# name:` header (a
 mirror's one-off scripts are counted, not listed); "maybe covered by" = helpers whose SQL
 (`FROM`/`JOIN`) names every table of the group, most specific first. Counts are launch sites from command text (`execution.py`, shared with `report`): a loop or a
