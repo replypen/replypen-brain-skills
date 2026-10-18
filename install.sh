@@ -18,7 +18,7 @@
 # project-agnostic discovery path and makes Brain Dev appear in unrelated repos.
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/main/install.sh) [BRAIN_DIR]
-#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.13.0 ./install.sh ~/code/replypen/replypen-brain-foo
+#   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.13.1 ./install.sh ~/code/replypen/replypen-brain-foo
 #   ./install.sh --latest-version
 set -euo pipefail
 
@@ -27,7 +27,7 @@ KIT="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}"
 # installer-owned, and the old path survives as a symlink to the new clone.
 LEGACY_KIT="$HOME/.rootcause-brain-skills"
 LEGACY_REPO="https://github.com/rootcause-org/rootcause-brain-skills"
-TAG="${RC_BRAIN_KIT_TAG:-v0.13.0}"
+TAG="${RC_BRAIN_KIT_TAG:-v0.13.1}"
 REPO="https://github.com/replypen/replypen-brain-skills"
 LATEST_TAG_ENDPOINT="https://api.github.com/repos/replypen/replypen-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
