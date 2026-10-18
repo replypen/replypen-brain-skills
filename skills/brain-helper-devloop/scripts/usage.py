@@ -173,8 +173,7 @@ def tracked_py(repo: Path) -> list[str]:
         files = out.split()
     except (OSError, subprocess.CalledProcessError):
         files = [str(p.relative_to(repo)) for p in repo.rglob("*.py")]
-    return [f for f in files if not SKIP_PARTS & set(Path(f).parts[:-1])
-            and not Path(f).name.startswith("test_") and Path(f).name != "conftest.py"]
+    return [f for f in files if not Path(f).name.startswith("test_") and Path(f).name != "conftest.py"]
 
 
 def inventory(root: Path, mirrors: dict[str, Path]) -> tuple[dict[str, dict], list[str]]:
@@ -185,6 +184,10 @@ def inventory(root: Path, mirrors: dict[str, Path]) -> tuple[dict[str, dict], li
             missing.append(f"{source}: {repo}")
             continue
         for rel in tracked_py(repo):
+            if SKIP_PARTS & set(Path(rel).parts[:-1]):
+                # Not a grounding helper (actions/, .agents/, …), but it exists: a launch is not "⚠ not in checkout".
+                rows[mount + rel] = {"path": mount + rel, "source": "excluded", "entry": False, "idents": set()}
+                continue
             text = (repo / rel).read_text(errors="replace")
             rows[mount + rel] = {"path": mount + rel, "source": source,
                                  "entry": "__main__" in text or "argparse" in text,
@@ -318,10 +321,11 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
                                           "question": trace.get("question", ""), "customer": who == "customer"})
 
     for path, inv in rows.items():
-        helper(path)
+        if inv["source"] != "excluded":
+            helper(path)
     table = []
     for h in helpers.values():
-        if h["source"] == "not in inventory" and not (h["launches"] or h["imports"] or h["help"]):
+        if h["source"] in ("not in inventory", "excluded") and not (h["launches"] or h["imports"] or h["help"]):
             continue  # reading some non-helper source file is not helper usage
         runs_by = {k: len(v) for k, v in h["runs"].items()}
         table.append({
@@ -394,7 +398,9 @@ def render(report: dict) -> str:
             launches = f"{launches} ({r['loop_sites']} loop)"
         median = f"{secs(r['median_ms'])} ({r['duration_n']})" if r["median_ms"] is not None else ""
         src = "brain" if r["source"] == "brain" else "mirror"
-        if r["source"] == "not in inventory":
+        if r["source"] == "excluded":
+            src = "non-helper dir"
+        elif r["source"] == "not in inventory":
             src = next((v for k, v in MOUNT_LABEL.items() if r["path"].startswith(k)), "⚠ not in checkout")
         reads = f"{r['source_reads'] or ''} (+{r['prestep_reads']} pre)".lstrip() if r["prestep_reads"] else r["source_reads"]
         out.append("| " + " | ".join(cell(v) for v in (
@@ -482,7 +488,8 @@ def build(args, root: Path) -> dict:
         "non_terminal": sum(1 for r in records.values() if not r.get("terminal")),
         "scrubbed_runs": sum(1 for r in records.values() if r.get("scrub", {}).get("kept")),
         "blind_runs": sum(1 for r in records.values() if r.get("scrub", {}).get("blind")),
-        "inventory": f"{len(rows)} .py ({sum(r['entry'] for r in rows.values())} entry points)",
+        "inventory": f"{sum(r['source'] != 'excluded' for r in rows.values())} .py "
+                     f"({sum(r['entry'] for r in rows.values())} entry points)",
     }
     if missing:
         coverage["missing_checkouts"] = "; ".join(missing)
