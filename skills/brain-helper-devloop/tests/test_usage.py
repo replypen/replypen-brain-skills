@@ -124,3 +124,11 @@ def test_scrubbed_events_fall_back_to_kept_command_and_count_blind():
     cmds = [b["cmd"] for b in usage.reduce_events(events, scrub)]
     assert cmds == ["python /brain/skills/x/scripts/a.py --email ⟨str⟩", "python /brain/skills/x/scripts/b.py"]
     assert scrub == {"kept": 1, "blind": 1}
+
+
+def test_heredoc_traceback_is_not_blamed_on_a_chained_helper():
+    heredoc = ["Traceback (most recent call last):", '  File "<stdin>", line 3, in <module>', "KeyError: 'groups'"]
+    deep = ["  File \"psycopg/cursor.py\", line 225, in fetchall", "psycopg.DataError: date too large"]
+    assert usage.foreign_traceback(heredoc, H)
+    assert not usage.foreign_traceback(deep, H)
+    assert not usage.foreign_traceback(heredoc + [f'  File "{H}", line 9'], H)

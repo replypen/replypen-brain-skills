@@ -95,6 +95,12 @@ def traceback_tail(text: str) -> list[str]:
     return [line for line in text.splitlines() if line.strip()][-5:]
 
 
+def foreign_traceback(tail: list[str], path: str) -> bool:
+    """The agent's own heredoc (`File "<stdin>"`) raised, not this helper chained in the same bash."""
+    text = "\n".join(tail)
+    return ('File "<stdin>"' in text or 'File "<string>"' in text) and path.rsplit("/", 1)[-1] not in text
+
+
 def bash_command(ev: dict) -> tuple[str, str]:
     """(command, provenance). After the host's 14-day scrub `command` is empty; `rp run debug` still
     carries the privacy-reduced `kept.command` (vocab words become ⟨vocab⟩, so some paths no longer match)."""
@@ -278,7 +284,7 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
                         h["exit_nonzero"] += 1
                     if b["ms"] is not None:
                         h["ms"].append(b["ms"])
-                    if b["tb"]:
+                    if b["tb"] and not foreign_traceback(b["tb"], path):
                         h["tracebacks"].append({"run_id": run["run_id"], "tail": b["tb"]})
             if pre:
                 continue
