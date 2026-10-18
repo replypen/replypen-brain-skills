@@ -161,3 +161,49 @@ def test_coverage_needs_a_queried_table_and_skips_mirror_one_offs(tmp_path):
     _, discovery = usage.aggregate([run("r1")], {"r1": rec("r1", [(1, 0, sql)])}, rows, [], None, "https://x")
     covered = [p.rsplit("/", 1)[-1] for p in discovery[0]["maybe_covered_by"]]
     assert covered == ["cataloged.py", "lookup.py"]  # most specific first; one_off.py and prose.py never
+
+
+def test_bare_help_is_split_from_help_chained_to_a_launch():
+    rows = {H: {"path": H, "source": "acme-common", "entry": True, "tables": set()}}
+    records = {"r1": rec("r1", [(1, 0, f"python {H} --help"), (2, 0, f"python {H} --help; python {H} --id 1")])}
+    helpers, _ = usage.aggregate([run("r1")], records, rows, [], None, "https://x")
+    assert (helpers[0]["help_calls"], helpers[0]["help_chained"], helpers[0]["launches"]) == (1, 1, 1)
+    md = usage.render({"project": "acme", "tenant": None, "generated_at": "now", "base_url": "https://x",
+                       "mirrors": [], "coverage": {"since": "a", "until": None}, "helpers": helpers, "discovery": []})
+    assert "| 1 (+1 chained) |" in md
+
+
+def test_exit_is_charged_to_the_last_launch_site_or_the_helper_stderr_names():
+    a, b = "/brain/skills/x/scripts/a.py", "/brain/skills/x/scripts/b.py"
+    rows = {p: {"path": p, "source": "brain", "entry": True, "tables": set()} for p in (a, b)}
+    records = {"r1": rec("r1", [(1, 2, f"python {a} --id 1; python {b} --id 1"),
+                                (2, 1, f"python {a} --id 2 && python {b} --id 2")])}
+    records["r1"]["bash"][1]["err"] = "usage: a.py [-h] --id ID\na.py: error: bad id"
+    helpers, _ = usage.aggregate([run("r1")], records, rows, [], None, "https://x")
+    got = {h["path"]: (h["exit_2"], h["exit_nonzero"]) for h in helpers}
+    assert got == {a: (0, 1), b: (1, 0)}
+
+
+def test_undeclared_mirror_warns_with_the_line_to_add(tmp_path):
+    brain = tmp_path / "acme-org/brain-acme"
+    (tmp_path / "other-org/acme-app/.git").mkdir(parents=True)
+    brain.mkdir(parents=True)
+    path = "/mirrors/acme-app/.agents/scripts/lookup.py"
+    helpers, _ = usage.aggregate([run("r1")], {"r1": rec("r1", [(1, 0, f"python {path} --id 1")])}, {}, [], None, "x")
+    undeclared = usage.undeclared_mirrors(helpers, {"declared": tmp_path})
+    assert undeclared == {"acme-app": 1}
+    hint = usage.mirror_hint(brain, "acme-app")
+    assert hint == '"acme-app" = "../../other-org/acme-app"'
+    md = usage.render({"project": "acme", "tenant": None, "generated_at": "now", "base_url": "x", "mirrors": [],
+                       "mirror_hints": {"acme-app": hint},
+                       "coverage": {"since": "a", "until": None, "undeclared_mirrors": undeclared},
+                       "helpers": helpers, "discovery": []})
+    assert "> [!WARNING]" in md and hint in md and "`/mirrors/acme-app/…` 1×" in md
+
+
+def test_import_resolves_to_helpers_only_not_a_mirror_app_module():
+    rows = {"/mirrors/app/apps/leave/requests.py": {"helper": False},
+            "/mirrors/app/skills/x/scripts/widget_check.py": {"helper": True}}
+    resolve = usage.resolver(rows)
+    assert resolve("requests", "import") is None
+    assert resolve("widget_check", "import").endswith("widget_check.py")

@@ -95,6 +95,11 @@ def traceback_tail(text: str) -> list[str]:
     return [line for line in text.splitlines() if line.strip()][-5:]
 
 
+def stderr_tail(text: str) -> str:
+    """Last stderr lines: an argparse `usage: x.py …` / `x.py: error:` names the helper that exited."""
+    return "\n".join([line for line in text.splitlines() if line.strip()][-3:])[-400:]
+
+
 def foreign_traceback(tail: list[str], path: str) -> bool:
     """The agent's own heredoc (`File "<stdin>"`) raised, not this helper chained in the same bash."""
     text = "\n".join(tail)
@@ -127,7 +132,8 @@ def reduce_events(lines: str, scrub: dict | None = None) -> list[dict]:
             continue
         out.append({"seq": -1 if is_prestep(ev) else ev.get("seq"), "exit": ev.get("exit_code"),
                     "ms": ev.get("duration_ms"), "cmd": cmd,
-                    "tb": traceback_tail(f"{ev.get('stdout') or ''}\n{ev.get('stderr') or ''}")})
+                    "tb": traceback_tail(f"{ev.get('stdout') or ''}\n{ev.get('stderr') or ''}"),
+                    "err": stderr_tail(ev.get("stderr") or "")})
     return out
 
 
@@ -210,7 +216,8 @@ def resolver(rows: dict[str, dict]):
     by_name = defaultdict(list)
     for path in rows:
         by_name[path.rsplit("/", 1)[-1]].append(path)
-    by_stem = {stem: paths for stem, paths in
+    # `import requests` must not land on a mirror's app module `apps/leave/requests.py`: helpers only.
+    by_stem = {stem: [p for p in paths if (rows[p] or {}).get("helper", True)] for stem, paths in
                ((n[:-3], p) for n, p in by_name.items()) if stem not in sys.stdlib_module_names}
 
     def resolve(token: str, kind: str) -> str | None:
@@ -261,7 +268,7 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
             helpers[path] = {"path": path, "source": inv.get("source", "not in inventory"),
                              "entry": inv.get("entry", True), "helper": inv.get("helper", True),
                              "runs": defaultdict(set), "tenants": set(),
-                             "launches": 0, "loop_sites": 0, "imports": 0, "help": 0, "reads": 0,
+                             "launches": 0, "loop_sites": 0, "imports": 0, "help": 0, "help_chained": 0, "reads": 0,
                              "prestep_reads": 0, "exit_nonzero": 0, "exit_2": 0, "tracebacks": [],
                              "ms": [], "last_seen": None, "bash": set()}
         return helpers[path]
@@ -276,10 +283,17 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
         who = cohort(run, rec, staff)
         for b in rec["bash"]:
             pre = b["seq"] is not None and b["seq"] < 0
-            for site in sites(b["cmd"]):
-                path = resolve(site["path"], site["kind"])
-                if not path:
-                    continue
+            found = [(site, resolve(site["path"], site["kind"])) for site in sites(b["cmd"])]
+            found = [(site, path) for site, path in found if path]
+            runs_something = any(s["kind"] in ("launch", "import") for s, _ in found)
+            # The exit code is the whole bash command's: charge it to the helpers the stderr tail /
+            # traceback names, else to the last launch site (the shell's exit) — never to every chained one.
+            # Records cached before `err` existed fall back to the last site.
+            ran = [p for s, p in found if s["kind"] in ("launch", "import")]
+            blame = f"{b.get('err') or ''}\n" + "\n".join(b["tb"] or [])
+            charged = {p for p in ran if re.search(rf"(?<![\w.-]){re.escape(p.rsplit('/', 1)[-1])}\b", blame)} \
+                or set(ran[-1:])
+            for site, path in found:
                 h = helper(path)
                 if pre:
                     h["prestep_reads"] += 1
@@ -288,7 +302,8 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
                     h["reads"] += 1
                     continue
                 if site["kind"] == "help":
-                    h["help"] += 1
+                    # `x.py --help; x.py …` costs no turn; a bash call that only reads --help does.
+                    h["help_chained" if runs_something else "help"] += 1
                     continue
                 h["imports" if site["kind"] == "import" else "launches"] += 1
                 h["loop_sites"] += site["loop"]
@@ -299,10 +314,8 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
                 key = (run["run_id"], b["seq"])
                 if key not in h["bash"]:
                     h["bash"].add(key)
-                    if b["exit"] == 2:
-                        h["exit_2"] += 1
-                    elif b["exit"] not in (0, None):
-                        h["exit_nonzero"] += 1
+                    if b["exit"] not in (0, None) and path in charged:
+                        h["exit_2" if b["exit"] == 2 else "exit_nonzero"] += 1
                     if b["ms"] is not None:
                         h["ms"].append(b["ms"])
                     if b["tb"] and not foreign_traceback(b["tb"], path):
@@ -334,7 +347,8 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
             helper(path)
     table = []
     for h in helpers.values():
-        if h["source"] in ("not in inventory", "excluded") and not (h["launches"] or h["imports"] or h["help"]):
+        if h["source"] in ("not in inventory", "excluded") and not (h["launches"] or h["imports"] or h["help"]
+                                                                       or h["help_chained"]):
             continue  # reading some non-helper source file is not helper usage
         runs_by = {k: len(v) for k, v in h["runs"].items()}
         table.append({
@@ -346,6 +360,7 @@ def aggregate(runs: list[dict], records: dict[str, dict], rows: dict[str, dict],
             "exit_nonzero": h["exit_nonzero"], "exit_2": h["exit_2"], "tracebacks": h["tracebacks"][:5],
             "traceback_count": len(h["tracebacks"]), "median_ms": pct(h["ms"], .5),
             "p90_ms": pct(h["ms"], .9), "duration_n": len(h["ms"]), "help_calls": h["help"],
+            "help_chained": h["help_chained"],
             "source_reads": h["reads"], "prestep_reads": h["prestep_reads"], "last_seen": h["last_seen"],
             "run_ids": sorted(set().union(*h["runs"].values()))[:20] if h["runs"] else [],
         })
@@ -387,11 +402,18 @@ def render(report: dict) -> str:
     c = report["coverage"]
     out = [f"# Helper usage — {report['project']}", "",
            f"Window {c['since']} → {c['until'] or 'now'}{' · tenant ' + report['tenant'] if report['tenant'] else ''}"
-           f" · generated {report['generated_at']}", "",
+           f" · generated {report['generated_at']}{' · ' + report['kit'] if report.get('kit') else ''}", "",
            "| coverage | |", "|---|---|"]
     out += [f"| {k.replace('_', ' ')} | {v} |" for k, v in c.items() if k not in ("since", "until")]
-    out += ["", "> [!NOTE]", "> Launch sites from command text: exit/duration belong to the enclosing bash; a loop "
-            "is one site. Rows rank by customer runs; test = simulation / prompt / staff domain."]
+    out += ["", "> [!NOTE]", "> Launch sites from command text: duration belongs to the enclosing bash; its exit "
+            "code only to the last launch site or a helper its stderr names. A loop is one site. `help` = bash calls "
+            "that only read `--help` (+chained = `x.py --help; x.py …`, no extra turn). Rows rank by customer runs; "
+            "test = simulation / prompt / staff domain."]
+    for name, n in (c.get("undeclared_mirrors") or {}).items():
+        line = (report.get("mirror_hints") or {}).get(name) or f'"{name}" = "<relative path to its checkout>"'
+        out += ["", "> [!WARNING]", f"> Runs launched `/mirrors/{name}/…` {n}× but `.replypen.toml` declares no "
+                f"such mirror, so its helpers are missing from the inventory. Add under `[mirrors]`: `{line}` "
+                f"(or pass `--mirror {name}=PATH`)."]
     if c.get("scrubbed_runs") or c.get("blind_runs"):
         out += ["> Scrubbed runs (older than ~14 d) only keep a privacy-reduced command (⟨vocab⟩ can hide a helper"
                 " path); blind runs keep none. Counts are a floor: cache a window while it is fresh, re-run monthly."]
@@ -400,8 +422,8 @@ def render(report: dict) -> str:
                 "observations in each consumer's report."]
     head = ("| helper | src | cust runs | tenants | test runs | launches | exit≠0 | exit 2 | tb | "
             "median s (n) | p90 s | help | reads | last seen |")
-    seen = [r for r in report["helpers"]
-            if r["launches"] or r["imports"] or r["help_calls"] or r["source_reads"] or r["prestep_reads"]]
+    seen = [r for r in report["helpers"] if r["launches"] or r["imports"] or r["help_calls"] or r.get("help_chained")
+            or r["source_reads"] or r["prestep_reads"]]
     out += ["", "## Helpers", "", head, "|" + "---|" * 14]
     for r in seen:
         name = r["path"].rsplit("/", 1)[-1]
@@ -415,10 +437,12 @@ def render(report: dict) -> str:
         elif r["source"] == "not in inventory":
             src = next((v for k, v in MOUNT_LABEL.items() if r["path"].startswith(k)), "⚠ not in checkout")
         reads = f"{r['source_reads'] or ''} (+{r['prestep_reads']} pre)".lstrip() if r["prestep_reads"] else r["source_reads"]
+        chained = r.get("help_chained")
+        helps = f"{r['help_calls'] or ''} (+{chained} chained)".lstrip() if chained else r["help_calls"]
         out.append("| " + " | ".join(cell(v) for v in (
             f"`{name}`", src, r["customer_runs"], r["tenants"], r["test_runs"], launches or "",
             r["exit_nonzero"], r["exit_2"], r["traceback_count"], median, secs(r["p90_ms"]),
-            r["help_calls"], reads, (r["last_seen"] or "")[:10])) + " |")
+            helps, reads, (r["last_seen"] or "")[:10])) + " |")
     idle = [r for r in report["helpers"] if r not in seen]
     others = [r for r in idle if not r.get("helper", True)]
     idle = [r for r in idle if r.get("helper", True)]
@@ -455,6 +479,40 @@ def render(report: dict) -> str:
 
 
 # --- cli ------------------------------------------------------------------------------------
+def kit_version() -> str:
+    """`kit v0.13.4 (latest v0.13.5 · main +2 unreleased)`: a report made with a stale kit undercounts."""
+    kit = Path(__file__).resolve().parents[3]
+
+    def git(*args):
+        done = subprocess.run(["git", "-C", str(kit), *args], capture_output=True, text=True, timeout=10)
+        return done.stdout.strip() if done.returncode == 0 else ""
+
+    here = git("describe", "--tags") or "?"
+    latest = (git("tag", "-l", "v*", "--sort=-v:refname").splitlines() or [""])[0]
+    ahead = git("rev-list", "--count", f"{latest}..origin/main") if latest else ""
+    extra = [f"latest {latest}"] if latest and latest != here else []
+    extra += [f"main +{ahead} unreleased"] if ahead not in ("", "0") else []
+    return f"kit {here}" + (f" ({' · '.join(extra)})" if extra else "")
+
+
+def undeclared_mirrors(helpers: list[dict], mirrors: dict) -> dict[str, int]:
+    """{mirror name: launch + help sites} for `/mirrors/<name>/…` paths no `[mirrors]` entry covers."""
+    out: dict[str, int] = defaultdict(int)
+    for h in helpers:
+        parts = h["path"].split("/")
+        if h["path"].startswith("/mirrors/") and len(parts) > 3 and parts[2] not in mirrors:
+            out[parts[2]] += h["launches"] + h["help_calls"] + h["help_chained"]
+    return {n: c for n, c in sorted(out.items()) if c}
+
+
+def mirror_hint(root: Path, name: str) -> str | None:
+    """The `[mirrors]` line, when exactly one sibling checkout `<code>/*/<name>` exists next to the brain's."""
+    hits = [p for p in root.parent.parent.glob(f"*/{name}") if (p / ".git").exists()]
+    if len(hits) != 1:
+        return None
+    return f'"{name}" = "{Path("..") / ".." / hits[0].relative_to(root.parent.parent)}"'
+
+
 def build(args, root: Path) -> dict:
     meta = tomllib.loads((root / ".replypen.toml").read_text()) if (root / ".replypen.toml").exists() else \
         tomllib.loads((root / ".rootcause.toml").read_text()) if (root / ".rootcause.toml").exists() else {}
@@ -509,8 +567,13 @@ def build(args, root: Path) -> dict:
     }
     if missing:
         coverage["missing_checkouts"] = "; ".join(missing)
-    return {"schema": f"helper-usage/v{SCHEMA}", "project": project, "tenant": args.tenant,
-            "base_url": base_url, "mirrors": sorted(mirrors), "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    undeclared = undeclared_mirrors(helpers, mirrors)
+    if undeclared:
+        coverage["undeclared_mirrors"] = undeclared
+    return {"schema": f"helper-usage/v{SCHEMA}", "project": project, "tenant": args.tenant, "kit": kit_version(),
+            "base_url": base_url, "mirrors": sorted(mirrors),
+            "mirror_hints": {n: hint for n in undeclared if (hint := mirror_hint(root, n))},
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "staff_domains": args.staff_domain or [], "kinds": args.kind or [], "coverage": coverage,
             "fetch_failures": failed[:50], "helpers": helpers, "discovery": discovery[:200]}
 

@@ -185,10 +185,12 @@ uv run --no-project python "$U" --since <YYYY-MM-DD> [--until …] --staff-domai
   --out .replypen/helper-usage/report          # [--tenant t] [--kind chat …] [--mirror NAME=PATH]
 ```
 
-Mirrors come from `.replypen.toml` `[mirrors]`; per-run records cache under
+Mirrors come from `.replypen.toml` `[mirrors]` (runs launching an undeclared `/mirrors/<name>/…` print a
+⚠ with the line to add); per-run records cache under
 `.replypen/helper-usage/<project>/`, so a rerun only fetches new runs (~1 min per 1000 runs cold).
 `usage.md`: coverage, one row per helper (customer runs · tenants · test runs · launches · exit≠0 /
-exit 2 · tracebacks · enclosing-bash duration · `--help` calls · source reads, `+N pre` = grounding
+exit 2 (charged to the helper stderr names, else the command's last launch site) · tracebacks ·
+enclosing-bash duration · `--help`-only bash calls (`+N chained` = `x.py --help; x.py …`, no extra turn) · source reads, `+N pre` = grounding
 pre-step), the unobserved inventory folded, then repeated ad-hoc SQL grouped by table set with run
 links. Inventory = brain `.py` + mirror `.py` under a `skills/` dir or with a `# name:` header (a
 mirror's one-off scripts are counted, not listed); "maybe covered by" = helpers whose SQL
@@ -198,6 +200,8 @@ mirror's one-off scripts are counted, not listed); "maybe covered by" = helpers 
 Playbook:
 
 1. **Coverage first.** `fetch failed` > 0, `missing checkouts`, or a short window → numbers are a floor.
+   Header `kit …` shows a `latest` tag past yours → [brain-dev-upgrade](../brain-dev-upgrade/SKILL.md) and rerun:
+   an old `usage.py` undercounts.
    Runs older than ~14 days are scrubbed: `scrubbed runs` keep only a privacy-reduced command (read via
    `rp run debug`; `⟨vocab⟩` can hide a helper path), `blind runs` keep none. Many of either → a floor too.
    `⚠ not in checkout` = the agent guessed a wrong path or the helper moved: a routing/docstring fix.
