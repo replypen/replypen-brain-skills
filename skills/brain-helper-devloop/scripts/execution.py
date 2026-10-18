@@ -17,6 +17,9 @@ from __future__ import annotations
 import ast
 import re
 import shlex
+import warnings
+
+warnings.filterwarnings("ignore", category=SyntaxWarning)  # agent heredocs: invalid escapes are not our signal
 
 SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "$", "$(", "`", "\n"}
 LAUNCHERS = {"python", "python3", "uv", "run", "timeout", "env", "bash", "sh", "exec", "nice", "time",
