@@ -442,8 +442,6 @@ ON_DEMAND_DOC_WARN = 5000
 _ON_DEMAND_SKIP_DIRS = frozenset({"journal", "tests", "docs"})
 # AGENTS.md is pasted whole, uncapped, every run: an advisory names a genuinely oversized one.
 AGENTS_MD_CAP = 16 << 10
-# The chat gallery is parsed by the host for the UI, not read by the agent with bash.
-_DOC_SIZE_EXEMPT_FILES = frozenset({"chat_inspiration.md"})
 _DOC_SIZE_IGNORED_DIRS = frozenset({".agents", ".claude", ".replypen", ".rootcause", ".git", ".venv", "_internal",
                                     "node_modules", "__pycache__"})
 
@@ -518,7 +516,7 @@ def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
                 findings.append(Finding(rel, "WARN",
                     f"AGENTS.md is {_kb(size)}: pasted whole into every run, every extra byte is tax on "
                     "every thread and buries the routing", "doc-size"))
-        elif (not loaded and rel not in _DOC_SIZE_EXEMPT_FILES and not _mirrored_corpus(text)
+        elif (not loaded and not _mirrored_corpus(text)
               and not _ON_DEMAND_SKIP_DIRS.intersection(rel.split("/")[:-1])):
             # `cat` bytes: decode without read_text's universal newlines, so CRLF counts twice.
             raw = (root / rel).read_bytes().decode("utf-8", "replace")

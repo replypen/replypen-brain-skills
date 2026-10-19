@@ -447,9 +447,10 @@ def _doc(tags: str, kb: float) -> str:
     return front + "x" * int(kb * 1024)
 
 
-def test_doc_size_skips_chat_gallery_and_mirrored_corpus(tmp_path: Path) -> None:
-    """The chat gallery is parsed by the host, not read with bash; a mirrored help-centre article or
-    video transcript (`source_url:` / `video_url:`) is generated content the author cannot split."""
+def test_doc_size_skips_mirrored_corpus_not_chat_gallery(tmp_path: Path) -> None:
+    """A mirrored help-centre article or video transcript (`source_url:` / `video_url:`) is generated
+    content the author cannot split. The chat gallery is not exempt: runs `cat` it for "what can you
+    do?" and to add an example, so it splits per category under chat_inspiration/."""
     _seed_brain(tmp_path)
     _write(tmp_path / "chat_inspiration.md", "---\nsurfaces: [chat]\n---\n" + "x" * 17 * 1024)
     _write(tmp_path / "knowledge/hc/a.md", "---\nsource_url: https://x/a\n---\n" + "x" * 17 * 1024)
@@ -458,7 +459,7 @@ def test_doc_size_skips_chat_gallery_and_mirrored_corpus(tmp_path: Path) -> None
 
     findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
 
-    assert [f.path for f in findings] == ["knowledge/own.md"]
+    assert sorted(f.path for f in findings) == ["chat_inspiration.md", "knowledge/own.md"]
 
 
 def test_lint_brain_core_skips_run_hidden_paths_except_dead_tags(tmp_path: Path) -> None:

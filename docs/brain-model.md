@@ -201,7 +201,7 @@ the caps are a safety net, not a budget. Past a cap the body is cut ("read the r
 models rarely read on; on-demand docs fare no better — a bash read over 6000 chars shows only a ~3 KB
 preview. Lint `doc-size` FAILs an on-demand doc over 6000 bytes as `cat` prints it (whole file; a
 templated doc at its longest render with spec defaults) and WARNs past 5000; it WARNs tagged docs over
-their cap and `AGENTS.md` over 16 KB. Exempt: `chat_inspiration.md`, mirrored `source_url:`/`video_url:`
+their cap and `AGENTS.md` over 16 KB. Exempt: mirrored `source_url:`/`video_url:`
 pages, `journal/`, `tests/`, `docs/`. The lint gates `brain_publish.py` and the host promote canary; the
 commit/push hygiene gate (`doc-spill`) catches the crossing commit earlier. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one
 "Open X for Y" line. `AGENTS.md` inclusion depends on its mount:
@@ -448,12 +448,16 @@ artifacts stay on the laptop.
   `brain_projection.py` when present;
   `rp dev brain render --tenant <slug>` prints the server-compiled view exactly as `/brain` mounts it.
 
-## Chat example prompts — `chat_inspiration.md`
+## Chat example prompts — `chat_inspiration.md` or `chat_inspiration/*.md`
 
-Non-technical chat users stall on an empty composer. A brain-root `chat_inspiration.md` feeds the chat
-page's example-prompt gallery: a pick **inserts** the prompt (never sends it) and highlights its
-`[woord]` placeholders for the user to fill in. Runs read the same file at `/brain/chat_inspiration.md`
-(and `/tenant/chat_inspiration.md`), so "what can I ask you?" draws on it too.
+Non-technical chat users stall on an empty composer. The host parses the brain's gallery and feeds the
+chat page's example-prompt gallery: a pick **inserts** the prompt (never sends it) and highlights its
+`[woord]` placeholders; a sent pick hands the run that example's hidden notes, so no run reads the files
+for it. Runs read them only for "what can I ask you?", idea requests or adding an example: titles, or
+one category file. Hence the split form once the file nears 6 KB: `chat_inspiration/NN-<category>.md`
+(name order = gallery order, after a root `chat_inspiration.md` if any; a continuation part repeats the
+heading line exactly), each with `description` + `surfaces` frontmatter, every file ≤6 KB. The set
+parses as one library; `chat_inspiration/recipes/` is not parsed and holds long how-tos.
 
 ```markdown
 ---
@@ -477,7 +481,9 @@ surfaces: [chat, dashboard_chat]
   come first; a shared id keeps the project's label/emoji and lists tenant prompts first with a tenant
   badge; an identical prompt text (case-insensitive) keeps one copy, the tenant's.
 
-**Author notes + skill pointers** — hidden from the gallery; reach the agent only on the turn the user
+**Author notes + skill pointers** — keep notes short directives: hygiene NOTICEs a prompt (or
+category preamble) with over 600 chars of inline notes; move the steps to
+`chat_inspiration/recipes/<slug>.md` and add it to `skills:`. Hidden from the gallery; reach the agent only on the turn the user
 sent a picked example (even edited), as brain-authored instructions rendered inside that user turn.
 Provenance is the click: text pasted, typed or sent via `rp project chat send` carries no notes. To
 verify on a run: `rp run debug <run>` → `inspiration` in the JSONL header / "Gallery pick" in the index
