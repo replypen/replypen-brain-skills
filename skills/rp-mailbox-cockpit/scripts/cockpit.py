@@ -117,9 +117,18 @@ def stamp(message):
     return int(message.get('internalDate') or 0)
 
 
+def stable(value):
+    # Gmail mints a new attachmentId on every fetch; hashing it would refuse every thread with files.
+    if isinstance(value, dict):
+        return {k: stable(v) for k, v in value.items() if k != 'attachmentId'}
+    if isinstance(value, list):
+        return [stable(v) for v in value]
+    return value
+
+
 def fingerprint(thread):
     # Full messages catch edits, changed bodies/recipients, outbound mail and Gmail draft saves.
-    return digest({'id': thread.get('id'), 'messages': thread.get('messages', [])})
+    return digest({'id': thread.get('id'), 'messages': stable(thread.get('messages', []))})
 
 
 def mail_state(thread, account):

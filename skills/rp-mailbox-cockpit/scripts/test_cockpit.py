@@ -110,6 +110,18 @@ class Tests(unittest.TestCase):
         with self.assertRaises(c.Refused):
             c.guard_thread(changed, detail, ACCOUNT)
 
+    def test_refetched_attachment_ids_keep_fingerprint(self):
+        detail, _ = fixture()
+        part = {'mimeType': 'application/pdf', 'body': {'attachmentId': 'first-fetch', 'size': 9}}
+        detail['gmail']['messages'][0]['payload']['parts'] = [part]
+        detail['fingerprint'] = c.fingerprint(detail['gmail'])
+        refetched = copy.deepcopy(detail['gmail'])
+        refetched['messages'][0]['payload']['parts'][0]['body']['attachmentId'] = 'second-fetch'
+        c.guard_thread(refetched, detail, ACCOUNT)
+        refetched['messages'][0]['payload']['parts'][0]['body']['size'] = 10
+        with self.assertRaises(c.Refused):
+            c.guard_thread(refetched, detail, ACCOUNT)
+
     def test_findings_freshness_run_identity_and_quotes(self):
         detail, finding = fixture()
         c.check_finding(finding, detail)
