@@ -6,7 +6,7 @@ repointing prod before the tag exists breaks prod image builds.
 
 ## Order of operations
 
-1. **Publish this repo** at `v0.13.14` with `./refresh-brains.sh --release patch` (or an explicit
+1. **Publish this repo** at `v0.13.15` with `./refresh-brains.sh --release patch` (or an explicit
    version). The release must be cut on `main`; the publisher pushes and verifies `origin/main` at
    the release commit before it pushes the tag. Never publish the tag first.
    - Bump the whole single version line together first — see [../RELEASING.md](../RELEASING.md)
@@ -15,14 +15,14 @@ repointing prod before the tag exists breaks prod image builds.
    - Prove the package resolves by tag (no `replypen` source):
      ```bash
      uv run --no-project \
-       --with "replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.13.14#subdirectory=runtime" \
+       --with "replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.13.15#subdirectory=runtime" \
        python -c "import lib.db; print('ok')"
      ```
 
 2. **Publish the workspace image** to ghcr, pinned to the same tag:
    ```bash
-   docker build -f docker/Dockerfile -t ghcr.io/replypen/workspace:v0.13.14 .
-   docker push ghcr.io/replypen/workspace:v0.13.14
+   docker build -f docker/Dockerfile -t ghcr.io/replypen/workspace:v0.13.15 .
+   docker push ghcr.io/replypen/workspace:v0.13.15
    ```
    (Already builds + runs locally — see verification in the session that produced this repo.)
 
@@ -44,7 +44,7 @@ repointing prod before the tag exists breaks prod image builds.
    +# subdirectory=runtime is where pyproject.toml lives; the import name stays `lib`.
    +# Needs build-time network + read auth to the (private) repo; pin the tag, never float main.
    +RUN uv pip install --system --no-cache \
-   +        "replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.13.14#subdirectory=runtime"
+   +        "replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.13.15#subdirectory=runtime"
    ```
    **Confirm a real prod run still grounds** before deleting anything (the make-or-break check).
 
