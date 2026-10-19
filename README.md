@@ -162,11 +162,11 @@ CLI equivalents: `python -m lib.db --stats accounts --db ruby --format json` and
 ## Single Version Line
 
 The plugin versions, `replypen-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.13.11`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.13.12`**.
 
 - Runtime pin:
-  `replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.13.11#subdirectory=runtime`
-- Workspace image: `ghcr.io/replypen/workspace:v0.13.11`
+  `replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.13.12#subdirectory=runtime`
+- Workspace image: `ghcr.io/replypen/workspace:v0.13.12`
 
 Check coherence:
 

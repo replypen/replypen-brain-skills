@@ -9,7 +9,7 @@
       "name": "brain-dev",
       "source": ".",
       "description": "Install the ReplyPen brain skills: local checks, safe cross-computer Git sync, rp ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows.",
-      "version": "0.13.11"
+      "version": "0.13.12"
     }
   ]
 }
