@@ -454,7 +454,7 @@ def test_doc_size_skips_chat_gallery_and_mirrored_corpus(tmp_path: Path) -> None
     _write(tmp_path / "chat_inspiration.md", "---\nsurfaces: [chat]\n---\n" + "x" * 17 * 1024)
     _write(tmp_path / "knowledge/hc/a.md", "---\nsource_url: https://x/a\n---\n" + "x" * 17 * 1024)
     _write(tmp_path / "knowledge/hc/_videos/v.md", "---\nvideo_url: https://y/v\n---\n" + "x" * 17 * 1024)
-    _write(tmp_path / "knowledge/own.md", _doc("", 17))
+    _write(tmp_path / "knowledge/own.md", _doc("", 17))  # FAIL: past the spill limit
 
     findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
 
@@ -516,21 +516,39 @@ def test_lint_brain_warns_when_agent_total_cap_cuts_later_docs(tmp_path: Path) -
     assert "48.0 KB `agent` total" in findings[0].message
 
 
-def test_lint_brain_advises_on_large_on_demand_docs_and_agents_md(tmp_path: Path) -> None:
+def test_lint_brain_limits_on_demand_docs_at_the_spill_cliff(tmp_path: Path) -> None:
+    """Whole-file bytes as `cat` prints them: FAIL past 6000, WARN past 5000; AGENTS.md keeps its
+    16 KB advisory; tagged, journal/tests/docs and kit dot-dirs are not on-demand reads."""
     _seed_brain(tmp_path)
-    _write(tmp_path / "AGENTS.md", _doc("[agent]", 17))
-    _write(tmp_path / "playbooks/big.md", _doc("", 17))
-    _write(tmp_path / "playbooks/ok.md", _doc("", 15))
-    _write(tmp_path / ".agents/skills/kit/SKILL.md", _doc("", 40))
+    _write(tmp_path / "AGENTS.md", _doc("", 17))
+    _write(tmp_path / "playbooks/big.md", "x" * 6001)
+    _write(tmp_path / "playbooks/near.md", "x" * 5001)
+    _write(tmp_path / "playbooks/ok.md", "x" * 5000)
+    _write(tmp_path / "playbooks/front.md", _doc("", 5000 / 1024))  # frontmatter pushes it past 5000
+    for rel in ("journal/2026-10-19.md", "skills/x/tests/fixture.md", "docs/dev.md", ".agents/skills/kit/SKILL.md"):
+        _write(tmp_path / rel, "x" * 9000)
 
-    findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
+    findings = {f.path: f for f in lint_brain(tmp_path) if f.rule == "doc-size"}
 
-    assert [f.path for f in findings] == ["AGENTS.md", "playbooks/big.md"]
-    assert "pasted whole into every run" in findings[0].message
-    assert "will not be read at once" in findings[1].message
-    assert not _fails(findings)
-    report = format_report(findings)
-    assert report.count("fix: keep a lean core") == 1
+    assert {p: f.level for p, f in findings.items()} == {
+        "AGENTS.md": "WARN", "playbooks/big.md": "FAIL", "playbooks/near.md": "WARN", "playbooks/front.md": "WARN"}
+    assert "6001 bytes, over the 6000-byte bash spill limit" in findings["playbooks/big.md"].message
+
+
+def test_doc_size_measures_a_templated_doc_at_its_longest_render(tmp_path: Path) -> None:
+    """Raw carries every variant; the run gets one variant with placeholders filled."""
+    _seed_brain(tmp_path)
+    _write(tmp_path / "projection.yaml", "placeholders:\n  name: { type: string, default: \"" + "n" * 900
+           + "\" }\nbranches:\n  pay: { select: pay, variants: [a, b] }\ntemplated_globs: [\"skills/**/*.md\"]\n")
+    variants = ("<!-- rc:branch region=pay select=pay --><!-- rc:variant when=a -->" + "a" * 4000
+                + "<!-- /rc:variant --><!-- rc:variant when=b -->" + "b" * 3000 + "<!-- /rc:variant --><!-- /rc:branch -->")
+    _write(tmp_path / "skills/pay/SKILL.md", variants + " {{ name }}")  # 7000+ raw, 4000 + 900 rendered
+    _write(tmp_path / "skills/pay/long.md", variants + " {{ name }}" + "c" * 1200)  # renders to 6101
+    _write(tmp_path / "notes/raw.md", variants)  # outside templated_globs: copied verbatim
+
+    findings = {f.path: f.level for f in lint_brain(tmp_path) if f.rule == "doc-size"}
+
+    assert findings == {"skills/pay/long.md": "FAIL", "notes/raw.md": "FAIL"}
 
 
 # ---- frontmatter the host never reads -------------------------------------------------------------
@@ -764,3 +782,33 @@ def test_plain_scalars_resolve_like_the_host(tmp_path: Path) -> None:
 
     fails = {f.path for f in _fails(lint_brain(tmp_path, "brain"))}
     assert fails == {"skills/float/SKILL.md", "skills/hex/SKILL.md", "skills/bool/SKILL.md"}
+
+
+def test_doc_size_counts_cat_bytes_not_normalized_or_raw_chars(tmp_path: Path) -> None:
+    """CRLF stays two bytes; a variant wins on UTF-8 bytes after its placeholders fill; a Go
+    `path.Match` character class selects the templated file like the host does."""
+    _seed_brain(tmp_path)
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes/crlf.md").write_bytes(b"x\r\n" * 2100)  # cat: 6300 bytes
+    _write(tmp_path / "projection.yaml", "placeholders:\n  big: { type: string, default: \"" + "d" * 6100
+           + "\" }\nbranches:\n  pay: { select: pay, variants: [a, b, c] }\ntemplated_globs: [\"skills/[ab].md\"]\n")
+    _write(tmp_path / "skills/a.md", "<!-- rc:branch region=pay select=pay --><!-- rc:variant when=a -->" + "a" * 4000
+           + "<!-- /rc:variant --><!-- rc:variant when=b -->" + "é" * 3500
+           + "<!-- /rc:variant --><!-- /rc:branch -->")  # é variant: 7000 bytes
+    _write(tmp_path / "skills/b.md", "<!-- rc:branch region=pay select=pay --><!-- rc:variant when=a -->" + "a" * 4000
+           + "<!-- /rc:variant --><!-- rc:variant when=b -->{{ big }}<!-- /rc:variant --><!-- /rc:branch -->")
+    _write(tmp_path / "skills/c.md", "<!-- rc:branch region=pay select=pay --><!-- rc:variant when=a -->" + "a" * 4000
+           + "<!-- /rc:variant --><!-- rc:variant when=b -->" + "b" * 3000
+           + "<!-- /rc:variant --><!-- /rc:branch -->")  # outside the glob: raw 7000+ bytes
+
+    findings = {f.path: f.level for f in lint_brain(tmp_path) if f.rule == "doc-size"}
+
+    assert findings == {"notes/crlf.md": "FAIL", "skills/a.md": "FAIL", "skills/b.md": "FAIL", "skills/c.md": "FAIL"}
+
+
+def test_match_glob_follows_host_path_match() -> None:
+    from lib.brain_doc import match_glob
+
+    assert match_glob("skills/[ab].md", "skills/a.md") and not match_glob("skills/[^ab].md", "skills/a.md")
+    assert match_glob("**/*.md", "AGENTS.md") and match_glob("skills/**/*.md", "skills/x/y/z.md")
+    assert not match_glob("skills/*.md", "skills/x/y.md") and match_glob(r"skills/\*.md", "skills/*.md")

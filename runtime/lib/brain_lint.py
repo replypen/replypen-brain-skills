@@ -22,9 +22,10 @@ that contract:
     when-to-use sentence; rich detail after it is kept in the full value (an action manifest's is
     injected full-length into the per-run action catalog); "what this file contains"-style phrasing
     (`This file…`, `Contains…`, `Dit bestand…`). Deterministic, best-effort; never fails a run.
-  * **WARN** — a markdown doc that won't reach the model whole: an `include_in` hard-load over the
-    host's per-file/total cap (`HARD_LOAD_CAPS`), or an on-demand doc / `AGENTS.md` over
-    `ON_DEMAND_DOC_CAP`. Advisory: the fix is a lean core + grouped detail files.
+  * **FAIL** — an on-demand doc (no `include_in`, not mirrored corpus, not under journal/tests/docs)
+    over `ON_DEMAND_DOC_LIMIT` bytes as `cat` prints it (the bash spill cliff); **WARN** past
+    `ON_DEMAND_DOC_WARN`, an `include_in` hard-load over the host's per-file/total cap
+    (`HARD_LOAD_CAPS`), or `AGENTS.md` over `AGENTS_MD_CAP`. Fix: a lean core + grouped detail files.
   * **FAIL** — frontmatter the host will never read: an `include_in` tag outside its role's scan scope
     (mirror file outside root *.md + `MIRROR_SCAN_DIRS`, `triage` outside the project brain, pruned or
     run-hidden path), a mirror `surfaces:`, an unknown role, a key the host misses (not at byte 0,
@@ -60,7 +61,9 @@ from .action_lint import lint_actions
 from .brain_doc import FRONTMATTER_CAP
 from .brain_doc import frontmatter_lines as _frontmatter_lines
 from .brain_doc import include_in as _include_in
+from .brain_doc import match_glob as _match_glob
 from .brain_doc import mirrored_corpus as _mirrored_corpus
+from .brain_doc import render_upper_bound as _render_upper_bound
 from .brain_doc import strip_frontmatter as _strip_frontmatter
 
 
@@ -428,10 +431,17 @@ HARD_LOAD_CAPS = {  # role -> (include_in tags, per-file cap, total cap)
     "grounding": (("grounding",), 8 << 10, 24 << 10),
     "agent": (("agent", "principal"), 16 << 10, 48 << 10),
 }
-# Untagged docs are read on demand with bash, which shows a stream over 6000 chars only as a
-# 2000+1000-char preview (replypen internal/tool/tool.go defaultBashSpillThreshold). The advisory
-# stays at 16 KB so it names genuinely oversized docs; AGENTS.md is pasted whole, uncapped, every run.
-ON_DEMAND_DOC_CAP = 16 << 10
+# Untagged docs are read on demand with `cat`, and bash replaces a stream over 6000 bytes with a
+# 2000+1000-char preview (replypen internal/tool/tool.go defaultBashSpillThreshold): past it the run
+# rarely sees the middle (76% of 6-7 KB doc reads never fetched the spill, 10-12..10-19). So the limit
+# IS the cliff, on the whole file as `cat` prints it (frontmatter included; a templated doc at its
+# longest render); the warn level leaves room for one more paragraph. Change with the host threshold.
+ON_DEMAND_DOC_LIMIT = 6000
+ON_DEMAND_DOC_WARN = 5000
+# Brain dirs whose markdown no run reads as a doc: run notes, test fixtures, developer docs.
+_ON_DEMAND_SKIP_DIRS = frozenset({"journal", "tests", "docs"})
+# AGENTS.md is pasted whole, uncapped, every run: an advisory names a genuinely oversized one.
+AGENTS_MD_CAP = 16 << 10
 # The chat gallery is parsed by the host for the UI, not read by the agent with bash.
 _DOC_SIZE_EXEMPT_FILES = frozenset({"chat_inspiration.md"})
 _DOC_SIZE_IGNORED_DIRS = frozenset({".agents", ".claude", ".replypen", ".rootcause", ".git", ".venv", "_internal",
@@ -455,11 +465,29 @@ def _doc_size_candidates(root: Path) -> list[str]:
                   and (root / r).is_file() and not (root / r).is_symlink())
 
 
+def _projection_renderer(root: Path, kind: str) -> Callable[[str, str], str]:
+    """(rel, text) -> the text a run `cat`s: a projection-templated doc of a project brain at its
+    longest render (`render_upper_bound` with the spec defaults), anything else verbatim."""
+    try:
+        spec = yaml.safe_load((root / "projection.yaml").read_text("utf-8")) if kind == "brain" else None
+    except (OSError, yaml.YAMLError):
+        spec = None
+    if not isinstance(spec, dict):
+        return lambda rel, text: text
+    fills = {k: str(v["default"]) for k, v in (spec.get("placeholders") or {}).items()
+             if isinstance(v, dict) and v.get("default") is not None}
+    globs = spec.get("templated_globs") or ["**/*.md"]
+    return lambda rel, text: (_render_upper_bound(text, fills) if any(_match_glob(g, rel) for g in globs)
+                              else text)
+
+
 def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
     """WARN when a markdown doc won't reach the model whole: a hard-loaded body over its per-file or
-    total cap (the host truncates it), or an on-demand doc / AGENTS.md over ON_DEMAND_DOC_CAP."""
+    total cap (the host truncates it), AGENTS.md over AGENTS_MD_CAP, an on-demand doc over
+    ON_DEMAND_DOC_WARN; FAIL an on-demand doc over ON_DEMAND_DOC_LIMIT (the bash spill cliff)."""
     findings: list[Finding] = []
     totals = dict.fromkeys(HARD_LOAD_CAPS, 0)
+    rendered = _projection_renderer(root, kind)
     for rel in _doc_size_candidates(root):
         try:
             text = (root / rel).read_text("utf-8", "replace")
@@ -485,15 +513,25 @@ def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
             findings.append(Finding(rel, "WARN",
                 f"hard-loaded body is {_kb(size)}, over {' and '.join(over)}: the host truncates it "
                 "and models rarely read the rest with bash", "doc-size"))
-        elif rel == "AGENTS.md" and kind != "mirror" and size > ON_DEMAND_DOC_CAP:
-            findings.append(Finding(rel, "WARN",
-                f"AGENTS.md is {_kb(size)}: pasted whole into every run, every extra byte is tax on "
-                "every thread and buries the routing", "doc-size"))
-        elif (not loaded and size > ON_DEMAND_DOC_CAP and rel not in _DOC_SIZE_EXEMPT_FILES
-              and not _mirrored_corpus(text)):
-            findings.append(Finding(rel, "WARN",
-                f"{_kb(size)} doc will not be read at once: a bash read shows only a ~3 KB preview "
-                "past 6000 chars, and models often stop at the first screen", "doc-size"))
+        elif rel == "AGENTS.md" and kind != "mirror":
+            if size > AGENTS_MD_CAP:
+                findings.append(Finding(rel, "WARN",
+                    f"AGENTS.md is {_kb(size)}: pasted whole into every run, every extra byte is tax on "
+                    "every thread and buries the routing", "doc-size"))
+        elif (not loaded and rel not in _DOC_SIZE_EXEMPT_FILES and not _mirrored_corpus(text)
+              and not _ON_DEMAND_SKIP_DIRS.intersection(rel.split("/")[:-1])):
+            # `cat` bytes: decode without read_text's universal newlines, so CRLF counts twice.
+            raw = (root / rel).read_bytes().decode("utf-8", "replace")
+            read = len(rendered(rel, raw).encode("utf-8"))
+            if read > ON_DEMAND_DOC_LIMIT:
+                findings.append(Finding(rel, "FAIL",
+                    f"on-demand doc is {read} bytes, over the {ON_DEMAND_DOC_LIMIT}-byte bash spill "
+                    "limit: a `cat` past it shows only a 2000+1000-char preview and runs rarely read "
+                    "the rest", "doc-size"))
+            elif read > ON_DEMAND_DOC_WARN:
+                findings.append(Finding(rel, "WARN",
+                    f"on-demand doc is {read} bytes, near the {ON_DEMAND_DOC_LIMIT}-byte bash spill "
+                    "limit (FAIL past it)", "doc-size"))
     return findings
 
 

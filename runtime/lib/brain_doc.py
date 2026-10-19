@@ -6,6 +6,7 @@ this file by path and must run without PyYAML or the rest of `lib`. Keep it stdl
 
 from __future__ import annotations
 
+import fnmatch
 import re
 
 # Mirrors treeview's frontmatterCap: the host only reads frontmatter whose closing fence lies within it.
@@ -75,3 +76,43 @@ def mirrored_corpus(text: str) -> bool:
     block = frontmatter_lines(text)
     return block is not None and any(line.startswith(f"{key}:") for line in block
                                      for key in MIRRORED_CORPUS_KEYS)
+
+
+# replypen internal/projection: `{{ key }}` slots and `<!-- rc:branch -->` regions of `<!-- rc:variant -->` blocks.
+PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")
+BRANCH_RE = re.compile(r"(?s)<!--\s*rc:branch\s+(.*?)-->(.*?)<!--\s*/rc:branch\s*-->")
+VARIANT_RE = re.compile(r"(?s)<!--\s*rc:variant\s+(.*?)-->(.*?)<!--\s*/rc:variant\s*-->")
+
+
+def _segment(pat: str) -> str:
+    """A Go `path.Match` segment as an fnmatch pattern: `[^` negation and `\\x` escapes."""
+    return re.sub(r"\\(.)", r"[\1]", pat.replace("[^", "[!"))
+
+
+def match_glob(pattern: str, rel: str) -> bool:
+    """replypen projection.MatchGlob: `**` spans zero or more segments, other segments use path.Match."""
+    def segs(pat: list[str], seg: list[str]) -> bool:
+        while pat:
+            if pat[0] == "**":
+                return len(pat) == 1 or any(segs(pat[1:], seg[i:]) for i in range(len(seg) + 1))
+            if not seg or not fnmatch.fnmatchcase(seg[0], _segment(pat[0])):
+                return False
+            pat, seg = pat[1:], seg[1:]
+        return not seg
+
+    return segs(pattern.split("/"), rel.split("/"))
+
+
+def render_upper_bound(text: str, fills: dict[str, str] | None = None) -> str:
+    """A templated doc as its longest tenant render: each branch region collapsed to the variant with
+    the most UTF-8 bytes once placeholders are filled from `fills` (spec defaults; unknown slots keep
+    their marker). Real tenant values can still be longer; the raw file, carrying every variant,
+    overstates it."""
+    def fill(part: str) -> str:
+        return PLACEHOLDER_RE.sub(lambda m: (fills or {}).get(m.group(1), m.group(0)), part)
+
+    def longest(m: re.Match[str]) -> str:
+        bodies = (fill(v.group(2)) for v in VARIANT_RE.finditer(m.group(2)))
+        return max(bodies, key=lambda b: len(b.encode("utf-8")), default="")
+
+    return fill(BRANCH_RE.sub(longest, text))
