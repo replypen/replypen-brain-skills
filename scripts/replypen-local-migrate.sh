@@ -81,6 +81,34 @@ for d in "$BASE"/*; do
   [ $APPLY = 1 ] && git -C "$d" worktree repair >/dev/null 2>&1 || true
 done
 
+# 3b. Clones of renamed repos OUTSIDE rootcause-org (e.g. ~/code/kampadmin/kampadmin-rootcause-common,
+# brains cloned under another org folder): fix origin, and rename the folder when it carries the old name.
+for d in "$CODE"/*/*; do
+  [ -d "$d/.git" ] || [ -f "$d/.git" ] || continue
+  [ -L "$d" ] && continue
+  case "$d" in "$OLD"/*|"$NEW"/*) continue ;; esac
+  url=$(git -C "$d" remote get-url origin 2>/dev/null || true)
+  repo=${url##*/}; repo=${repo%.git}
+  case "$url" in
+    *github.com[:/]rootcause-org/*)
+      case "$repo" in replypen|replypen-cli|homebrew-replypen) continue ;; esac  # archived names: rename by hand
+      newrepo=$(newname "$repo"); new="${url%%rootcause-org/*}replypen/$newrepo.git" ;;
+    *github.com[:/]kampadmin/kampadmin-rootcause-common*)
+      newrepo=kampadmin-replypen-common; new="${url%%kampadmin/*}kampadmin/$newrepo.git" ;;
+    *github.com[:/]momentumtools/powertools-rootcause*)
+      newrepo=powertools-replypen; new="${url%%momentumtools/*}momentumtools/$newrepo.git" ;;
+    *) continue ;;
+  esac
+  run git -C "$d" remote set-url origin "$new"
+  if [ "$(basename "$d")" = "$repo" ] && [ "$repo" != "$newrepo" ]; then
+    t="$(dirname "$d")/$newrepo"
+    if [ -e "$t" ]; then echo "SKIP $d: $t already exists"; continue; fi
+    run mv "$d" "$t"; run ln -s "$newrepo" "$d"
+    [ $APPLY = 1 ] && git -C "$t" worktree repair >/dev/null 2>&1 || true
+    [ -f "$t/mise.toml" ] && command -v mise >/dev/null 2>&1 && run mise trust --quiet "$t/mise.toml" || true
+  fi
+done
+
 # 4. mise env files: rootcause-org/<repo>.env → replypen/<new repo>.env, old names kept as symlinks.
 if [ -d "$MISE_OLD" ] && [ ! -L "$MISE_OLD" ]; then
   if [ -e "$MISE_NEW" ]; then echo "STOP: both $MISE_OLD and $MISE_NEW exist; merge by hand"; exit 1; fi
