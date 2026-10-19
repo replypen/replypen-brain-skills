@@ -752,10 +752,11 @@ def test_line_scan_checks_survive_unrelated_yaml_errors(tmp_path: Path) -> None:
     _write(tmp_path / "docs/a.md", "---\nnotes: invalid: yaml\ninclude_in: [agents]\n---\nx\n")
     _write(tmp_path / "lib/b.md", "---\nnotes: invalid: yaml\ninclude_in: [agent]\n---\nx\n")
 
-    brain = _fm(tmp_path, "brain")
-    assert [f.rule for f in brain["docs/a.md"]] == ["include-in-value"]
-    assert "lib/b.md" not in brain
-    assert [f.rule for f in _fm(tmp_path, "mirror")["lib/b.md"]] == ["frontmatter-scope"]
+    # Plus the invalid-YAML WARN itself; the line-scanned keys are still judged.
+    brain = {p: [(f.rule, f.level) for f in fs] for p, fs in _fm(tmp_path, "brain").items()}
+    assert brain["docs/a.md"] == [("include-in-value", "FAIL"), ("frontmatter-unread", "WARN")]
+    assert brain["lib/b.md"] == [("frontmatter-unread", "WARN")]
+    assert [f.rule for f in _fm(tmp_path, "mirror")["lib/b.md"]] == ["frontmatter-scope", "frontmatter-unread"]
 
 
 def test_duplicate_description_on_owned_files(tmp_path: Path) -> None:
@@ -813,3 +814,31 @@ def test_match_glob_follows_host_path_match() -> None:
     assert match_glob("skills/[ab].md", "skills/a.md") and not match_glob("skills/[^ab].md", "skills/a.md")
     assert match_glob("**/*.md", "AGENTS.md") and match_glob("skills/**/*.md", "skills/x/y/z.md")
     assert not match_glob("skills/*.md", "skills/x/y.md") and match_glob(r"skills/\*.md", "skills/*.md")
+
+
+def test_invalid_yaml_frontmatter_fails_only_when_the_fallback_drops_the_description(tmp_path: Path) -> None:
+    """yaml.v3 rejects these blocks; the host then line-scans `description:` (one line) and include_in."""
+    cases = {
+        "colon.md": "---\ndescription: Verplaatsen: kies de afspraak\ninclude_in: [agent]\n---\nx\n",
+        "quote.md": "---\ndescription: \"Open when refunds\n---\nx\n",
+        "wrapped.md": "---\ndescription: Open when: a refund\n  fails twice\n---\nx\n",
+        "tabbed.md": "---\ndescription: |\n\tOpen when a refund fails\n---\nx\n",
+    }
+    for name, text in cases.items():
+        _write(tmp_path / "notes" / name, text)
+    # Tabs yaml.v3 accepts (separator, inside a value) are valid, though PyYAML alone rejects them.
+    _write(tmp_path / "notes/tabsep.md", "---\ndescription:\tOpen when\ta refund fails\n---\nx\n")
+    _write(tmp_path / "notes/quoted.md", "---\ndescription: \"Verplaatsen: kies de afspraak\"\n---\nx\n")
+    _write(tmp_path / "skills/s/SKILL.md", "---\nname: s\ndescription: Plan: open when\n---\n")
+
+    found = {p: fs for p, fs in _fm(tmp_path).items()}
+
+    assert sorted(found) == sorted([*(f"notes/{n}" for n in cases), "skills/s/SKILL.md"])
+    level = {p: [f.level for f in fs] for p, fs in found.items()}
+    assert level["notes/colon.md"] == level["notes/quote.md"] == level["skills/s/SKILL.md"] == ["WARN"]
+    assert level["notes/wrapped.md"] == level["notes/tabbed.md"] == ["FAIL"]
+    assert "not valid YAML (line 2: mapping values are not allowed here)" in found["notes/colon.md"][0].message
+    assert "renders 'Open when: a refund'" in found["notes/wrapped.md"][0].message
+    assert "renders no gloss" in found["notes/tabbed.md"][0].message
+    assert md_description_full(tmp_path / "notes/tabsep.md") == "Open when a refund fails"
+    assert [f.level for f in _fm(tmp_path, "mirror")["notes/wrapped.md"]] == ["WARN"]

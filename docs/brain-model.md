@@ -158,7 +158,8 @@ they get wrong is where to cut.
   the user uploads a photo to change"), and whatever runs kept looking up elsewhere (CLI flags they
   fetched with `--help`, the one table every answer cites).
 - **Give each topic file a `description:`** — the auto tree shows it as the file's gloss, so the run
-  can pick a file without opening the entry doc first.
+  can pick a file without opening the entry doc first. Quote a value that contains `: `
+  (`description: "Verplaatsen: kies de afspraak"`); unquoted it is invalid YAML (lint WARN).
 - **Big reference files (templates, corpora) get read instructions**, not a split: name the slice to
   read (`sed -n '/^<main/,/^<\/main>/p'`), or say `rg` the pattern, never `cat`.
 - **Verify with a replay**: the trace should show entry doc → one topic file, no `/tmp/rc-bash` spill,

@@ -26,6 +26,9 @@ that contract:
     over `ON_DEMAND_DOC_LIMIT` bytes as `cat` prints it (the bash spill cliff); **WARN** past
     `ON_DEMAND_DOC_WARN`, an `include_in` hard-load over the host's per-file/total cap
     (`HARD_LOAD_CAPS`), or `AGENTS.md` over `AGENTS_MD_CAP`. Fix: a lean core + grouped detail files.
+  * **FAIL** — frontmatter yaml.v3 cannot decode when the host's one-line fallback then drops the
+    `description` (a value on following lines, or none); **WARN** for any other invalid block, e.g. an
+    unquoted `: ` in a one-line value.
   * **FAIL** — frontmatter the host will never read: an `include_in` tag outside its role's scan scope
     (mirror file outside root *.md + `MIRROR_SCAN_DIRS`, `triage` outside the project brain, pruned or
     run-hidden path), a mirror `surfaces:`, an unknown role, a key the host misses (not at byte 0,
@@ -217,11 +220,24 @@ class _HostLoader(yaml.SafeLoader):
         return super().resolve(kind, value, implicit)
 
 
+def _host_yaml_text(block: list[str]) -> str:
+    """A frontmatter block as YAML text PyYAML decodes like yaml.v3: a tab after leading indentation (a
+    `key:\tvalue` separator or inside a value) is legal YAML that only PyYAML rejects, so it becomes a
+    space; whitespace collapses in every rendered description anyway. A tab IN the indentation stays —
+    both parsers reject it."""
+    out = []
+    for line in block:
+        line = line.rstrip("\r")
+        body = line.lstrip(" \t")
+        out.append(line[:len(line) - len(body)] + body.replace("\t", " "))
+    return "\n".join(out)
+
+
 def _description_nodes(block: list[str]) -> list[yaml.Node] | None:
     """Every top-level `description` value node in a frontmatter block, in order; None when the block
     is not a decodable YAML mapping (the host then falls back to the line scan)."""
     try:
-        root = yaml.compose("\n".join(line.rstrip("\r") for line in block), Loader=_HostLoader)
+        root = yaml.compose(_host_yaml_text(block), Loader=_HostLoader)
     except yaml.YAMLError:
         return None
     if not isinstance(root, yaml.MappingNode):
@@ -742,11 +758,13 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
     block, at_byte_0 = intended
     # YAML gives the author's intent (values, nesting); when it can't decode the block, the host's own
     # line scan still reads top-level keys, so the line-scan checks below keep running on those.
+    yaml_error: yaml.YAMLError | None = None
     try:
-        node = yaml.compose("\n".join(block))
-        data = yaml.safe_load("\n".join(block))
-    except yaml.YAMLError:
+        node = yaml.compose(_host_yaml_text(block))
+        data = yaml.safe_load(_host_yaml_text(block))
+    except yaml.YAMLError as exc:
         node = data = None
+        yaml_error = exc
     parsed = isinstance(data, dict)
     data = data if parsed else {}
     top = ({str(k) for k in data} if parsed else
@@ -787,6 +805,30 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
         got = repr(_cap(shown, 60)) if shown else "no gloss"
         return [unread(f"`description:` {why}; the tree line renders {got} — keep one `description:` "
                        "in a short frontmatter block", "WARN" if kind == "mirror" else "FAIL")]
+
+    def invalid_yaml() -> list[Finding]:
+        """Frontmatter yaml.v3 cannot decode (an unquoted `: ` in a value, a tab in the indentation, an
+        unbalanced quote). include_in/surfaces are line-scanned anyway; the description falls back to a
+        one-line scan, so FAIL only when that drops it (a value on following lines, or none at all)."""
+        if yaml_error is None:
+            return []
+        mark = getattr(yaml_error, "problem_mark", None) or getattr(yaml_error, "context_mark", None)
+        problem = getattr(yaml_error, "problem", None) or str(yaml_error).split("\n", 1)[0]
+        what = f"frontmatter is not valid YAML{f' (line {mark.line + 2}' if mark else ' ('}: {problem})"
+        fix = "quote the value (`description: \"A: b\"`) or write ` — ` for `: `; indent with spaces only"
+        shown = _frontmatter_description(text.encode("utf-8"))[0]
+        start = next((i for i, line in enumerate(block) if line.startswith("description:")), None)
+        rest = block[start + 1:] if start is not None else []
+        tail = next((i for i, line in enumerate(rest) if line.strip() and not line[:1].isspace()), len(rest))
+        lost = start is not None and (not shown or any(line.strip() for line in rest[:tail]))
+        if lost and not (desc_owned and not shown):
+            got = repr(_cap(shown, 60)) if shown else "no gloss"
+            return [unread(f"{what}, so the host reads `description:` by its one-line fallback and the tree "
+                           f"line renders {got} — {fix}", "WARN" if kind == "mirror" else "FAIL")]
+        if lost:
+            return []  # an owned file with no gloss already FAILs description-missing
+        return [unread(f"{what}; the host still reads it line by line, strict YAML readers do not — {fix}",
+                       "WARN")]
 
     if fm is None:
         lost = sorted(k for k in declared if k != "description" or not desc_owned)
@@ -857,7 +899,7 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
         out.append(scope("`surfaces:` is only honored in a project or tenant brain; a mirror doc is never "
                          "stubbed per surface — move the doc into the brain or drop the key"))
 
-    out += desc_unread()
+    out += desc_unread() + invalid_yaml()
     return out
 
 
@@ -1115,7 +1157,7 @@ _RULE_FIXES = {
                          "(brain_lint.py prints the repo kind it linted as; override with --as)",
     "frontmatter-unread": "fix: `---` on line 1, keys at column 0 spelled exactly `include_in` / `surfaces` / "
                           "`description`, one-line or `- item` lists, one `description:`, frontmatter "
-                          "closed within 8 KB",
+                          "closed within 8 KB, valid YAML (quote a value containing `: `)",
     "frontmatter-redundant": "fix: drop the listed tags; the file already reaches that prompt whole",
     "include-in-value": "fix: use only triage, grounding, agent, principal",
     "doc-size": "fix: keep a lean core with the most important rules first; move detail into grouped "
