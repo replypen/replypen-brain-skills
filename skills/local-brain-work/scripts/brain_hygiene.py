@@ -37,6 +37,9 @@ and dev-tooling dot-dirs are judged for conflict markers only):
                    pointer (only once the file uses `skills:`), a prompt or category preamble with
                    over 600 chars of inline notes (move the recipe to a .md behind `skills:`), a
                    continuation heading that differs from its first part.
+  * triage-cases — the triage eval corpus `_internal/triage/cases/*.md`, judged whole whenever a case
+                   changed, by `triage_cases.py` (the host parser's mirror): schema, ids, message order,
+                   expectations, body sections. NOTICE when no ignore file hides the cases from runs.
   * paths        — NOTICE only: a cited `/brain/…` (`/tenant/…` in an overlay, `/mirrors/<self>/…` in a
                    mirror) this checkout will not ship: absent, gitignored or run-hidden. Local only;
                    `brain_paths.py` also checks `/kb`, `/tenant`, other mirrors in production.
@@ -65,6 +68,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import json
 import re
 import shutil
 import subprocess
@@ -76,6 +80,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import brain_paths  # noqa: E402
 import brain_structure as bs  # noqa: E402
+import triage_cases  # noqa: E402
 
 CONFLICT_RE = re.compile(r"^(<{7}|\|{7}|>{7})(?: |$)")
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")  # replypen internal/projection
@@ -603,6 +608,31 @@ def parse_chat_inspiration_set(files: list[tuple[str, str]], root: Path | None =
     return cats, findings
 
 
+def _triage_case_findings(root: Path) -> list[bs.Finding]:
+    """`triage-cases`: the whole corpus, as the host parses it (it refuses all cases if one is bad).
+    PyYAML is optional for this stdlib-only gate: without it the linter re-runs under `uv`."""
+    try:
+        import yaml  # noqa: F401
+        raw = triage_cases.lint(root)
+    except ModuleNotFoundError:
+        uv = shutil.which("uv")
+        if uv is None:
+            return [bs.Finding("hygiene", "triage-cases: skipped, needs PyYAML or uv on PATH",
+                               path=triage_cases.CASES_DIR, severity="NOTICE")]
+        proc = subprocess.run([uv, "run", "--no-project", "--with", "pyyaml", "python",
+                               str(Path(triage_cases.__file__).resolve()), "--brain", str(root), "--json"],
+                              capture_output=True, text=True, check=False)
+        try:
+            raw = json.loads(proc.stdout)  # exit 1 is a lint FAIL with findings; anything else is a crash
+            if proc.returncode not in (0, 1) or not isinstance(raw, list):
+                raise ValueError
+        except ValueError:
+            return [bs.Finding("hygiene", "triage-cases: linter did not run (fix uv/PyYAML): "
+                                          f"{proc.stderr.strip()[-200:]}", path=triage_cases.CASES_DIR)]
+    return [bs.Finding("hygiene", f"triage-cases: {f['message']}", path=f["path"],
+                       severity="NOTICE" if f["level"] == "NOTICE" else "ERROR") for f in raw]
+
+
 def check(root: Path, files: list[str] | None = None, base: str | None = None) -> list[bs.Finding]:
     """Hygiene findings for a brain at `root`. `files` scopes every rule but `conflict`;
     None judges the whole tracked tree. `base` (the ref to compare against) enables doc-spill."""
@@ -628,6 +658,10 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
                                          set(files) | _deleted_since(root, base))):
         findings.extend(parse_chat_inspiration_set(
             [(rel, (root / rel).read_text("utf-8", errors="replace")) for rel in gallery], root)[1])
+    cases = triage_cases.case_files(root)
+    if cases and (files is None or any(rel.startswith(triage_cases.CASES_DIR + "/") for rel in
+                                       set(files) | _deleted_since(root, base))):
+        findings.extend(_triage_case_findings(root))
     for rel in text_files:
         text = (root / rel).read_text("utf-8", errors="replace")
         for lineno, line in enumerate(text.splitlines(), start=1):

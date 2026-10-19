@@ -142,6 +142,9 @@ Only these are first-class:
 - `rp-fleet` — recent fleet and recurring failure patterns.
 - `brain-fleet-report` — the daily two-audience fleet report: Python collects a day of evidence;
   the model judges it into persisted owner/technical review queues.
+- `brain-triage-eval` — a linted, synthetic triage case corpus in the brain
+  (`_internal/triage/cases/`) run through the real triage decision at a `dev/*` ref with
+  `rp project triage eval --baseline HEAD`; false skips first, labels owner-approved.
 - `brain-simulate` — replay representative real inbound cases through `rp ask --simulation`, grade
   each draft against the human's historical reply, render an HTML report with run links and
   copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff. Fixture cases (synthetic,

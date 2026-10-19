@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Dev: Triage Eval"
+  short_description: "Prove a triage wording change on a labelled case corpus"
+  default_prompt: "Use $brain-triage-eval to compare a dev/* triage change against HEAD on the brain's triage cases."
