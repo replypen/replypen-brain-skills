@@ -50,6 +50,7 @@ PROMPT_VERSION = "v1"  # image alt text; bump with annotate.md's prompt
 VIDEO_PROMPT_VERSION = "s1"  # video summary + chapters; bump with annotate.md's video prompt
 TRANSCRIPT_VERSION = "t1"  # bump to re-transcribe every video
 UNREADABLE = "UNREADABLE"
+README_BUDGET = 5000  # bytes per generated README/INDEX: under the kit lint's 6,000-byte on-demand doc limit
 LONG_VIDEO_S = 300  # long videos need 3-8 chapters
 SNAP_TOLERANCE_S = 10  # a chapter start may sit this far from a transcript segment start; it snaps onto it
 GEMINI_TOKENS_PER_S = (100, 7)  # media_resolution LOW, measured: 44-min webinar = 244k in / 17k out
@@ -764,12 +765,23 @@ class Render:
         for sid, items in per_sec.items():
             s = self.secs[sid]
             items.sort(key=lambda a: (a["position"], a["title"].lower()))
+            sec_path = Path(self.cat_slug[s["category_id"]]) / self.sec_slug[sid]
             lines = [f"# {s['name'].strip()}", "",
                      self.p.labels["section_readme"].format(category=self.cats[s["category_id"]]["name"].strip(),
                                                            n=len(items)), ""]
-            lines += [f"- [{one_line(a['title'])}]({self.paths[a['id']].name})" for a in items]
-            sec_path = Path(self.cat_slug[s["category_id"]]) / self.sec_slug[sid]
-            self.write(sec_path / "README.md", "\n".join(lines) + "\n")
+            listed = items
+            if any(x in s["name"].lower() for x in self.p.release_note_sections):
+                listed = sorted(items, key=lambda a: a["created_at"], reverse=True)  # newest first under the cap
+            rows = [f"- [{one_line(a['title'])}]({self.paths[a['id']].name})" for a in listed]
+            used = len("\n".join(lines).encode()) + 300  # reserve room for the overflow line
+            for i, row in enumerate(rows):
+                used += len(row.encode()) + 1
+                if used > README_BUDGET:
+                    R = f"/brain/{self.p.target.relative_to(self.p.brain)}/{sec_path.as_posix()}"
+                    rows = rows[:i] + ["", f"{len(rows) - i} more articles in this folder (list kept under "
+                                       f"{README_BUDGET} bytes): `rg -i '^title:' {R} -g '*.md' -g '!README.md'`"]
+                    break
+            self.write(sec_path / "README.md", "\n".join(lines + rows) + "\n")
             cat_secs.setdefault(s["category_id"], []).append(s)
         cat_order = sorted(cat_secs, key=lambda c: (self.cats[c]["position"], c))
         for cid in cat_order:
@@ -821,11 +833,11 @@ class Render:
                   "`_videos/<video_id>.md` "
                   "(summary: when to propose the video, chapters, timestamped transcript lines that deep-link into the "
                   "video). Summaries and transcripts are machine-generated."]
+        # Categories only: each category README lists its sections with counts (a per-section table here
+        # pushed big help centers past the doc-size limit).
         L += ["", "| category (folder) | sections | articles |", "|---|---|---|"]
-        L += [f"| `{self.cat_slug[c]}` ({self.cats[c]['name'].strip()}) | {len(cat_secs[c])} | "
-              f"{sum(len(per_sec[s['id']]) for s in cat_secs[c])} |" for c in cat_order]
-        L += ["", "| section (folder) | articles |", "|---|---|"]
-        L += [f"| `{sec_dir[s['id']]}` | {len(per_sec[s['id']])} |" for c in cat_order for s in cat_secs[c]]
+        L += [f"| [`{self.cat_slug[c]}`]({self.cat_slug[c]}/README.md) ({self.cats[c]['name'].strip()}) | "
+              f"{len(cat_secs[c])} | {sum(len(per_sec[s['id']]) for s in cat_secs[c])} |" for c in cat_order]
         not_rn = "".join(f" -g '!{d}/**'" for d in rn)
         L += ["", "## rg recipes", "",
               "Paths are from `/brain`. Frontmatter values are JSON-quoted on one line. Exclude `README.md`, "
@@ -935,9 +947,12 @@ def check_tree(p: Profile, root: Path, man: dict, id_key: str, publish: bool) ->
                 errs.append(f"{rel}: broken {'image' if is_img else 'link'} -> {target}")
     for sec in {str(Path(a).parent) for a in arts}:
         readme = root / sec / "README.md"
-        listed = set(re.findall(r"\]\(([^)]+\.md)\)", readme.read_text())) if readme.is_file() else set()
-        errs += [f"{sec}/README.md does not list {Path(a).name}" for a in arts
-                 if str(Path(a).parent) == sec and Path(a).name not in listed]
+        text = readme.read_text() if readme.is_file() else ""
+        listed = set(re.findall(r"\]\(([^)]+\.md)\)", text))
+        missing = [Path(a).name for a in arts if str(Path(a).parent) == sec and Path(a).name not in listed]
+        capped = re.search(r"^(\d+) more articles in this folder", text, re.M)  # README_BUDGET overflow line
+        if not capped or int(capped[1]) != len(missing):
+            errs += [f"{sec}/README.md does not list {n}" for n in missing]
     undescribed = {i["sha256"] for i in man["images"] if not desc_current(p, store.get(i["sha256"]))}
     for i in man["images"]:
         text = one_line(store.get(i["sha256"], {}).get("text", ""))

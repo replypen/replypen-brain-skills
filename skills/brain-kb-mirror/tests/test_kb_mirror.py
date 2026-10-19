@@ -129,6 +129,22 @@ def test_render_shape(brain):
     assert "kind: release-note" in rn and "ShowKnowledgeBaseEntry" not in rn
 
 
+def test_readmes_stay_under_the_doc_budget(brain, monkeypatch):
+    monkeypatch.setattr(kb, "README_BUDGET", 480)
+    src = Source()
+    for i, aid in enumerate((202, 203, 204)):
+        src.articles.append({**article(aid, 20, f"Version 2.{i + 1}", "<p>Fixes.</p>"),
+                             "created_at": f"2025-0{i + 3}-01T00:00:00Z"})
+    refresh(brain, src)
+    root = brain / "knowledge/example-help"
+    rn = (root / "news/release-notes/README.md").read_text()
+    assert rn.index("Version 2.3") < rn.index("Version 2.2")  # release notes newest first under the cap
+    assert "Version 2.0" not in rn and "more articles in this folder" in rn
+    assert "rg -i '^title:' /brain/knowledge/example-help/news/release-notes" in rn
+    index = (root / "INDEX.md").read_text()
+    assert "| section (folder) |" not in index and "[`news`](news/README.md)" in index
+
+
 def test_rerun_is_byte_identical_noop(brain, tmp_path):
     src = Source()
     refresh(brain, src)

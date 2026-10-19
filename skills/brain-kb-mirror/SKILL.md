@@ -108,7 +108,7 @@ the provider id (`zendesk_id`), `section`, `category`, `locale`, `created_at`, `
 up to 5 chapter deep-links; `_videos/<video_id>.md` holds frontmatter (`video_id`, `video_url`, `title`,
 `duration_s`, `language`, `transcript_source`, `prompt_version`, `articles`), summary, chapters and
 `[mm:ss](<url>&t=<s>s) text` transcript lines. `{{`/`}}` are escaped (brains are templated). Per-section and per-category `README.md`, a root
-`README.md` (provenance) and `INDEX.md` (counts + `rg` recipes).
+`README.md` (provenance) and `INDEX.md` (category counts + `rg` recipes). Generated READMEs stay under `README_BUDGET` (5,000 bytes, the doc-size lint FAILs past 6,000): a long section list (release notes newest first) ends in an `N more articles … rg` line.
 
 New source type: add an adapter class in `kb_mirror.py` that returns the same snapshot shape
 (`ADAPTERS`). Tests: `tests/test_kb_mirror.py` (command in its docstring).
