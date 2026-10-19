@@ -50,7 +50,7 @@ first line is the outcome, its last line the exit code:
 
 | Exit | Receipt | Do |
 |---|---|---|
-| 0 | `LIVE …` / `NO-OP …` | Done; report the SHA and any `WARNING` line. |
+| 0 | `LIVE …` / `NO-OP …` | Done; report the SHA and any `WARNING` line (e.g. `triage-source`: two triage homes at one scope). |
 | 3 | `CONFLICT at git-sync` | Resolve keeping both sides' intent ([recovery](../brain-git-sync/references/recovery.md)), stage, rerun the same command. |
 | 2 | `BLOCKED at <stage>` | Nothing published. `classify`: wrong repo/project (kit → `./refresh-brains.sh --release patch`). `git-sync`: a check, hygiene or local file needs fixing. `preflight`: fix the listed tenants. `edge-gate`: report the channel SHAs as the human decision. |
 | 1 | `FAILED at publish/proof` | Not live; [Support handoff](#support-handoff). |

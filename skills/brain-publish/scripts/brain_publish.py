@@ -201,6 +201,10 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
     receipt.update(project=args.project, channel=args.channel, repo=str(repo))
 
     warnings: list[str] = receipt.setdefault("warnings", [])
+    sys.path.insert(0, str(CHECKS))
+    import triage_source
+
+    warnings.extend(f"triage-source: {f}" for f in triage_source.check(repo))
     checks = [*default_checks(args.skip_docker_tier, warnings), *args.verify_command]
     receipt["verify_commands"] = checks
     for w in warnings:

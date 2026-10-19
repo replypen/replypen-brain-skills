@@ -10,6 +10,11 @@ lives in two places that compose into one prompt: the scoped **triage policy** (
 policy get`, editable by the owner) and every brain doc tagged `include_in: [triage]` (by convention
 `triage.md`). Edit either and you can lose a patient mail silently. This skill makes that measurable.
 
+Keep **one** home per scope. A project with a brain puts its triage rules in `triage.md` and leaves
+the project policy empty; the policy stays the home for brain-less projects and for tenant- or
+mailbox-specific rules (the triage step reads only the project brain, never a tenant overlay).
+`triage_source.py` (run by `brain_publish.py`) flags both homes at the same scope.
+
 ## The command
 
 ```bash
