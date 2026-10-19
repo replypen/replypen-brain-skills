@@ -144,6 +144,26 @@ one only when it does the former:
 - **Don't hand-maintain a Layout tree** in `AGENTS.md` — it duplicates the auto tree and rots. Align
   with it; add rows only for what the auto tree can't reach.
 
+### Splitting a doc: one run, one topic file
+
+North star: a run reads the lean entry doc, then **exactly the one file its task needs**, each in a
+single read that does not spill (`doc-size` below). Models already know how to write good docs; the part
+they get wrong is where to cut.
+
+- **Cut by what a run is doing, not by subject taxonomy.** Look at real traces (`rp run debug`):
+  which asks recur, which sections each run actually read. "Edit a photo" and "generate an image"
+  are two files even though both are "image"; a reference section only one kind of run needs moves
+  out.
+- **The entry doc keeps what every run needs**: hard rules, the routing lines ("Open `editing.md` when
+  the user uploads a photo to change"), and whatever runs kept looking up elsewhere (CLI flags they
+  fetched with `--help`, the one table every answer cites).
+- **Give each topic file a `description:`** — the auto tree shows it as the file's gloss, so the run
+  can pick a file without opening the entry doc first.
+- **Big reference files (templates, corpora) get read instructions**, not a split: name the slice to
+  read (`sed -n '/^<main/,/^<\/main>/p'`), or say `rg` the pattern, never `cat`.
+- **Verify with a replay**: the trace should show entry doc → one topic file, no `/tmp/rc-bash` spill,
+  no second topic file opened "just in case".
+
 ## Production Prompt Boundary
 
 The production loop also sends standing instructions from ReplyPen itself, currently in
