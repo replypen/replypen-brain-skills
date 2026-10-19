@@ -311,13 +311,39 @@ def test_chat_inspiration_runs_in_check_scoped_to_root_file(tmp_path: Path) -> N
     assert rules(root, files=[]) == set()  # changed-file scoped like the other rules
 
 
-@pytest.mark.parametrize("brain", ["kampadmin", "dentai", "pro-backup"])
+@pytest.mark.parametrize("brain", ["kampadmin-support", "dentai", "pro-backup"])
 def test_real_brain_galleries_have_no_fail(brain: str) -> None:
-    path = REAL_BRAINS / f"replypen-brain-{brain}" / "chat_inspiration.md"
-    if not path.is_file():
-        pytest.skip(f"{path} not checked out")
-    cats, found = brain_hygiene.parse_chat_inspiration(path.read_text("utf-8"))
+    root = REAL_BRAINS / f"replypen-brain-{brain}"
+    if not (rels := brain_hygiene.chat_inspiration_files(root)):
+        pytest.skip(f"{root} has no gallery checked out")
+    cats, found = brain_hygiene.parse_chat_inspiration_set(
+        [(rel, (root / rel).read_text("utf-8")) for rel in rels], root)
     assert cats and [f.render() for f in found if f.severity != "NOTICE"] == []
+
+
+def test_chat_inspiration_split_set(tmp_path: Path) -> None:
+    root = make_brain(tmp_path, {
+        "chat_inspiration/10-a.md": HEADER + "## 📝 A\n- **One** — one\n",
+        "chat_inspiration/20-a.md": HEADER + "## 📝 A\n- **Two** — two\n",
+        "chat_inspiration/30-b.md": HEADER + "## B\n- **One** — b one\n",
+        "chat_inspiration/recipes/x.md": "# not gallery\n- loose bullet\n",
+    })
+    assert brain_hygiene.chat_inspiration_files(root) == [
+        "chat_inspiration/10-a.md", "chat_inspiration/20-a.md", "chat_inspiration/30-b.md"]
+    found = [f for f in brain_hygiene.check(root) if "chat-inspiration" in f.message]
+    assert found == []  # a continuation in another file is fine; recipes/ is not parsed
+    (root / "chat_inspiration/20-a.md").write_text(HEADER + "## 📝 A\n- **One** — again\n", "utf-8")
+    found = [f for f in brain_hygiene.check(root) if "chat-inspiration" in f.message]
+    assert [(f.path, "duplicate card id" in f.message) for f in found] == [("chat_inspiration/20-a.md", True)]
+    assert brain_hygiene.is_chat_inspiration_path("chat_inspiration/10-a.md")
+    assert not brain_hygiene.is_chat_inspiration_path("chat_inspiration/recipes/x.md")
+
+
+def test_chat_inspiration_long_inline_notes_notice() -> None:
+    note = "  - " + "x" * 250 + "\n"
+    errors, notices = ci(HEADER + "## A\n- **Short** — p\n" + note * 2 + "- **Long** — q\n" + note * 3)
+    assert errors == set() and len([n for n in notices if "inline notes" in n]) == 1
+    assert any("'Long' carries 750 chars" in n for n in notices)
 
 
 # --- chat-inspiration author notes + skill pointers (grammar v2; host internal/chatinspiration) ---
@@ -463,3 +489,22 @@ def test_git_sync_gates_a_knowledge_only_brain(tmp_path: Path) -> None:
 
     assert run.returncode == 2, run.stderr
     assert "knowledge/a.md:5: hygiene: conflict" in run.stderr
+
+
+def test_chat_inspiration_deleted_part_revalidates_set(tmp_path: Path) -> None:
+    root = make_brain(tmp_path, {"chat_inspiration.md": HEADER + "## A\n",
+                                 "chat_inspiration/10-a.md": HEADER + "## A\n- **One** — one\n"})
+    (root / "chat_inspiration/recipes").mkdir()
+    git(root, "mv", "chat_inspiration/10-a.md", "chat_inspiration/recipes/10-a.md")
+    found = [f for f in brain_hygiene.check(root, ["chat_inspiration/recipes/10-a.md"], "HEAD")
+             if "chat-inspiration" in f.message and f.severity != "NOTICE"]
+    assert any("no prompt parsed" in f.message for f in found)
+
+
+def test_chat_inspiration_cap_finding_names_the_continuation_file() -> None:
+    notes = "".join(f"note {i}\n" for i in range(8))
+    _, found = brain_hygiene.parse_chat_inspiration_set([
+        ("chat_inspiration/10-a.md", HEADER + "## A\n" + notes + "- **One** — one\n"),
+        ("chat_inspiration/20-a.md", HEADER + "## A\nnote 9\n- **Two** — two\n")])
+    (cap,) = [f for f in found if "has 9 notes" in f.message]
+    assert (cap.path, cap.line) == ("chat_inspiration/20-a.md", 5)

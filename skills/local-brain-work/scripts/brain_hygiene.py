@@ -21,23 +21,27 @@ and dev-tooling dot-dirs are judged for conflict markers only):
                    start (e.g. no headless Chrome), skips the rule with a NOTICE.
   * description  — a `skills/**/*.md` frontmatter `description` over 1024 characters (the Agent
                    Skills limit; the publish lint rejects it, the host keeps only the first 1024).
-  * chat-inspiration — root `chat_inspiration.md` (chat example-prompt gallery), parsed exactly as the
-                   host does (`parse_chat_inspiration`), whose parser drops bad lines silently. FAIL:
+  * chat-inspiration — the chat example-prompt gallery set (root `chat_inspiration.md`, then
+                   `chat_inspiration/*.md` by name), parsed as ONE library exactly as the host does
+                   (`parse_chat_inspiration_set`), whose parser drops bad lines silently. FAIL:
                    no prompt at all, a bullet in a category that yields no prompt, a cap exceeded
                    (20 categories, 50 prompts/category, 500-char prompt, 80-char title), a heading
-                   that yields no category, a duplicate category id, an unbalanced `[placeholder]`,
-                   frontmatter `surfaces:` missing or without `chat`, a plain line after a
+                   that yields no category, a duplicate category id within one file, an
+                   unbalanced `[placeholder]`, frontmatter `surfaces:` missing or without `chat`
+                   (per file), a plain line after a
                    category's first prompt, an invalid/missing `skills:` entry, a note/skill cap
                    (300-char note, 8 notes, 6 skills effective), a top-level `- skills:` bullet.
                    NOTICE (non-blocking): prompt over 160 chars, no bold title, empty category,
                    duplicate prompt text, bullets swallowed by a sub-heading, an indented bullet
                    before a category's first prompt, a `skill:` typo, a prompt without any skill
-                   pointer (only once the file uses `skills:`).
+                   pointer (only once the file uses `skills:`), a prompt or category preamble with
+                   over 600 chars of inline notes (move the recipe to a .md behind `skills:`), a
+                   continuation heading that differs from its first part.
   * paths        — NOTICE only: a cited `/brain/…` (`/tenant/…` in an overlay, `/mirrors/<self>/…` in a
                    mirror) this checkout will not ship: absent, gitignored or run-hidden. Local only;
                    `brain_paths.py` also checks `/kb`, `/tenant`, other mirrors in production.
   * doc-spill    — an on-demand doc (no `include_in`, no mirrored-corpus `source_url:`/`video_url:`
-                   frontmatter, not root AGENTS.md / chat_inspiration.md, not under
+                   frontmatter, not root AGENTS.md, not under
                    journal/_internal/tests/docs/dot-dirs) whose whole file crosses 6000 bytes in this
                    change (≤6000 or absent at the base: HEAD for --staged, else `--base`, also for
                    --all); bash shows such a read as a 2000+1000-char preview. Already-over docs stay
@@ -92,6 +96,7 @@ MERMAID_SYNTAX_RE = re.compile(r"(Parse|Lexical|Syntax) error|No diagram type de
 
 # Mirror of replypen internal/chatinspiration (library.go): keep caps, regexes and separators in sync.
 CHAT_INSPIRATION_FILE = "chat_inspiration.md"
+CHAT_INSPIRATION_DIR = "chat_inspiration"  # split form: one *.md per category, parsed after the root file
 CI_MAX_CATEGORIES, CI_MAX_PROMPTS, CI_MAX_PROMPT_RUNES, CI_MAX_TITLE_RUNES = 20, 50, 500, 80
 CI_DERIVED_TITLE_RUNES = 60
 CI_READABLE_PROMPT_RUNES = 160  # card readability, not a host cap
@@ -100,6 +105,9 @@ CI_ID_SUFFIX_RE = re.compile(r"\s*\{#([A-Za-z0-9_-]{1,64})\}\s*\Z", re.ASCII)
 CI_BOLD_RE = re.compile(r"^\*\*(.+?)\*\*\s*(.*)$", re.DOTALL)
 CI_SEPARATORS = ("\u2014", "\u2013", "-", ":")
 CI_MAX_NOTE_RUNES, CI_MAX_NOTES, CI_MAX_SKILLS = 300, 8, 6  # per note line; effective per prompt
+# Own inline notes per prompt (or category preamble), `skills:` excluded. p90 across all brains on
+# 2026-10-19 (178 prompts: p50 265, p75 396, p90 634): two full directives pass, a recipe warns.
+CI_LONG_NOTES_RUNES = 600
 CI_SKILL_NAME_RE = re.compile(r"[A-Za-z0-9_-]+", re.ASCII)
 CI_SKILL_ROOTS = ("/brain/", "/tenant/", "/skills/", "/mirrors/")
 CI_SKILL_TYPOS = ("skill:", "skils:", "skillz:")
@@ -134,7 +142,7 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
     origins = _rename_origins(root, base)
     for rel in sorted(files):
         parts = rel.split("/")
-        if (not rel.endswith(".md") or rel in ("AGENTS.md", CHAT_INSPIRATION_FILE)
+        if (not rel.endswith(".md") or rel == "AGENTS.md"
                 or any(d in SPILL_SKIP_DIRS or d.startswith(".") for d in parts[:-1])):
             continue
         raw = (root / rel).read_bytes()
@@ -150,6 +158,15 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
                               f"bash read past {SPILL_BYTES} shows only a 2000+1000-char preview: split into "
                               "a lean core + detail file linked by an \"Open X for Y\" line", path=rel))
     return out
+
+
+def _deleted_since(root: Path, base: str | None) -> set[str]:
+    """Paths deleted (a rename counts as delete + add) since `base`, index and working tree."""
+    if not base:
+        return set()
+    out = subprocess.run(["git", "-C", str(root), "diff", "--no-renames", "--name-only", "--diff-filter=D",
+                          base], capture_output=True, text=True)
+    return set(out.stdout.split()) if out.returncode == 0 else set()
 
 
 def _rename_origins(root: Path, base: str) -> dict[str, str]:
@@ -329,12 +346,12 @@ def ci_skill_path(entry: str) -> str | None:
     return entry if entry.endswith(".md") else entry + "/SKILL.md"
 
 
-def _ci_capped(cat: list[tuple[str, int]], own: list[tuple[str, int]], cap: int, dedup: bool
+def _ci_capped(cat: list[tuple], own: list[tuple], cap: int, dedup: bool
                ) -> tuple[list[str], list[str]]:
     """(effective, dropped own entries): category first, the prompt's own fill the rest."""
-    eff = [v for v, _ in cat][:cap]
+    eff = [v for v, *_ in cat][:cap]
     dropped = []
-    for v, _ in own:
+    for v, *_ in own:
         if dedup and v in eff:
             continue
         if len(eff) < cap:
@@ -346,37 +363,48 @@ def _ci_capped(cat: list[tuple[str, int]], own: list[tuple[str, int]], cap: int,
 
 def parse_chat_inspiration(text: str, path: str = CHAT_INSPIRATION_FILE, root: Path | None = None
                            ) -> tuple[list[dict], list[bs.Finding]]:
-    """Parse a brain's `chat_inspiration.md` exactly as the host does and judge what it would
-    silently drop. Returns (categories, findings); a category is {id, label, emoji, line, prompts,
-    notes, skills} (its own), a prompt {title, prompt, placeholders, line, bold, notes, skills}
+    """One gallery file; see parse_chat_inspiration_set."""
+    return parse_chat_inspiration_set([(path, text)], root)
+
+
+def chat_inspiration_files(root: Path, tracked: set[str] | None = None) -> list[str]:
+    """The gallery set in host parse order (Go `chatinspiration.Files`): root `chat_inspiration.md`,
+    then `chat_inspiration/*.md` by name, one level (`chat_inspiration/recipes/` is not gallery)."""
+    out = [CHAT_INSPIRATION_FILE] if (root / CHAT_INSPIRATION_FILE).is_file() else []
+    d = root / CHAT_INSPIRATION_DIR
+    if d.is_dir():
+        out += [f"{CHAT_INSPIRATION_DIR}/{p.name}" for p in sorted(d.iterdir(), key=lambda p: p.name)
+                if p.suffix == ".md" and p.is_file()]
+    return [p for p in out if tracked is None or p in tracked]
+
+
+def is_chat_inspiration_path(rel: str) -> bool:
+    if rel == CHAT_INSPIRATION_FILE:
+        return True
+    name = rel.removeprefix(CHAT_INSPIRATION_DIR + "/")
+    return name != rel and "/" not in name and name.endswith(".md") and name != ".md"
+
+
+def parse_chat_inspiration_set(files: list[tuple[str, str]], root: Path | None = None
+                               ) -> tuple[list[dict], list[bs.Finding]]:
+    """Parse a brain's gallery set [(rel path, text)] exactly as the host's `ParseFiles` does and judge
+    what it would silently drop: one library, a later file's `##` with a known id continues that
+    category. Returns (categories, findings); a category is {id, label, emoji, line, path, prompts,
+    notes, skills} (its own), a prompt {title, prompt, placeholders, line, path, bold, notes, skills}
     (effective: category first, capped). `root` enables the bare-skill-name existence check.
     ERROR findings block; NOTICE ones advise."""
     findings: list[bs.Finding] = []
+    path = files[0][0] if files else CHAT_INSPIRATION_FILE
 
-    def add(message: str, fix: str, line: int | None, severity: str = "ERROR") -> None:
+    def add(message: str, fix: str, line: int | None, severity: str = "ERROR", where: str | None = None
+            ) -> None:
         findings.append(bs.Finding("hygiene", f"chat-inspiration: {message}; fix: {fix}",
-                                   path=path, line=line, severity=severity))
-
-    lines = text.replace("\r\n", "\n").split("\n")
-    start = 0
-    if lines and lines[0].strip() == "---":
-        start = next((i + 1 for i in range(1, len(lines)) if lines[i].strip() == "---"), 0)
-    surfaces = _ci_surfaces(lines, start - 1) if start else None
-    if surfaces is None:
-        add("no frontmatter `surfaces:`, so email runs see the gallery as a doc",
-            "start the file with `---` / `surfaces: [chat, dashboard_chat]` / `---`", 1)
-    elif "chat" not in surfaces:
-        add(f"frontmatter `surfaces: {surfaces}` lacks `chat`",
-            "use `surfaces: [chat, dashboard_chat]`", 1)
+                                   path=where or path, line=line, severity=severity))
 
     cats: list[dict] = []
     by_id: dict[str, dict] = {}
-    cur: dict | None = None
-    after_subheading = False  # a non-## heading ended a category: its bullets are ignored
     seen_prompts: dict[str, int] = {}
     seen_ids: dict[str, int] = {}
-    in_preamble = True  # this `##` section has not had a prompt bullet yet
-    target: dict | None = None  # prompt the next indented bullets annotate (None: bullet dropped)
     any_skills_key = False
 
     def note(owner: dict, content: str, lineno: int) -> None:
@@ -393,8 +421,8 @@ def parse_chat_inspiration(text: str, path: str = CHAT_INSPIRATION_FILE, root: P
                         and not (root / "skills" / entry / "SKILL.md").is_file()):
                     add(f"skill {entry!r} has no skills/{entry}/SKILL.md in this brain; the agent "
                         "would be pointed at a missing file", "fix the name or add the skill", lineno)
-                if all(r != rendered for r, _ in owner["_skills"]):
-                    owner["_skills"].append((rendered, lineno))
+                if all(r != rendered for r, *_ in owner["_skills"]):
+                    owner["_skills"].append((rendered, lineno, path))
             return
         if content.split(maxsplit=1)[0].lower() in CI_SKILL_TYPOS:
             add(f"note starts with {content.split()[0]!r}, read as a note, not a skill pointer",
@@ -403,140 +431,172 @@ def parse_chat_inspiration(text: str, path: str = CHAT_INSPIRATION_FILE, root: P
             add(f"note is {len(content)} chars (cap {CI_MAX_NOTE_RUNES}), dropped by the host",
                 "shorten or split it", lineno)
             return
-        owner["_notes"].append((content, lineno))
+        owner["_notes"].append((content, lineno, path))
 
-    for lineno, line in enumerate(lines[start:], start=start + 1):
-        trimmed = line.strip()
-        indented = line[:1] in (" ", "\t")
-        is_bullet = not indented and line.startswith(("- ", "* "))
-        if trimmed.startswith("## "):
-            cur, after_subheading, in_preamble, target = None, False, True, None
-            heading = trimmed[3:]
-            cid = ""
-            if m := CI_ID_SUFFIX_RE.search(heading):
-                cid, heading = m.group(1).lower(), heading[:m.start()]
-            emoji, label = _ci_split_emoji(heading.strip())
-            cid = cid or _ci_slug(label)
-            if not label or not cid:
-                add("heading yields no category (no label/id), its bullets are dropped",
-                    "write `## <emoji> Label`", lineno)
+    for path, text in files:
+        lines = text.replace("\r\n", "\n").split("\n")
+        start = 0
+        if lines and lines[0].strip() == "---":
+            start = next((i + 1 for i in range(1, len(lines)) if lines[i].strip() == "---"), 0)
+        surfaces = _ci_surfaces(lines, start - 1) if start else None
+        if surfaces is None:
+            add("no frontmatter `surfaces:`, so email runs see the gallery as a doc",
+                "start the file with `---` / `surfaces: [chat, dashboard_chat]` / `---`", 1)
+        elif "chat" not in surfaces:
+            add(f"frontmatter `surfaces: {surfaces}` lacks `chat`",
+                "use `surfaces: [chat, dashboard_chat]`", 1)
+
+        cur: dict | None = None
+        after_subheading = False  # a non-## heading ended a category: its bullets are ignored
+        in_preamble = True  # this `##` section has not had a prompt bullet yet
+        target: dict | None = None  # prompt the next indented bullets annotate (None: bullet dropped)
+        here: set[str] = set()  # category ids headed in THIS file (a repeat in another is a continuation)
+        for lineno, line in enumerate(lines[start:], start=start + 1):
+            trimmed = line.strip()
+            indented = line[:1] in (" ", "\t")
+            is_bullet = not indented and line.startswith(("- ", "* "))
+            if trimmed.startswith("## "):
+                cur, after_subheading, in_preamble, target = None, False, True, None
+                heading = trimmed[3:]
+                cid = ""
+                if m := CI_ID_SUFFIX_RE.search(heading):
+                    cid, heading = m.group(1).lower(), heading[:m.start()]
+                emoji, label = _ci_split_emoji(heading.strip())
+                cid = cid or _ci_slug(label)
+                if not label or not cid:
+                    add("heading yields no category (no label/id), its bullets are dropped",
+                        "write `## <emoji> Label`", lineno)
+                    continue
+                if cid in by_id:
+                    first = by_id[cid]
+                    if cid in here:
+                        add(f"duplicate category id {cid!r} (first at line {first['line']}); the host "
+                            "merges them", "merge the sections or give one an explicit `{#id}`", lineno)
+                    elif (first["label"], first["emoji"]) != (label, emoji):
+                        add(f"continuation of category {cid!r} differs from its first heading in "
+                            f"{first['path']}; the host shows the first", "copy that heading exactly",
+                            lineno, "NOTICE")
+                    here.add(cid)
+                    cur = by_id[cid]
+                    continue
+                if len(cats) >= CI_MAX_CATEGORIES:
+                    add(f"category {label!r} exceeds the {CI_MAX_CATEGORIES}-category cap and is dropped",
+                        "merge categories", lineno)
+                    continue
+                cur = {"id": cid, "label": label, "emoji": emoji, "line": lineno, "path": path,
+                       "prompts": [], "_notes": [], "_skills": []}
+                here.add(cid)
+                cats.append(cur)
+                by_id[cid] = cur
+            elif trimmed.startswith("#"):
+                after_subheading = cur is not None or after_subheading
+                cur = None
+            elif is_bullet and cur is None and after_subheading:
+                add("bullet under a sub-heading is not a prompt (only `##` sections are categories)",
+                    "promote the heading to `##` or drop the bullet", lineno, "NOTICE")
+            elif is_bullet and cur is not None:
+                body_text = trimmed[2:].strip()
+                in_preamble, target = False, None
+                if body_text.lower().startswith("skills:"):
+                    add("top-level bullet starting `skills:` is shown as a prompt card",
+                        "indent it under its prompt (`  - skills: ...`) or move it above the first prompt",
+                        lineno)
+                if len(cur["prompts"]) >= CI_MAX_PROMPTS:
+                    add(f"category {cur['id']!r} exceeds the {CI_MAX_PROMPTS}-prompt cap, bullet dropped",
+                        "split the category", lineno)
+                    continue
+                title, bold = "", False
+                if m := CI_BOLD_RE.match(body_text):
+                    title = m.group(1).strip().removesuffix(":").strip()
+                    bold = bool(title)
+                    body = m.group(2).strip()
+                    for sep in CI_SEPARATORS:
+                        if body.startswith(sep):
+                            body = body[len(sep):].strip()
+                            break
+                else:
+                    body = body_text
+                if not body:
+                    add("bullet yields no prompt (empty text after the title), dropped by the host",
+                        "write `- **Title** \u2014 prompt text`", lineno)
+                    continue
+                if len(body) > CI_MAX_PROMPT_RUNES:
+                    add(f"prompt is {len(body)} chars (cap {CI_MAX_PROMPT_RUNES}), dropped by the host",
+                        "shorten it", lineno)
+                    continue
+                if bold and len(title) > CI_MAX_TITLE_RUNES:
+                    add(f"title is {len(title)} chars (cap {CI_MAX_TITLE_RUNES}), truncated by the host",
+                        "shorten the bold title", lineno)
+                if not bold:
+                    add("bullet has no bold title; the card shows the prompt cut at ~60 chars",
+                        "write `- **Title** \u2014 prompt`", lineno, "NOTICE")
+                    title = _ci_truncate(body, CI_DERIVED_TITLE_RUNES)
+                title = _ci_truncate(title, CI_MAX_TITLE_RUNES)
+                leftover = CI_PLACEHOLDER_RE.sub("", body)
+                if "[" in leftover or "]" in leftover:
+                    add("unbalanced or invalid `[placeholder]` (nested, unclosed, empty or over 40 chars)",
+                        "use one flat `[woord]` per blank", lineno)
+                if len(body) > CI_READABLE_PROMPT_RUNES:
+                    add(f"prompt is {len(body)} chars; cards read best under {CI_READABLE_PROMPT_RUNES}",
+                        "tighten the prompt", lineno, "NOTICE")
+                card_id = hashlib.sha256(("project\x00" + cur["id"] + "\x00" + title.lower()).encode()).hexdigest()[:12]
+                if card_id in seen_ids:
+                    add(f"duplicate card id: same title as {seen_ids[card_id]} in this category; a gallery "
+                        "pick of either card loses its notes (the host resolves fail-open)", "rename one title", lineno)
+                else:
+                    seen_ids[card_id] = f"{path}:{lineno}"
+                key = body.lower()
+                if key in seen_prompts:
+                    add(f"duplicate prompt text (first at {seen_prompts[key]}); the host keeps one",
+                        "drop or reword one", lineno, "NOTICE")
+                else:
+                    seen_prompts[key] = f"{path}:{lineno}"
+                placeholders = list(dict.fromkeys(CI_PLACEHOLDER_RE.findall(body)))
+                target = {"title": title, "prompt": body, "placeholders": placeholders,
+                          "line": lineno, "path": path, "bold": bold, "_notes": [], "_skills": []}
+                cur["prompts"].append(target)
+            elif cur is None or not trimmed or trimmed.startswith("#"):
                 continue
-            if cid in by_id:
-                add(f"duplicate category id {cid!r} (first at line {by_id[cid]['line']}); the host "
-                    "merges them", "merge the sections or give one an explicit `{#id}`", lineno)
-                cur = by_id[cid]
-                continue
-            if len(cats) >= CI_MAX_CATEGORIES:
-                add(f"category {label!r} exceeds the {CI_MAX_CATEGORIES}-category cap and is dropped",
-                    "merge categories", lineno)
-                continue
-            cur = {"id": cid, "label": label, "emoji": emoji, "line": lineno, "prompts": [],
-                   "_notes": [], "_skills": []}
-            cats.append(cur)
-            by_id[cid] = cur
-        elif trimmed.startswith("#"):
-            after_subheading = cur is not None or after_subheading
-            cur = None
-        elif is_bullet and cur is None and after_subheading:
-            add("bullet under a sub-heading is not a prompt (only `##` sections are categories)",
-                "promote the heading to `##` or drop the bullet", lineno, "NOTICE")
-        elif is_bullet and cur is not None:
-            body_text = trimmed[2:].strip()
-            in_preamble, target = False, None
-            if body_text.lower().startswith("skills:"):
-                add("top-level bullet starting `skills:` is shown as a prompt card",
-                    "indent it under its prompt (`  - skills: ...`) or move it above the first prompt",
-                    lineno)
-            if len(cur["prompts"]) >= CI_MAX_PROMPTS:
-                add(f"category {cur['id']!r} exceeds the {CI_MAX_PROMPTS}-prompt cap, bullet dropped",
-                    "split the category", lineno)
-                continue
-            title, bold = "", False
-            if m := CI_BOLD_RE.match(body_text):
-                title = m.group(1).strip().removesuffix(":").strip()
-                bold = bool(title)
-                body = m.group(2).strip()
-                for sep in CI_SEPARATORS:
-                    if body.startswith(sep):
-                        body = body[len(sep):].strip()
-                        break
+            elif indented and trimmed.startswith(("- ", "* ")):
+                if in_preamble:
+                    add("indented bullet before the category's first prompt is ignored by the host",
+                        "un-indent it (category note) or move it under a prompt", lineno, "NOTICE")
+                elif target is not None:
+                    note(target, trimmed[2:].strip(), lineno)
+            elif in_preamble:
+                note(cur, trimmed, lineno)
             else:
-                body = body_text
-            if not body:
-                add("bullet yields no prompt (empty text after the title), dropped by the host",
-                    "write `- **Title** \u2014 prompt text`", lineno)
-                continue
-            if len(body) > CI_MAX_PROMPT_RUNES:
-                add(f"prompt is {len(body)} chars (cap {CI_MAX_PROMPT_RUNES}), dropped by the host",
-                    "shorten it", lineno)
-                continue
-            if bold and len(title) > CI_MAX_TITLE_RUNES:
-                add(f"title is {len(title)} chars (cap {CI_MAX_TITLE_RUNES}), truncated by the host",
-                    "shorten the bold title", lineno)
-            if not bold:
-                add("bullet has no bold title; the card shows the prompt cut at ~60 chars",
-                    "write `- **Title** \u2014 prompt`", lineno, "NOTICE")
-                title = _ci_truncate(body, CI_DERIVED_TITLE_RUNES)
-            title = _ci_truncate(title, CI_MAX_TITLE_RUNES)
-            leftover = CI_PLACEHOLDER_RE.sub("", body)
-            if "[" in leftover or "]" in leftover:
-                add("unbalanced or invalid `[placeholder]` (nested, unclosed, empty or over 40 chars)",
-                    "use one flat `[woord]` per blank", lineno)
-            if len(body) > CI_READABLE_PROMPT_RUNES:
-                add(f"prompt is {len(body)} chars; cards read best under {CI_READABLE_PROMPT_RUNES}",
-                    "tighten the prompt", lineno, "NOTICE")
-            card_id = hashlib.sha256(("project\x00" + cur["id"] + "\x00" + title.lower()).encode()).hexdigest()[:12]
-            if card_id in seen_ids:
-                add(f"duplicate card id: same title as line {seen_ids[card_id]} in this category; a gallery "
-                    "pick of either card loses its notes (the host resolves fail-open)", "rename one title", lineno)
-            else:
-                seen_ids[card_id] = lineno
-            key = body.lower()
-            if key in seen_prompts:
-                add(f"duplicate prompt text (first at line {seen_prompts[key]}); the host keeps one",
-                    "drop or reword one", lineno, "NOTICE")
-            else:
-                seen_prompts[key] = lineno
-            placeholders = list(dict.fromkeys(CI_PLACEHOLDER_RE.findall(body)))
-            target = {"title": title, "prompt": body, "placeholders": placeholders,
-                      "line": lineno, "bold": bold, "_notes": [], "_skills": []}
-            cur["prompts"].append(target)
-        elif cur is None or not trimmed or trimmed.startswith("#"):
-            continue
-        elif indented and trimmed.startswith(("- ", "* ")):
-            if in_preamble:
-                add("indented bullet before the category's first prompt is ignored by the host",
-                    "un-indent it (category note) or move it under a prompt", lineno, "NOTICE")
-            elif target is not None:
-                note(target, trimmed[2:].strip(), lineno)
-        elif in_preamble:
-            note(cur, trimmed, lineno)
-        else:
-            add("plain line after the category's first prompt is ignored by the host",
-                "keep a prompt on one line; category notes go above the first prompt; prompt notes "
-                "are indented bullets", lineno)
+                add("plain line after the category's first prompt is ignored by the host",
+                    "keep a prompt on one line; category notes go above the first prompt; prompt notes "
+                    "are indented bullets", lineno)
     for c in cats:
+        for owner, kind in [(c, "category preamble")] + [(p, f"prompt {p['title']!r}") for p in c["prompts"]]:
+            if (n := sum(len(v) for v, *_ in owner["_notes"])) > CI_LONG_NOTES_RUNES:
+                add(f"{kind} carries {n} chars of inline notes (over {CI_LONG_NOTES_RUNES}): a recipe, not a "
+                    "directive", "move the steps into a .md (e.g. chat_inspiration/recipes/<slug>.md) and "
+                    "point at it with `skills: /brain/chat_inspiration/recipes/<slug>.md`; keep short "
+                    "directives inline", owner["line"], "NOTICE", owner["path"])
         for key, cap, what in (("_notes", CI_MAX_NOTES, "notes"), ("_skills", CI_MAX_SKILLS, "skills")):
             own = c.pop(key)
-            c[what] = [v for v, _ in own]
+            c[what] = [v for v, *_ in own]
             if len(own) > cap:
                 add(f"category {c['id']!r} has {len(own)} {what} (cap {cap}); the host drops "
-                    f"{[v for v, _ in own[cap:]]}", f"keep at most {cap}", own[cap][1])
+                    f"{[v for v, *_ in own[cap:]]}", f"keep at most {cap}", own[cap][1], where=own[cap][2])
             for p in c["prompts"]:
                 p[what], dropped = _ci_capped(own, p.pop(key), cap, what == "skills")
                 if dropped:
                     add(f"prompt {p['title']!r} exceeds {cap} effective {what} (category first); the "
                         f"host drops {dropped}", f"keep category + prompt {what} at most {cap}",
-                        p["line"])
+                        p["line"], where=p["path"])
         if any_skills_key:
             for p in c["prompts"]:
                 if not p["skills"]:
                     add(f"prompt {p['title']!r} has no skill pointer; the agent gets no how-to",
                         "add `  - skills: <name>` under it or `skills:` above the category's "
-                        "first prompt", p["line"], "NOTICE")
+                        "first prompt", p["line"], "NOTICE", p["path"])
         if not c["prompts"]:
             add(f"category {c['id']!r} has no prompts; the gallery hides it",
-                "add `- **Title** \u2014 prompt` bullets or drop the heading", c["line"], "NOTICE")
+                "add `- **Title** \u2014 prompt` bullets or drop the heading", c["line"], "NOTICE", c["path"])
     if not any(c["prompts"] for c in cats):
         add("no prompt parsed; the gallery would be empty",
             "add `## <emoji> Category` sections with `- **Title** \u2014 prompt` bullets", None)
@@ -562,6 +622,12 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
     def add(rule: str, message: str, rel: str, line: int | None = None) -> None:
         findings.append(bs.Finding("hygiene", f"{rule}: {message}", path=rel, line=line))
 
+    gallery = chat_inspiration_files(root, set(visible))
+    # ids and caps span the split set: judge it whole when a part changed, was deleted or moved out
+    if gallery and (files is None or any(is_chat_inspiration_path(rel) for rel in
+                                         set(files) | _deleted_since(root, base))):
+        findings.extend(parse_chat_inspiration_set(
+            [(rel, (root / rel).read_text("utf-8", errors="replace")) for rel in gallery], root)[1])
     for rel in text_files:
         text = (root / rel).read_text("utf-8", errors="replace")
         for lineno, line in enumerate(text.splitlines(), start=1):
@@ -595,8 +661,6 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
                 for lineno, line in enumerate(text.splitlines(), start=1):
                     if EM_DASH in line:
                         add("em-dash", "em dash in customer-facing copy", rel, lineno)
-            if rel == CHAT_INSPIRATION_FILE:
-                findings.extend(parse_chat_inspiration(text, rel, root)[1])
             for lineno, source in _mermaid_blocks(text):
                 mermaid_seen = True
                 if not mmdc:
