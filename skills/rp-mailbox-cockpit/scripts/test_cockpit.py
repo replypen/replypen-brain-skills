@@ -179,14 +179,15 @@ class Tests(unittest.TestCase):
             client.rc('run', 'thread', 'abc')
             self.assertIn('--raw-output', run.call_args.args[0])
 
-    def test_old_unanswered_draft_included_and_cap_explicit(self):
+    def test_only_draft_threads_collected_and_cap_explicit(self):
         class Fake:
             def __init__(self, config):
                 self.config = config
             def pages(self, path, key, **params):
-                if path == 'threads':
-                    return [{'id': i} for i in ('a', 'b', 'c', 'd')], False
-                return [{'id': 'old-draft', 'message': {'id': 'not-thread', 'threadId': 'e'}}], False
+                assert path == 'drafts', 'undrafted inbox mail is out of scope'
+                return [{'id': f'd{i}', 'message': {'id': f'm{i}', 'threadId': t}}
+                        for i, t in enumerate(('a', 'b', 'c', 'd'))] + \
+                       [{'id': 'solo', 'message': {'id': 'solo', 'threadId': 'solo'}}], False
             def gws(self, *args):
                 if args[0] == 'whoami':
                     return {'email': ACCOUNT}
@@ -197,15 +198,14 @@ class Tests(unittest.TestCase):
                 return {'runs': [], 'threads': []}
         with tempfile.TemporaryDirectory() as temp, patch.object(c, 'Client', Fake):
             args = argparse.Namespace(out=temp, project='test', mailbox_id='one', gws_script='gws.py',
-                                      gws_config='config.json', max_pages=20, days=7, max_threads=3)
+                                      gws_config='config.json', max_pages=20, max_threads=3)
             c.collect(args)
             index = c.read(Path(temp) / 'index.json')
-            self.assertIn('e', [t['thread_id'] for t in index['threads']])
-            self.assertEqual(index['coverage']['uncovered_threads'], 2)
-            self.assertEqual(index['coverage']['recent_inbox_checked'], 2)
-            self.assertEqual(index['coverage']['older_draft_threads_checked'], 1)
-            self.assertEqual(index['coverage']['recent_inbox_discovered'], 4)
-            self.assertEqual(index['threads'][2]['state'], 'not_processed')
+            self.assertEqual([t['thread_id'] for t in index['threads']], ['a', 'b', 'c'])
+            self.assertEqual(index['coverage']['discovered_threads'], 4)
+            self.assertEqual(index['coverage']['uncovered_threads'], 1)
+            self.assertEqual(index['coverage']['standalone_drafts_excluded'], 1)
+            self.assertEqual(index['threads'][0]['state'], 'not_processed')
 
     def test_html_escaping_secret_links_and_confirmed_action(self):
         detail, finding = fixture()
@@ -225,7 +225,7 @@ class Tests(unittest.TestCase):
             c.save(bundle / 'findings.json', [finding])
             c.save(bundle / 'index.json', {'account': ACCOUNT, 'collected_at': c.now(), 'threads': [
                 {'thread_id': 'abc', 'subject': '<script>subject</script>', 'state': 'draft_ready'}],
-                'coverage': {'checked_threads': 1, 'uncovered_threads': 2, 'list_truncated': True,
+                'coverage': {'discovered_threads': 3, 'checked_threads': 1, 'uncovered_threads': 2, 'list_truncated': True,
                              'standalone_drafts_excluded': 4}})
             c.render(argparse.Namespace(bundle=temp, findings=str(bundle / 'findings.json'),
                                         out=str(bundle / 'report.html')))

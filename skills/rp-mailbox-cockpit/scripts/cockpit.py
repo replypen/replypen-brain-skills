@@ -230,8 +230,8 @@ def collect(args):
     account = verify_mailbox(client)
     config['account'] = account
     save(out / 'config.json', config)
-    inbox, inbox_more = client.pages('threads', 'threads', max_pages=args.max_pages,
-                                     q=f'in:inbox newer_than:{args.days}d')
+    # Scope: threads holding an unsent draft, i.e. where ReplyPen (or a human) answered. Triage of
+    # undrafted inbox mail is trusted, so it is neither listed nor read.
     drafts, drafts_more = client.pages('drafts', 'drafts', max_pages=args.max_pages)
     standalone = [d for d in drafts if d.get('message', {}).get('threadId') ==
                   d.get('message', {}).get('id')]
@@ -240,21 +240,8 @@ def collect(args):
         msg = draft.get('message', {})
         if draft not in standalone and msg.get('threadId'):
             by_thread.setdefault(msg['threadId'], []).append(draft)
-    # Recent inbox first, then stale in-thread drafts; no body read for excluded/capped stubs.
-    recent_ids = set(t['id'] for t in inbox)
-    older_ids = set(by_thread) - recent_ids
-    save(out / 'inventory.json', {'recent_inbox_ids': sorted(recent_ids),
-                                 'older_draft_thread_ids': sorted(older_ids),
-                                 'inbox_list_truncated': inbox_more, 'draft_list_truncated': drafts_more})
-    recent = list(dict.fromkeys(t['id'] for t in inbox))
-    older = [tid for tid in by_thread if tid in older_ids]
-    ids = []
-    while recent or older:
-        ids.extend(recent[:2])
-        del recent[:2]
-        ids.extend(older[:1])
-        del older[:1]
-    ids = list(dict.fromkeys(ids))
+    ids = list(by_thread)
+    save(out / 'inventory.json', {'draft_thread_ids': sorted(ids), 'draft_list_truncated': drafts_more})
     rows, failures = [], []
     for tid in ids[:args.max_threads]:
         try:
@@ -263,20 +250,14 @@ def collect(args):
             save(out / 'threads' / f'{tid}.json', {'gmail': thread, 'rc': evidence,
                  'draft_stubs': by_thread.get(tid, []), 'fingerprint': fingerprint(thread),
                  'collected_at': now()})
-            row = summary(thread, evidence, account, by_thread.get(tid, []))
-            row['collection_source'] = 'recent_inbox' if tid in recent_ids else 'older_draft'
-            rows.append(row)
+            rows.append(summary(thread, evidence, account, by_thread.get(tid, [])))
         except Refused:
             failures.append(tid)
     index = {'collected_at': now(), 'account': account, 'project': args.project,
              'mailbox_id': args.mailbox_id, 'coverage': {
-                 'days': args.days, 'discovered_threads': len(ids), 'checked_threads': len(rows),
-                 'recent_inbox_discovered': len(recent_ids),
-                 'recent_inbox_checked': sum(r['thread_id'] in recent_ids for r in rows),
-                 'older_draft_threads_discovered': len(older_ids),
-                 'older_draft_threads_checked': sum(r['thread_id'] in older_ids for r in rows),
+                 'scope': 'draft_threads', 'discovered_threads': len(ids), 'checked_threads': len(rows),
                  'uncovered_threads': max(0, len(ids) - args.max_threads) + len(failures),
-                 'list_truncated': inbox_more or drafts_more,
+                 'list_truncated': drafts_more,
                  'standalone_drafts_excluded': len(standalone), 'failed_thread_ids': failures},
              'threads': rows}
     save(out / 'index.json', index)
@@ -504,9 +485,7 @@ def render(args):
               + freshness_note
               + (''.join(primary_rows) or '<p>No reviewed actions to surface.</p>')
               + remaining + '<p>'
-              + (f'Recent inbox {c["recent_inbox_checked"]}/{c["recent_inbox_discovered"]} checked · '
-                 f'older draft threads {c["older_draft_threads_checked"]}/{c["older_draft_threads_discovered"]} checked · '
-                 if 'recent_inbox_checked' in c else f'{c["checked_threads"]} threads checked · ')
+              + f'Draft threads {c["checked_threads"]}/{c["discovered_threads"]} checked · '
               + f'{c["uncovered_threads"]} discovered threads uncovered'
               + ('; additional unlisted threads unknown (pagination capped)' if c['list_truncated'] else '')
               + f' · {unresolved} unresolved threads not reviewed · {c["standalone_drafts_excluded"]} standalone drafts excluded.'
@@ -581,8 +560,7 @@ def main():
     c = subs.add_parser('collect')
     for name in ('project', 'mailbox-id', 'gws-script', 'gws-config', 'out'):
         c.add_argument('--' + name, required=True)
-    c.add_argument('--days', type=int, default=7)
-    c.add_argument('--max-threads', type=int, default=60)
+    c.add_argument('--max-threads', type=int, default=200)
     c.add_argument('--max-pages', type=int, default=20)
     c.set_defaults(func=collect)
     for name, func in (('detail', detail), ('validate', None), ('render', render), ('apply', apply)):
@@ -598,7 +576,7 @@ def main():
             p.add_argument('--allow-draft-corrections', action='store_true')
         p.set_defaults(func=func)
     args = parser.parse_args()
-    if args.command == 'collect' and not (args.days > 0 and args.max_threads > 0 and args.max_pages > 0):
+    if args.command == 'collect' and not (args.max_threads > 0 and args.max_pages > 0):
         parser.error('Collection bounds must be positive')
     try:
         if args.command == 'validate':

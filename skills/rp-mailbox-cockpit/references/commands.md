@@ -6,7 +6,7 @@ All commands run with `uv run --no-project python <skill>/scripts/cockpit.py`. A
 cockpit.py collect --project <project> --mailbox-id <google-uuid> \
   --gws-script <google-workspace-core>/scripts/gws.py \
   --gws-config <account-wrapper>/workspace.json \
-  --out <new-private-directory> --days 7 --max-threads 60
+  --out <new-private-directory> --max-threads 200
 cockpit.py detail --bundle <directory> --thread-id <gmail-hex-id>
 cockpit.py validate --bundle <directory> --findings <findings.json>
 cockpit.py apply --bundle <directory> --findings <findings.json> \
@@ -14,11 +14,11 @@ cockpit.py apply --bundle <directory> --findings <findings.json> \
 cockpit.py render --bundle <directory> --findings <findings.json> --out <report.html>
 ```
 
-`collect` paginates recent INBOX thread stubs and all draft stubs (default maximum 20 pages each), then interleaves two inbox threads with one older draft thread. Only `--max-threads` full threads are read. Standalone compose drafts are excluded. Coverage separates recent-inbox and older-draft discovered/checked counts, then reports discovered-but-unchecked count; when listing is capped, **additional unlisted threads are unknown**. Gmail estimates are not exact totals. Increase the bound deliberately if the uncovered backlog warrants it.
+`collect` paginates all draft stubs (default maximum 20 pages) and reads the threads holding them, newest draft first; undrafted inbox mail is out of scope. Only `--max-threads` full threads are read. Standalone compose drafts are excluded and counted. Coverage reports draft threads discovered/checked, then the discovered-but-unchecked count; when listing is capped, **additional unlisted threads are unknown**. Gmail estimates are not exact totals. Increase the bound deliberately if the uncovered backlog warrants it.
 
 A non-DRAFT inbound followed by a non-self SENT reply is answered. SENT self-addressed mails are ReplyPen notes. A spoofed own From without SENT remains inbound and is flagged for review. Human clients' X-Mailer headers do not prove automation. Outbound messages with genuine automation/list headers or uncertain authorship remain uncertain, not automatically answered. The model still checks actual authorship when the distinction affects an action.
 
-- `inventory.json`: complete discovered inbox/older-draft IDs and pagination flags; no message bodies.
+- `inventory.json`: complete discovered draft-thread IDs and pagination flag; no message bodies.
 - `index.json`: bounded snippets, subjects, state, health, IDs, Gmail links, coverage. Read first.
 - `threads/<id>.json`: Gmail + provider-filtered rp lineage. Read only selected threads.
 - `details/<id>.json`: refreshed thread, latest run body/notes, full MIME drafts, fingerprint. Read before review/correction; correction eligibility expires after four hours. Stale findings can still render with a single refresh-before-acting notice.
