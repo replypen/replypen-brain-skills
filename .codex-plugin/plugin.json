@@ -1,6 +1,6 @@
 {
   "name": "brain-dev",
-  "version": "0.13.15",
+  "version": "0.13.16",
   "description": "ReplyPen Brain Dev skills for local checks, safe cross-computer Git sync, rp ask validation, production-run debugging, health/fleet review, and exact-SHA publish workflows. Brain-dir-relative; no private ReplyPen source needed.",
   "author": { "name": "ReplyPen" },
   "repository": "https://github.com/replypen/replypen-brain-skills",
