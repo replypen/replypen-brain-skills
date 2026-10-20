@@ -142,6 +142,9 @@ Only these are first-class:
 - `rp-fleet` — recent fleet and recurring failure patterns.
 - `brain-fleet-report` — the daily two-audience fleet report: Python collects a day of evidence;
   the model judges it into persisted owner/technical review queues.
+- `brain-description-audit` — Haiku (local `claude -p`) judges KB article summaries and brain/mirror
+  `description:` lines against their bodies, rewrites only bad ones, HTML report; docs applied in place,
+  KB summaries via `rp project knowledge summaries apply` (body_hash-pinned, survives sync).
 - `brain-triage-eval` — a linted, synthetic triage case corpus in the brain
   (`_internal/triage/cases/`) run through the real triage decision at a `dev/*` ref with
   `rp project triage eval --baseline HEAD`; false skips first, labels owner-approved.

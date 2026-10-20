@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Dev: Description Audit"
+  short_description: "Haiku-judge and rewrite KB summaries and doc descriptions grounding selects by"
+  default_prompt: "Use $brain-description-audit to audit this brain's doc descriptions and its KB article summaries, then apply the reviewed rewrites."
