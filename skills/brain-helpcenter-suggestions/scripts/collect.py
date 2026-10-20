@@ -83,6 +83,7 @@ HS_PAGE_SCRIPT = (
     "json.dump(p,open('/tmp/replypen-out/hc-page-{page}.json','w')); "
     "print(json.dumps(p.get('page')))"
 )
+CATALOG = "/kb/INDEX.md"
 FIND_INDEXES = "find /kb -maxdepth 4 -name INDEX.md 2>/dev/null"
 BRAIN_KNOWLEDGE_SCRIPT = (
     "find /brain/knowledge -name '*.md' -exec sh -c 'echo \"@@ $1\"; grep -m1 \"^# \" \"$1\"' _ {} \\;"
@@ -430,7 +431,10 @@ def find_indexes(brain_root: Path, tenant: str | None,
     if TENANT_REQUIRED in str(found.get("stderr") or "") and not tenant and fallback:
         used = inferred = fallback
         found = console(brain_root, FIND_INDEXES, used)
-    indexes = [p for p in str(found.get("stdout") or "").split() if p.endswith("INDEX.md")]
+    # /kb/INDEX.md is the host's cross-plane catalog (absolute paths, `plane` column): skip it, the
+    # per-provider INDEX.md files carry the same rows in the shape parse_indexes reads.
+    indexes = [p for p in str(found.get("stdout") or "").split()
+               if p.endswith("INDEX.md") and p != CATALOG]
     if not indexes:
         print("no /kb INDEX.md found, no report "
               f"({clip(found.get('stderr'), 160) or 'find returned nothing'})", file=sys.stderr)

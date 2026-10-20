@@ -463,7 +463,7 @@ def fake_workspace(monkeypatch, index_text=INDEX_ARTIFACT, bodies=BODIES_ARTIFAC
             if find_stderr and tenantless:
                 return type("R", (), {"returncode": 0, "stderr": "", "stdout": json.dumps(
                     {"exit_code": 1, "stdout": "", "stderr": find_stderr})})()
-            out = "/kb/tenant/intercom/INDEX.md\n/kb/knowledgeowl/INDEX.md\n"
+            out = "/kb/INDEX.md\n/kb/tenant/intercom/INDEX.md\n/kb/knowledgeowl/INDEX.md\n"
         elif "hc-index.txt" in script:
             out = f"## /kb/tenant/intercom {count}\n"
         else:
