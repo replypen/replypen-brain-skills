@@ -28,7 +28,7 @@ content** — the run agent cannot open it and will hallucinate around the gap.
 | Try a mirror change on prod data | [`mirror-try`](../mirror-try/SKILL.md) |
 | "The tables are missing", register a database, add a new DSN to ReplyPen | [Register A New Grounding Database](#register-a-new-grounding-database) below |
 | "Does this change work on prod infra?" or "simulate this customer email" | `brain-ask` |
-| Debug one run/thread/session, read full trace, or explain why a draft/action happened | `rp-debug` |
+| Debug one run/thread/session or pasted phone-lab run URL, read full trace, or explain why a draft/action happened | `rp-debug` |
 | Bad chat answer, a share/run link, replay a chat turn after an edit | [`brain-chat-debug`](../brain-chat-debug/SKILL.md) |
 | "Is anything broken?" stale mirrors or dead letters | `rp-health` |
 | "What keeps failing?" recent fleet/pattern review | `rp-fleet` |

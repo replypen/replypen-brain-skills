@@ -1,6 +1,6 @@
 ---
 name: rp-debug
-description: "Debug ONE ReplyPen production run, thread, or session from a brain checkout with `rp run debug` / `rp run thread`. Use when given a run UUID, thread/session id, a failed run, a UUID flagged by rp-fleet/rp-health, or a delivery question. Analysis-first: inspect evidence, propose the smallest fix, stop before editing brain files unless asked to implement."
+description: "Debug ONE ReplyPen production run, thread, or session from a brain checkout with `rp run debug` / `rp run thread`. Use when given a phone-lab run URL, run UUID, thread/session id, a failed run, a UUID flagged by rp-fleet/rp-health, or a delivery question. Analysis-first: inspect evidence, propose the smallest fix, stop before editing brain files unless asked to implement."
 ---
 
 # rp-debug — inspect one run/thread
@@ -32,6 +32,34 @@ Public `rp` only; scope comes from `.replypen.toml` + the OAuth login
   skipped or security-blocked before any run, with the triage reason.
 - **A question, not an id** → `brain-ask`.
 - **Nothing usable** → ask for a run UUID, thread/session id, or question, and stop.
+
+## Phone-lab run URLs
+
+`…/projects/{project}/phone-lab/runs/{uuid}` → `rp run debug '<url>'`.
+This uses your project-level developer login, including from another brain checkout; it is not a
+share-token link. Bare ID: `rp run debug <uuid> --phone-lab --project <project>`.
+Do not use `rp run thread` first: phone-lab runs have their own event store.
+
+Read the returned markdown index: historical brain ref, tenant, status, signals, then timeline.
+Full evidence is the adjacent JSON (`jq '.events[INDEX]' <file.json>`); unknown/new event fields survive.
+`--out-dir <dir>` chooses the artifact directory; JSON stdout is the standard artifact manifest.
+
+- `latency_ms` measures **transcripts**, not audible speech or proven silence. Caller-event timestamps
+  mark the first delta, so subtracting caller/agent event timestamps overstates response latency.
+  Typed commentary tests the backend only. Tool `t` is start time; `exec_ms` is its duration.
+- `stale` means a newer delegation superseded an answer; `retired` means voicemail capture prevented
+  that queued turn from running. Inspect delegation IDs and caller corrections before blaming latency.
+- Failed bash: inspect `cmd`, `stdout`, `stderr`, `exit_code`; compare the saved brain ref with today.
+- Voicemail: inspect the whole event for capture/closure, audio metadata when present, `outcome` and
+  DentAI POST `result`. Captured text alone does not prove upload/delivery. A missing audio field in an
+  old run cannot be recovered by a newer CLI.
+- Final `note` events carry end reasons and event-limit notices. The dump preserves stored evidence;
+  event/byte caps and truncated tool output cannot be reconstructed. A linked console run is a
+  separate drill-down, not the phone transcript.
+
+Fix ownership: brain AGENTS.md/phone persona/scripts for wording, lookup strategy or tool choice;
+ReplyPen host `phonelab` for turn ordering, stale delivery, capture or persistence; the practice app's
+phone facade for lookup/voicemail POST failures. Diagnose first; edit only when asked to implement.
 
 ## Files in a chat session
 
