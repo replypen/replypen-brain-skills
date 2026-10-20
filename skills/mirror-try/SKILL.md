@@ -26,8 +26,8 @@ Changed non-test grounding files (excluding hidden/action paths), the command's 
 imports form the closure. Only the helper and the closure files whose bytes differ between base and ref are shipped
 into a per-invocation `/tmp/try/<repo>-<pid>-*` dir (parallel runs are safe); unchanged imports resolve from the
 live mirror (`/mirrors/<repo dir name>`, override `--mirror PATH`), and the box hashes each of them against the base
-bytes first: a mismatch prints one `mirror-try: live mirror differs from base …` stderr line instead of silently
-mixing. `--stage-all` ships the whole closure (old behaviour). Use repeated `--path relative/file` for runtime data or
+bytes before the helper starts: a mismatch stages those files from git instead and reruns both sides (reported as
+`restaged N` on stderr, `restaged` in `--json`), never silently mixing. `--stage-all` ships the whole closure (old behaviour). Use repeated `--path relative/file` for runtime data or
 dynamic imports. Both versions run with identical arguments and scope; scratch is removed afterwards. A brand-new
 helper: `--no-base` skips the base run (it can only fail). After failure exits nonzero; transport/truncation failures
 are not helper evidence.
@@ -37,8 +37,9 @@ tree-wide greps, git history, or deployed mirror bytes. Absolute `/mirrors` and 
 see live files; inspect/repoint these dependencies before claiming the changed code was exercised.
 Dynamic imports and runtime path manipulation are not inferred. Data may change between reads.
 
-The console accepts at most 256 KiB stdin and 128 KiB per shell argument, so the budget is the compressed payload:
-120,000 bytes, reported on stderr as `payload before 61 KB · after 61 KB of 120 KB`. Over budget names every staged
+CLI stdin and the API body allow 256 KiB, but the host runs the command as one shell-quoted workspace argument and
+refuses it over 120 KiB (122,880 bytes). The compressed payload is checked against that before any production call
+and reported on stderr as `payload before 61 KiB · after 61 KiB of 120 KiB`. Over budget names every staged
 file with the import path that pulled it in (`leader_evaluations_to_md.py 24 KB ← leader_to_md ← lookup_person`): split
 the heavy import or narrow the change (`--ref <branch> --base <sha>`, `--diff --only <path>`); never silently omit dependencies.
 Explicit/imported hidden files and actions, plus symlinks and submodules, are refused. Output uses the fleet report's heuristic

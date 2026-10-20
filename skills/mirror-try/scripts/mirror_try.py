@@ -24,19 +24,29 @@ def _cli() -> str:
 
 
 BUDGET_REMEDY = 'commit your files and use --ref <branch> --base <sha>, or --diff --only <path>'
+# The CLI and API accept 256 KiB, but the host hands the command to the workspace as ONE shell argument
+# (shell-quoted inside a stdout-tee wrapper) and refuses any argument over 120 KiB before dispatch.
+CONSOLE_ARG_LIMIT = 120 * 1024
+STALE_MARKER = 'mirror-try-stale:'
+STALE_EXIT = 97
+
+
+class StaleBorrowed(ValueError):
+    """The live checkout's bytes for some borrowed imports differ from base: stage those instead."""
+
+    def __init__(self, names):
+        super().__init__('live checkout differs from base for: ' + ', '.join(names))
+        self.names = names
+
+
+def wire_bytes(command):
+    """Size of the command as the host's per-argument check sees it: each `'` becomes `'"'"'`, plus
+    the quotes and the tee wrapper (~330 bytes; 512 leaves headroom)."""
+    return len(command.encode()) + 4 * command.count("'") + 2 + 512
 
 
 def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
-
-
-def snapshot(repo, sha, paths):
-    entries = tree(repo, sha)
-    selected = set()
-    for path in paths:
-        safe_path(path)
-        selected.update(name for name in entries if name == path or name.startswith(path.rstrip('/') + '/'))
-    return stage(Path(repo), sha, selected)
 
 
 def console_command(files, argv, repo_name="helper", mirror=None, borrowed=None):
@@ -64,16 +74,20 @@ with tempfile.TemporaryDirectory(prefix=prefix+str(os.getpid())+"-", dir="/tmp/t
   path.chmod(0o700)
  import hashlib
  stale=[n for n,h in sorted(borrowed.items()) if not os.path.isfile(os.path.join(mirror,n)) or hashlib.sha256(open(os.path.join(mirror,n),"rb").read()).hexdigest()!=h]
- if stale: print("mirror-try: live mirror differs from base for %d borrowed import(s): %s; unchanged imports come from the live copy" % (len(stale), ", ".join(stale[:5])), file=__import__("sys").stderr)
+ if stale:
+  print("''' + STALE_MARKER + '''"+json.dumps(stale), file=__import__("sys").stderr)
+  raise SystemExit(''' + str(STALE_EXIT) + ''')
  env=dict(os.environ)
  live=[os.path.join(root,d) for d in dirs]+([os.path.join(mirror,d) for d in dirs]+[mirror] if mirror else [])
  env["PYTHONPATH"]=os.pathsep.join([root,*live,env.get("PYTHONPATH", "")])
  result=subprocess.run(argv,cwd=root,env=env)
  raise SystemExit(result.returncode)
 '''
-    if len(source.encode()) > 120_000:
-        raise ValueError(f'Compressed payload {len(source.encode()) // 1000} KB exceeds the 120 KB console budget; ' + BUDGET_REMEDY)
-    return 'python - <<\'REVIEW_HELPER\'\n' + source + '\nREVIEW_HELPER'
+    command = 'python - <<\'REVIEW_HELPER\'\n' + source + '\nREVIEW_HELPER'
+    if (size := wire_bytes(command)) > CONSOLE_ARG_LIMIT:
+        raise ValueError(f'Compressed payload {size:,} bytes exceeds the console limit of {CONSOLE_ARG_LIMIT:,} '
+                         f'bytes (120 KiB per command); ' + BUDGET_REMEDY)
+    return command
 
 
 def run_version(files, argv, scope, sha, repo_name="helper", **live):
@@ -87,6 +101,10 @@ def run_version(files, argv, scope, sha, repo_name="helper", **live):
         raise ValueError('Console transport failed: ' + reduced(done.stderr)) from exc
     if 'exit_code' not in result or not result.get('run_id') or result.get('timed_out') or result.get('stdout_truncated') or result.get('stderr_truncated'):
         raise ValueError('No complete helper result: ' + reduced(json.dumps(result)))
+    if result['exit_code'] == STALE_EXIT:
+        for line in result.get('stderr', '').splitlines():
+            if line.startswith(STALE_MARKER):
+                raise StaleBorrowed(json.loads(line[len(STALE_MARKER):]))
     return dict(stdout=reduced(result.get('stdout', '')), stderr=reduced(result.get('stderr', '')),
                 exit_code=result['exit_code'], sha=sha, run_id=result['run_id'], seq=result.get('seq', 0))
 
@@ -190,8 +208,9 @@ def offenders(files, via):
     return '\n'.join(lines)
 
 
-def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=None,
-            principal_id=None, paths=(), only=(), mirror=None, stage_all=False, no_base=False):
+def plan(repo, ref, diff, base, argv, project, tenant=None, principal_kind=None,
+         principal_id=None, paths=(), only=(), mirror=None, stage_all=False, no_base=False):
+    """Resolve and budget-check both payloads without touching production."""
     repo = repo.expanduser().resolve()
     if not argv or len(argv) < 2 or argv[0] not in ('python', 'python3') or not argv[1].endswith('.py'):
         raise ValueError('Command must be python relative/helper.py [args]; no shell or inline code')
@@ -222,7 +241,7 @@ def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=No
     after_files = stage(repo, after_sha, seeds, working=diff, only=only, via=via)
     if argv[1] not in after_files:
         raise ValueError('Helper missing from staged tree')
-    live = {}
+    live, same = {}, {}
     if not stage_all:  # ship the helper + changed bytes; unchanged imports come from the live mirror
         trees = {base_sha: tree(repo, base_sha), after_sha: tree(repo, after_sha)}
 
@@ -244,21 +263,61 @@ def compare(repo, ref, diff, base, argv, project, tenant=None, principal_kind=No
         scope += ['--principal-kind', principal_kind, '--principal-id', principal_id]
     if diff:
         after_sha = 'worktree:' + hashlib.sha256(json.dumps(after_files, sort_keys=True).encode()).hexdigest()
-    # Resolve and validate both payloads before either production call.
-    name = re.sub('[^A-Za-z0-9_-]', '-', repo.name)
-    payload = {}
-    for label, files in (() if no_base else (('before', before_files),)) + (('after', after_files),):
+    staged = dict(repo=repo, argv=argv, scope=scope, base=base_sha, ref=after_sha, changed=changed,
+                  name=re.sub('[^A-Za-z0-9_-]', '-', repo.name), no_base=no_base, via=via, same=same,
+                  live=live, files={**({} if no_base else {'before': before_files}), 'after': after_files},
+                  restaged=[])
+    budget(staged)
+    return staged
+
+
+def budget(staged):
+    """Build both commands before either production call; over the limit names every staged file."""
+    staged['payload'] = {}
+    for label, files in staged['files'].items():
         try:
-            payload[label] = len(console_command(files, argv, name, **live).encode())
+            staged['payload'][label] = wire_bytes(console_command(files, staged['argv'], staged['name'], **staged['live']))
         except ValueError as exc:
             raise ValueError(f'{exc}\n{label} staged {len(files)} file(s), by size ← importer:\n'
-                             + offenders(files, via)) from None
-    return dict(repo=str(repo), base=base_sha, ref=after_sha, files=len(changed),
-                staged_before=sorted(before_files), staged_after=sorted(after_files),
-                borrowed=sorted(live.get('borrowed', {})), payload=payload,
-                command=reduced(shlex.join(argv)),
-                before=None if no_base else run_version(before_files, argv, scope, base_sha, name, **live),
-                after=run_version(after_files, argv, scope, after_sha, name, **live))
+                             + offenders(files, staged['via'])) from None
+
+
+def execute(staged):
+    """Run base then proposed bytes. A borrowed import whose live bytes differ from base is staged
+    from git instead and both sides rerun (the box checks before the helper starts)."""
+    for _ in range(3):
+        try:
+            return {label: run_version(files, staged['argv'], staged['scope'],
+                                       staged['base'] if label == 'before' else staged['ref'],
+                                       staged['name'], **staged['live'])
+                    for label, files in staged['files'].items()}
+        except StaleBorrowed as exc:
+            for n in exc.names:
+                staged['live']['borrowed'].pop(n, None)
+                for files in staged['files'].values():
+                    files[n] = staged['same'][n]
+            staged['restaged'] += exc.names
+            budget(staged)
+    raise ValueError('Live checkout keeps changing under the borrowed imports; retry after it settles')
+
+
+def compare(*args, **kwargs):
+    staged = plan(*args, **kwargs)
+    runs = execute(staged)
+    return dict(repo=str(staged['repo']), base=staged['base'], ref=staged['ref'], files=len(staged['changed']),
+                staged_before=sorted(staged['files'].get('before', {})),
+                staged_after=sorted(staged['files']['after']),
+                borrowed=sorted(staged['live'].get('borrowed', {})), restaged=sorted(staged['restaged']),
+                payload=staged['payload'], command=reduced(shlex.join(staged['argv'])),
+                before=runs.get('before'), after=runs['after'])
+
+
+def summary(result, live='mirror'):
+    """One stderr line: wire size per side against the limit, what was shipped vs borrowed."""
+    restaged = f', restaged {len(result["restaged"])} the live {live} changed' if result.get('restaged') else ''
+    return ('payload ' + ' · '.join(f'{k} {v // 1024} KiB' for k, v in result['payload'].items())
+            + f' of {CONSOLE_ARG_LIMIT // 1024} KiB; staged {len(result["staged_after"])}, '
+            + f'borrowed {len(result["borrowed"])} from the live {live}{restaged}')
 
 
 def side_by_side(result):
@@ -314,9 +373,7 @@ def main():
     except ValueError as exc:  # usage/budget/transport: one actionable message, no traceback
         print('mirror-try: ' + str(exc), file=sys.stderr)
         return 2
-    print('payload ' + ' · '.join(f'{k} {v // 1000} KB' for k, v in result['payload'].items())
-          + f' of 120 KB; staged {len(result["staged_after"])}, borrowed {len(result["borrowed"])} from the live mirror',
-          file=sys.stderr)
+    print(summary(result, 'mirror'), file=sys.stderr)
     print(json.dumps(result, indent=2) if args.json else side_by_side(result))
     return 0 if result['after']['exit_code'] == 0 else 1
 

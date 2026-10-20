@@ -110,16 +110,21 @@ def test_changed_only_staging_borrows_unchanged_imports_from_live_mirror(tmp_pat
         done = subprocess.run(['sh', '-c', mirror.console_command(files, argv, name, **live_args)],
                               capture_output=True, text=True)
         outputs.append((sorted(files), done.stdout, done.stderr))
+        if done.returncode == mirror.STALE_EXIT:  # what run_version does with the box's marker
+            raise mirror.StaleBorrowed(__import__('json').loads(done.stderr.split(mirror.STALE_MARKER)[1]))
         return {'exit_code': done.returncode, 'stdout': done.stdout, 'stderr': done.stderr}
     monkeypatch.setattr(mirror, 'run_version', run)
     result = mirror.compare(repo, after, False, before, ['python', 'helper.py'], 'p', mirror=str(live))
     assert result['borrowed'] == ['big.py'] and result['staged_after'] == ['helper.py', 'small.py']
     assert [o[1] for o in outputs] == ['big 1\n', 'big 2\n'] and not any(o[2] for o in outputs)
     assert result['payload']['after'] < 5_000
-    (live / 'big.py').write_text('value = "drifted"\n')  # live mirror no longer at base: say so loudly
+    (live / 'big.py').write_text('value = "drifted"\n')  # live mirror no longer at base: stage base bytes
     outputs.clear()
-    mirror.compare(repo, after, False, before, ['python', 'helper.py'], 'p', mirror=str(live))
-    assert 'live mirror differs from base for 1 borrowed import(s): big.py' in outputs[0][2]
+    result = mirror.compare(repo, after, False, before, ['python', 'helper.py'], 'p', mirror=str(live))
+    assert result['restaged'] == ['big.py'] and result['borrowed'] == [] and 'big.py' in result['staged_after']
+    assert [o[1] for o in outputs] == ['', 'big 1\n', 'big 2\n']  # one refused probe, then both sides rerun
+    assert 'restaged 1 the live mirror changed' in mirror.summary(result)
+    (live / 'big.py').write_text('value = "big"\n' + '# padding\n' * 30000)
     outputs.clear()
     result = mirror.compare(repo, after, False, before, ['python', 'helper.py'], 'p', mirror=str(live), no_base=True)
     assert result['before'] is None and len(outputs) == 1 and 'no base run' in mirror.side_by_side(result)
@@ -188,3 +193,21 @@ def test_as_label_resolves_through_the_mirror_roster(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, 'argv', [*base, '--as', 'regular-admin', '--principal-id', 'x'])
     with pytest.raises(SystemExit):
         mirror.main()
+
+
+def test_budget_models_the_hosts_quoted_tee_wrapper(monkeypatch):
+    # Host: ShellQuote(command) inside a stdout tee wrapper must stay <= 120 KiB as one exec argument.
+    command = mirror.console_command({'h.py': base64.b64encode(b"print('x')").decode()}, ['python', 'h.py'],
+                                     mirror='/mirrors/r', borrowed={'a.py': 'f' * 64})
+    path = "'/tmp/rc-console/stdout-99999.txt'"
+    wrapped = ("mkdir -p '/tmp/rc-console' 2>/dev/null\n( eval '" + command.replace("'", "'\"'\"'") + "' ) | tee "
+               + path + ' 2>/dev/null\n__rc_status=("${PIPESTATUS[@]}")\n[ "${__rc_status[1]}" = 0 ] && [ "$(wc -c < '
+               + path + ' 2>/dev/null || echo 0)" -gt 61440 ] || rm -f ' + path + ' 2>/dev/null\nexit "${__rc_status[0]}"')
+    assert len(wrapped) <= mirror.wire_bytes(command) < len(wrapped) + 512
+    with pytest.raises(ValueError, match=r'[\d,]+ bytes exceeds the console limit of 122,880 bytes'):
+        mirror.console_command({'h.py': base64.b64encode(__import__('os').urandom(100_000)).decode()}, ['python', 'h.py'])
+    stale = '{"exit_code": 97, "run_id": "r", "stderr": "mirror-try-stale:[\\"ka.py\\"]\\n"}'
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(a, 0, stale, ''))
+    with pytest.raises(mirror.StaleBorrowed) as exc:
+        mirror.run_version({}, ['python', 'h.py'], [], 'a' * 40)
+    assert exc.value.names == ['ka.py']

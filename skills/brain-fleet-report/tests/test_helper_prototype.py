@@ -57,3 +57,41 @@ def test_privacy_fences_and_failed_after():
     raw = p.model_dump(); raw['after']['exit_code'] = 1
     with pytest.raises(ValueError, match='AFTER'):
         Prototype.model_validate(raw)
+
+
+def test_capture_ships_changed_files_and_borrows_a_large_unchanged_import(tmp_path, monkeypatch):
+    import base64, os
+    import mirror_try
+    remote, repo, live = tmp_path / 'remote.git', tmp_path / 'mirror', tmp_path / 'live'
+    subprocess.run(['git', 'init', '-q', '--bare', str(remote)], check=True)
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
+    ident = ['-c', 'user.name=T', '-c', 'user.email=t@example.org']
+    (repo / 'skills').mkdir()
+    (repo / 'skills/helper.py').write_text('import ka\nprint(ka.VALUE, 1)\n')
+    # ~200 KB of incompressible source: alone over the 120 KiB console limit, like the mirror's ka.py.
+    (repo / 'skills/ka.py').write_text(f'VALUE = "ka"\nBLOB = "{base64.b64encode(os.urandom(150_000)).decode()}"\n')
+    helper.git(repo, 'add', '.'); helper.git(repo, *ident, 'commit', '-qm', 'base')
+    helper.git(repo, 'remote', 'add', 'origin', str(remote)); helper.git(repo, 'push', '-q', 'origin', 'main')
+    subprocess.run(['cp', '-R', str(repo), str(live)], check=True)
+    state = helper.prepare(repo, 'borrow-ka', tmp_path / 'state.json')
+    wt = Path(state['worktree'])
+    (wt / 'skills/helper.py').write_text('import ka\nprint(ka.VALUE, 2)\n')
+    helper.git(wt, *ident, 'commit', '-qam', 'change')
+    runs = []
+    def run(files, argv, scope, sha, name, **live_args):
+        done = subprocess.run(['sh', '-c', mirror_try.console_command(files, argv, name, **live_args)],
+                              capture_output=True, text=True)
+        runs.append(sorted(files))
+        if done.returncode == mirror_try.STALE_EXIT:  # as run_version parses the box's marker
+            raise mirror_try.StaleBorrowed(json.loads(done.stderr.split(mirror_try.STALE_MARKER)[1]))
+        return dict(stdout=done.stdout, stderr=done.stderr, exit_code=done.returncode, sha=sha, run_id='r')
+    monkeypatch.setattr(mirror_try, 'run_version', run)
+    argv = ['python', 'skills/helper.py']
+    proto = helper.capture(state, 'p', 't', None, None, [], argv, live=str(live))
+    assert runs == [['skills/helper.py']] * 2
+    assert (proto.before.stdout.strip(), proto.after.stdout.strip()) == ('ka 1', 'ka 2')
+    assert helper.git(repo, 'ls-remote', 'origin', 'refs/heads/review/borrow-ka').split()[0] == helper.git(wt, 'rev-parse', 'HEAD')
+    assert helper.live_root(repo) == '/mirrors/mirror'
+    (live / 'skills/ka.py').write_text('VALUE = "drifted"\n')  # live differs from base: full staging, too big
+    with pytest.raises(ValueError, match=r'[\d,]+ bytes exceeds the console limit of 122,880 bytes[\s\S]*ka\.py \d+ KB ← helper'):
+        helper.capture(state, 'p', 't', None, None, [], argv, live=str(live))

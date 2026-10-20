@@ -22,11 +22,20 @@ not a deployed brain, retrieval or the full reply loop. Data can change between 
 3. Edit/create the helper in the printed worktree, add a focused regression test and update its
    skill contract. Run relevant checks. Commit only these files. Keep captured output outside Git.
 4. Capture and push the committed branch:
-   `uv run "$FR/scripts/helper_prototype.py" capture --state /tmp/prototype-state.json --project PROJECT --tenant TENANT --path skills/topic/scripts/helper.py --out /tmp/prototype.json --read-only-reviewed -- python skills/topic/scripts/helper.py ARGS`
-   Repeat `--path` for required data/imports; stage all changed production Python and its local
-   dependencies. Absolute `/brain` or `/mirrors` imports still read live bytes: inspect them and
-   include/repoint imports when testing changes there. No hidden files, symlinks or actions; 240 KB
-   total base64/JSON payload (console stdin is capped at 256 KiB). New helper: Before truthfully reports the missing script.
+   `uv run "$FR/scripts/helper_prototype.py" capture --state /tmp/prototype-state.json --project PROJECT --tenant TENANT --out /tmp/prototype.json --read-only-reviewed -- python skills/topic/scripts/helper.py ARGS`
+   Staging is [mirror-try](../mirror-try/SKILL.md)'s: the helper's static import closure is resolved,
+   only the helper and files whose bytes changed since base are shipped, and unchanged imports
+   (e.g. a mirror's 42 KB `ka.py`) are borrowed from the live checkout (`/mirrors/<repo dir>`, a brain
+   `/brain`; override `--live PATH`) after the box verifies their sha256 against base. A mismatch
+   stages those files from git and reruns both sides; `--stage-all` ships the whole closure. Add
+   `--path` for runtime data or dynamic imports; changed production Python outside the closure is
+   refused. Absolute `/brain` or `/mirrors` imports still read live bytes: inspect them and
+   include/repoint imports when testing changes there. No hidden files, symlinks or actions. The
+   limit is **120 KiB (122,880 bytes) per console command** after the host's shell quoting (CLI stdin
+   and API body allow 256 KiB, the workspace exec argument does not); over it, capture fails before
+   any production call, naming the size, the limit and every staged file with its importer. stderr
+   reports `payload before N KiB · after N KiB of 120 KiB; staged S, borrowed B`. New helper: Before
+   truthfully reports the missing script.
    Supply both `--principal-kind` and `--principal-id` when reproducing an end-user scope.
 5. Inspect the reduced output: first-name/email heuristics are not a PII guarantee. Use aggregate
    or identifier-only output, remove residual contact/secret material before publication. AFTER
