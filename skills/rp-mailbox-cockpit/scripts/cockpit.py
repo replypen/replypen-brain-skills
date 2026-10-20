@@ -286,24 +286,50 @@ def detail(args):
 
 
 def plain_body(message):
+    return inline_body(message, 'text/plain')
+
+
+def inline_body(message, mime):
     parts = []
     def visit(part):
         if part.get('filename'):
             return
-        if part.get('mimeType') == 'text/plain':
+        if part.get('mimeType') == mime:
             data = part.get('body', {}).get('data')
             if data is None:
                 raise Refused('Draft text is not inline; exact match cannot be proven')
             try:
                 parts.append(base64.urlsafe_b64decode(data + '=' * (-len(data) % 4)).decode('utf-8'))
             except (ValueError, UnicodeDecodeError) as exc:
-                raise Refused('Draft body is not exact UTF-8 plain text') from exc
+                raise Refused('Draft body is not exact UTF-8 text') from exc
         for child in part.get('parts', []):
             visit(child)
     visit(message.get('payload', {}))
     if len(parts) != 1:
-        raise Refused('Correction requires exactly one plain-text draft body')
+        raise Refused(f'Correction requires exactly one {mime} draft body')
     return parts[0]
+
+
+def same_text(a, b):
+    """Readback/rendering equality: GWS writes CRLF + a trailing newline. Never for the human-edit guard."""
+    def norm(value):
+        return value.replace('\r\n', '\n').rstrip('\n')
+    return norm(a) == norm(b)
+
+
+def render_html(client, stem, original_md, replacement_md):
+    """ReplyPen's own placement renderer via `rp`; a missing command or bad answer refuses, never escapes."""
+    stem.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    paths = []
+    for name, body in (('original', original_md), ('replacement', replacement_md)):
+        path = stem.with_name(f'{stem.name}.{name}.md')
+        path.write_text(body)
+        path.chmod(0o600)
+        paths.append(str(path))
+    html = client.rc('dev', 'tools', 'draft-render', *paths).get('html')
+    if not (isinstance(html, list) and len(html) == 2 and all(isinstance(h, str) and h for h in html)):
+        raise Refused('ReplyPen draft rendering unavailable; refusing to write escaped HTML')
+    return html
 
 
 def matched_draft(detail_data, draft_id):
@@ -527,18 +553,27 @@ def apply(args):
     original = {'draft': old, 'reason': item['why'], 'sources': item['sources'], 'run_id': item['run_id'],
                 'sha256_before': hashlib.sha256(plain_body(old['message']).encode()).hexdigest(),
                 'message_id_before': old['message']['id'], 'status': 'prepared', 'at': now()}
+    original_html, replacement_html = render_html(client, audit.with_suffix(''), baseline['run']['draft_markdown'],
+                                                  item['replacement_body'])
+    if not same_text(inline_body(old['message'], 'text/html'), original_html):
+        raise Refused('Draft HTML is not ReplyPen\'s rendering of its markdown (font, signature, '
+                      'body_html or human edit); correct it by hand')
     save(audit, original)
     replacement = audit.with_suffix('.txt')
     replacement.write_text(item['replacement_body'])
     replacement.chmod(0o600)
+    replacement_html_file = audit.with_suffix('.html')
+    replacement_html_file.write_text(replacement_html)
+    replacement_html_file.chmod(0o600)
     # Recheck immediately before the update; Gmail has no atomic thread+draft CAS.
     guard_thread(client.gws('gmail-thread', args.thread_id), baseline, account)
     save(audit, {**original, 'status': 'write_attempted', 'at': now()})
     result = client.gws('gmail-draft-update', item['draft_id'], '--body-file', str(replacement),
-                        '--expect-message', old['message']['id'])
+                        '--html-file', str(replacement_html_file), '--expect-message', old['message']['id'])
     back = client.api('drafts/' + item['draft_id'], format='full')
-    if back['message'].get('threadId') != args.thread_id or plain_body(back['message']) != (
-            item['replacement_body']):
+    if back['message'].get('threadId') != args.thread_id or not same_text(
+            plain_body(back['message']), item['replacement_body']) or not same_text(
+            inline_body(back['message'], 'text/html'), replacement_html):
         save(audit, {**original, 'status': 'written_readback_mismatch'})
         raise Refused('Draft was written but readback mismatched; inspect Gmail immediately')
     save(audit, {**original, 'status': 'corrected', 'result': result,

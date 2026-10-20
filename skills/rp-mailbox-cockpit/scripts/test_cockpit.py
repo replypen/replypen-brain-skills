@@ -16,13 +16,32 @@ spec.loader.exec_module(c)
 ACCOUNT = 'owner@example.test'
 
 
-def message(mid, sender='customer@example.test', to=ACCOUNT, sent=False, draft=False, at=1, text='body'):
+def b64(text):
+    return base64.urlsafe_b64encode(text.encode()).decode()
+
+
+def message(mid, sender='customer@example.test', to=ACCOUNT, sent=False, draft=False, at=1, text='body',
+            html=None):
+    headers = [{'name': 'From', 'value': sender}, {'name': 'To', 'value': to},
+               {'name': 'Subject', 'value': '<script>customer</script>'}]
+    payload = {'mimeType': 'text/plain', 'headers': headers, 'body': {'data': b64(text)}}
+    if html is not None:
+        payload = {'mimeType': 'multipart/alternative', 'headers': headers, 'parts': [
+            {'mimeType': 'text/plain', 'body': {'data': b64(text)}},
+            {'mimeType': 'text/html', 'body': {'data': b64(html)}}]}
     return {'id': mid, 'threadId': 'abc', 'internalDate': str(at),
-            'labelIds': ['DRAFT'] if draft else ['SENT'] if sent else ['INBOX'],
-            'payload': {'mimeType': 'text/plain', 'headers': [
-                {'name': 'From', 'value': sender}, {'name': 'To', 'value': to},
-                {'name': 'Subject', 'value': '<script>customer</script>'}],
-                'body': {'data': base64.urlsafe_b64encode(text.encode()).decode()}}}
+            'labelIds': ['DRAFT'] if draft else ['SENT'] if sent else ['INBOX'], 'payload': payload}
+
+
+AI_MD = '**Restore:** follow these steps:\n\n- open [the portal](https://example.test/a)\n- click restore'
+FIXED_MD = '**Restore:** open [the new portal](https://example.test/b) instead.'
+
+
+def fake_render(md):
+    """Stand-in for the host renderer (exact parity is pinned host-side in internal/api)."""
+    md = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', md)
+    md = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', md)
+    return '<div>' + md.replace('\n- ', '<li>') + '</div>'
 
 
 def fixture():
@@ -294,9 +313,15 @@ class Tests(unittest.TestCase):
         self.assertEqual(c.safe_url('javascript:alert(1)'), '')
         self.assertEqual(c.safe_url('https://example.test:bad/'), '')
 
-    def test_guarded_apply_reads_back_and_audits_without_send(self):
+    def run_apply(self, draft_html=fake_render(AI_MD), rendered=True, readback_html=None):
         detail, finding = fixture()
-        calls = []
+        draft = message('draft', ACCOUNT, 'customer@example.test', draft=True, at=2, text=AI_MD, html=draft_html)
+        detail['gmail']['messages'][1] = draft
+        detail['fingerprint'] = finding['evidence_fingerprint'] = c.fingerprint(detail['gmail'])
+        detail['run']['draft_markdown'] = AI_MD
+        detail['drafts'] = [{'id': 'gmail-draft', 'message': draft}]
+        finding['replacement_body'] = FIXED_MD
+        calls = self.calls = []
         class Fake:
             def __init__(self, config):
                 self.config = config
@@ -306,16 +331,23 @@ class Tests(unittest.TestCase):
                     return {'mailboxes': [{'id': 'one', 'provider': 'google', 'email_address': ACCOUNT}]}
                 if args[:2] == ('run', 'show'):
                     return detail['run']
+                if args[:3] == ('dev', 'tools', 'draft-render'):
+                    calls.append(args[:3])
+                    if not rendered:
+                        raise c.Refused('Command failed')
+                    return {'html': [fake_render(Path(p).read_text()) for p in args[3:]]}
                 return {'threads': [{'provider': 'google', 'external_thread_id': 'abc', 'local_thread_id': 'g'}],
                         'runs': [{'run_id': 'run', 'attribution': {'thread_id': 'abc', 'local_thread_id': 'g'}}]}
             def pages(self, *args):
                 return [{'id': 'gmail-draft', 'message': {'threadId': 'abc'}}], False
             def api(self, *args, **kwargs):
-                draft = copy.deepcopy(detail['drafts'][0])
-                if self.updated:
-                    draft['message'] = message('after', ACCOUNT, 'customer@example.test', draft=True,
-                                                text='Corrected body')
-                return draft
+                if not self.updated:
+                    return copy.deepcopy(detail['drafts'][0])
+                # Gmail readback: CRLF line endings plus a trailing newline on both legs.
+                html = readback_html if readback_html is not None else fake_render(FIXED_MD)
+                return {'id': 'gmail-draft', 'message': message(
+                    'after', ACCOUNT, 'customer@example.test', draft=True,
+                    text=FIXED_MD.replace('\n', '\r\n') + '\r\n', html=html + '\r\n')}
             def gws(self, *args):
                 calls.append(args)
                 if args[0] == 'whoami':
@@ -324,22 +356,55 @@ class Tests(unittest.TestCase):
                     return detail['gmail']
                 self.updated = True
                 return {'verified': {'threadId': 'abc'}}
-        with tempfile.TemporaryDirectory() as temp, patch.object(c, 'Client', Fake):
-            bundle = Path(temp)
-            c.save(bundle / 'details/abc.json', detail)
-            c.save(bundle / 'findings.json', [finding])
-            c.save(bundle / 'config.json', {'mailbox_id': 'one', 'account': ACCOUNT})
-            c.save(bundle / 'index.json', {'threads': [{'thread_id': 'abc'}]})
-            c.apply(argparse.Namespace(bundle=temp, findings=str(bundle / 'findings.json'),
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        bundle = Path(temp.name)
+        c.save(bundle / 'details/abc.json', detail)
+        c.save(bundle / 'findings.json', [finding])
+        c.save(bundle / 'config.json', {'mailbox_id': 'one', 'account': ACCOUNT})
+        c.save(bundle / 'index.json', {'threads': [{'thread_id': 'abc'}]})
+        with patch.object(c, 'Client', Fake):
+            c.apply(argparse.Namespace(bundle=temp.name, findings=str(bundle / 'findings.json'),
                                        thread_id='abc', allow_draft_corrections=True))
-            audit = c.read(bundle / 'corrections/abc.json')
-            self.assertEqual(audit['status'], 'corrected')
-            self.assertEqual(audit['message_id_after'], 'after')
-            self.assertEqual(c.plain_body(audit['draft']['message']), 'AI body')
-        writes = [call for call in calls if call[0] == 'gmail-draft-update']
+        return bundle, self.writes(), calls
+
+    def writes(self):
+        return [call for call in self.calls if call[0] == 'gmail-draft-update']
+
+    def test_guarded_apply_writes_replypen_html_reads_back_and_audits_without_send(self):
+        bundle, writes, calls = self.run_apply()
+        audit = c.read(bundle / 'corrections/abc.json')
+        self.assertEqual(audit['status'], 'corrected')
+        self.assertEqual(audit['message_id_after'], 'after')
+        self.assertEqual(c.plain_body(audit['draft']['message']), AI_MD)
         self.assertEqual(len(writes), 1)
         self.assertEqual(writes[0][-2:], ('--expect-message', 'draft'))
+        html_file = Path(writes[0][writes[0].index('--html-file') + 1])
+        self.assertEqual(html_file.read_text(), fake_render(FIXED_MD))
+        self.assertIn('<strong>Restore:</strong>', html_file.read_text())
+        self.assertNotIn('**', html_file.read_text())
         self.assertNotIn('gmail-send', [call[0] for call in calls])
+
+    def test_apply_refuses_when_original_html_is_not_replypen_rendering(self):
+        # e.g. the body_html escape hatch, a draft font/signature, or GWS's escaped-text default.
+        with self.assertRaisesRegex(c.Refused, 'not ReplyPen'):
+            self.run_apply(draft_html='<div>' + AI_MD + '</div>')
+        self.assertEqual(self.writes(), [])
+
+    def test_apply_refuses_without_renderer_never_writes_escaped_html(self):
+        with self.assertRaisesRegex(c.Refused, 'Command failed'):
+            self.run_apply(rendered=False)
+        self.assertEqual(self.writes(), [])
+
+    def test_apply_html_readback_mismatch_is_reported(self):
+        with self.assertRaisesRegex(c.Refused, 'readback mismatched'):
+            self.run_apply(readback_html='<div>' + FIXED_MD + '</div>')
+        self.assertEqual(len(self.writes()), 1)
+
+    def test_same_text_normalizes_only_line_endings_and_trailing_newline(self):
+        self.assertTrue(c.same_text('a\r\nb\r\n', 'a\nb'))
+        self.assertFalse(c.same_text('a\nb ', 'a\nb'))
+        self.assertFalse(c.same_text('\na\nb', 'a\nb'))
 
     def test_apply_requires_authorization_before_any_client(self):
         with patch.object(c, 'Client') as client:

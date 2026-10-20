@@ -1,6 +1,6 @@
 ---
 name: rp-debug
-description: "Debug ONE ReplyPen production run, thread, or session from a brain checkout with `rp run debug` / `rp run thread`. Use when given a phone-lab run URL, run UUID, thread/session id, a failed run, a UUID flagged by rp-fleet/rp-health, or a delivery question. Analysis-first: inspect evidence, propose the smallest fix, stop before editing brain files unless asked to implement."
+description: "Debug ONE ReplyPen production run, thread, or session from a brain checkout with `rp run debug` / `rp run thread`. Use when given a phone-lab run URL, run UUID, thread/session id, a pasted Gmail link, a failed run, a UUID flagged by rp-fleet/rp-health, or a delivery question. Analysis-first: inspect evidence, propose the smallest fix, stop before editing brain files unless asked to implement."
 ---
 
 # rp-debug — inspect one run/thread
@@ -23,6 +23,9 @@ Public `rp` only; scope comes from `.replypen.toml` + the OAuth login
   first: an infra class means ReplyPen's machinery failed — report it, do not edit the brain
   ([docs/actions.md](../../docs/actions.md#failure-classes-infra-vs-domain)).
 - **Thread/session id** → `rp run thread <id>`. No run at all → explain the channel/support boundary.
+- **Gmail link** (print `permthid=thread-f:…`, `#inbox/<hex>`, `#inbox/FMfcg…`) →
+  `rp run thread '<link>' --project <p> -o table`: lineage, triage reason, draft/note counts, the
+  project's Google mailboxes, and a "never processed" cause list when ReplyPen has no record.
 - **Chat share link** (`…/s/<token>`, no login needed) or a bad chat answer with "this is what I
   expected" → [brain-chat-debug](../brain-chat-debug/SKILL.md) (case file, replay on a dev ref).
 - **Run link** (`…/runs/<id>?t=<token>`) → `rp run debug '<link>'` works without login; for a chat
