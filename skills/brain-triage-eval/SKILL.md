@@ -55,6 +55,7 @@ status: proposed                           # proposed | approved (only the proje
 expect: {process: true, needs_action: true, needs_patient_text: true}
 why: "The practice proposed a slot and asked to confirm; the acceptance still has to be booked."
 tags: [acceptance, same-last-text]
+# channel: whatsapp                        # optional: the thread's source channel (conversation, whatsapp, ticket, …); omit for email
 messages:                                  # oldest first; the LAST one is the current turn (inbound)
   - {id: m1, direction: outbound, from: "Praktijk <info@praktijk.example>", date: 2026-10-06T11:40:00+02:00}
   - id: m2
@@ -79,6 +80,9 @@ Bedankt, akkoord!
 - `process` must equal `needs_action OR needs_patient_text`. Keep the two apart: an acceptance of a
   proposed slot needs an action even when no extra text to the patient is owed; a first "duidelijk,
   bedankt" may need only text.
+- A chat case (`channel: conversation|whatsapp|sms|…`) gets the host's live-chat rules (openers with no
+  question of their own are skipped; the next message is). Pair each opener with its real-question
+  sibling, plus an email control with the same text.
 - Write the bodies as the provider stores them (quoted history included when a mail client would
   quote it). The classifier sees subject, sender and body text of every message, not attachments.
 - **Synthetic only.** Invent names, addresses (`example.com`, `*.example`), phone numbers and ids;

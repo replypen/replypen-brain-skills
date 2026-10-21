@@ -24,6 +24,7 @@ INVALID = {
     "time-travel": "back in time",
     "last-outbound": "current turn",
     "bad-status": "status",
+    "bad-channel": "channel",
     "text-before-section": "before the first",
     "uppercase-header": "lowercase",
     "duplicate-key": "already defined",

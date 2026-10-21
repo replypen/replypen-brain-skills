@@ -39,10 +39,11 @@ DIRECTIONS = ("inbound", "outbound")
 CASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,79}$")
 MESSAGE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 TAG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+CHANNEL_RE = re.compile(r"^[a-z][a-z_]{0,31}$")
 SECTION_RE = re.compile(r"^## ([a-z0-9][a-z0-9-]{0,31})[ \t]*$")
 RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
 
-TOP_KEYS = {"id", "subject", "status", "expect", "why", "tags", "messages"}
+TOP_KEYS = {"id", "subject", "status", "expect", "why", "tags", "channel", "messages"}
 EXPECT_KEYS = {"process", "needs_action", "needs_patient_text"}
 MESSAGE_KEYS = {"id", "direction", "from", "to", "date", "html", "spam", "headers", "attachments"}
 
@@ -189,6 +190,9 @@ def parse_case(rel: str, raw: bytes) -> dict:
         raise CaseError("expect.process must be true exactly when needs_action or needs_patient_text is true")
     if not _str("why", data.get("why")).strip():
         raise CaseError("why is required: the human rationale behind the expected outcome")
+    channel = _str("channel", data.get("channel"))
+    if channel and not CHANNEL_RE.match(channel):
+        raise CaseError(f"channel {channel!r} must match {CHANNEL_RE.pattern} (a source channel such as conversation, whatsapp or ticket)")
     for tag in _list("tags", data.get("tags")):
         tag = _str("tags", tag)
         if not TAG_RE.match(tag):
