@@ -3,8 +3,9 @@
 # ///
 """Run a brain's pytest tiers the way the workspace container would — offline by default, live on demand.
 
-Brain-dir-relative: `cd` into a `replypen-brain-<project>` checkout and invoke; operates
-on `./skills`. Tiers (from `lib.livecheck`):
+Brain-dir-relative: `cd` into a `replypen-brain-<project>` checkout and invoke; collects `./skills`
+plus every other top-level dir holding tests (`actions/`, `tests/`, …) — not `_internal/` or other
+`_`/`.` operator dirs. Tiers (from `lib.livecheck`):
 
   * **offline (default)** — `-m "not live"`: hermetic L1 fixture tests + the brain description lint + action-script hygiene lint
                             (`lib.brain_lint_pytest`, injected — no per-brain test file). No DSN, no network.
@@ -28,6 +29,22 @@ from pathlib import Path
 
 import brain_env as E
 
+# Top-level dirs never collected: operator tooling (`_internal/`, any `_`/`.` prefix) and vendored trees.
+_SKIP_DIRS = {"node_modules", "venv"}
+
+
+def test_dirs(brain_dir: Path) -> list[str]:
+    """`skills` first (brain lint finds the brain root from it), then each other top-level dir with a
+    `test_*.py`/`*_test.py` in it — action preflight tests, a brain's top-level `tests/`."""
+    found = []
+    for child in sorted(brain_dir.iterdir()):
+        if (child.name == "skills" or child.name[0] in "._" or child.name in _SKIP_DIRS
+                or not child.is_dir() or child.is_symlink()):
+            continue
+        if any("node_modules" not in f.parts for pat in ("test_*.py", "*_test.py") for f in child.rglob(pat)):
+            found.append(child.name)
+    return ["skills", *found] if (brain_dir / "skills").is_dir() else found
+
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="brain_test.py", description=__doc__,
@@ -44,14 +61,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--tenant", metavar="ID",
                    help="override the live tier's auto-picked tenant id (lib.livecheck.pick_tenant) — "
                         "pin the schema canary to one tenant. Best-effort; numeric ids are coerced to int.")
-    p.add_argument("pytest_args", nargs="*", help="extra positional args passed through to pytest")
-    # Unknown args (pytest flags like -k/-x/--tb) pass through too; kit flags precede them.
-    args, extra = p.parse_known_args(sys.argv[1:] if argv is None else argv)
-    args.pytest_args = [*args.pytest_args, *extra]
+    # Every unknown arg (pytest flags like `-k expr`/-x/--tb, test paths) passes through to pytest in
+    # its original order; a positional here would split `-k expr` into `expr … -k`.
+    args, args.pytest_args = p.parse_known_args(sys.argv[1:] if argv is None else argv)
 
     brain_dir = E.resolve_brain_dir(args.brain)
-    skills_dir = brain_dir / "skills"
-    if not skills_dir.is_dir():
+    dirs = test_dirs(brain_dir)
+    if not dirs:
+        if any((brain_dir / f).is_file() for f in (".replypen.toml", ".rootcause.toml")):
+            # Docs-only brain (tenant overlay): nothing to import or test; brain_lint.py covers it.
+            print("brain_test: no skills/ or test dirs (docs-only brain) — nothing to test", file=sys.stderr)
+            return 0
         print(f"error: no skills/ under {brain_dir} — is this a brain checkout?", file=sys.stderr)
         return 1
 
@@ -60,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     # The adapter injects one offline lint item and prints one compact end-of-tier report.
     # --import-mode=importlib: brains keep one `tests/test_preflight.py` per action dir with no
     # `__init__.py`, so rootdir-based import would collide on the shared basename (audit 2026-09-05).
+    # A brain-root conftest.py (e.g. a `pii_columns` override) reaches every collected dir; rootdir
+    # becomes the brain root as soon as a second dir is collected.
+    print(f"collecting: {' '.join(d + '/' for d in dirs)}", file=sys.stderr)
     pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-p", "lib.mirror_skip",
                    "-p", "lib.pii_pytest", "--import-mode=importlib", "-m", marker, "-q", *args.pytest_args]
     if args.require_live:
@@ -80,13 +103,11 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
 
     if args.mode == "uv":
-        return _run_uv(
-            brain_dir, skills_dir, mirrors, live, pytest_args, args.mirrors_root, args.tenant
-        )
-    return _run_docker(brain_dir, mirrors, live, pytest_args, args)
+        return _run_uv(brain_dir, dirs, mirrors, live, pytest_args, args.mirrors_root, args.tenant)
+    return _run_docker(brain_dir, dirs, mirrors, live, pytest_args, args)
 
 
-def _run_uv(brain_dir: Path, skills_dir: Path, mirrors: dict[str, Path], live: bool,
+def _run_uv(brain_dir: Path, dirs: list[str], mirrors: dict[str, Path], live: bool,
             pytest_args: list[str],
             mirrors_root: str | None, tenant: str | None) -> int:
     # The live tier needs the DSN; the offline tier runs without a .env. Script sees ONLY the
@@ -106,11 +127,11 @@ def _run_uv(brain_dir: Path, skills_dir: Path, mirrors: dict[str, Path], live: b
     )
     if smoke.returncode:
         return smoke.returncode
-    cmd = [*E.uv_base_cmd(extra_with=["pytest"]), "pytest", str(skills_dir), *pytest_args]
+    cmd = [*E.uv_base_cmd(extra_with=["pytest"]), "pytest", *(str(brain_dir / d) for d in dirs), *pytest_args]
     return subprocess.run(cmd, env=child).returncode
 
 
-def _run_docker(brain_dir: Path, mirrors: dict[str, Path], live: bool, pytest_args: list[str],
+def _run_docker(brain_dir: Path, dirs: list[str], mirrors: dict[str, Path], live: bool, pytest_args: list[str],
                 args) -> int:
     if not E.docker_available():
         print("error: docker not available (is colima/Docker running?)", file=sys.stderr)
@@ -133,9 +154,9 @@ def _run_docker(brain_dir: Path, mirrors: dict[str, Path], live: bool, pytest_ar
     smoke_code = E.run_docker(smoke_args, secrets)
     if smoke_code:
         return smoke_code
-    # pytest over the read-only /brain/skills; lib + the livecheck plugin are baked into the image.
+    # pytest over the read-only /brain test dirs; lib + the livecheck plugin are baked into the image.
     # `-p no:cacheprovider`: /brain is :ro (EROFS), and the cache is useless for a one-shot --rm run.
-    command = ["pytest", "-p", "no:cacheprovider", f"{E.BRAIN_MOUNT}/skills", *pytest_args]
+    command = ["pytest", "-p", "no:cacheprovider", *(f"{E.BRAIN_MOUNT}/{d}" for d in dirs), *pytest_args]
     run_args = E.docker_run_args(
         image=args.image, brain_dir=brain_dir, mirrors=mirrors,
         env_names=list(secrets), command=command,
