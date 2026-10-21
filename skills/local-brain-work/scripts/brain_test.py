@@ -79,12 +79,13 @@ def main(argv: list[str] | None = None) -> int:
     marker = "live" if live else "not live"
     # The adapter injects one offline lint item and prints one compact end-of-tier report.
     # --import-mode=importlib: brains keep one `tests/test_preflight.py` per action dir with no
-    # `__init__.py`, so rootdir-based import would collide on the shared basename (audit 2026-09-05).
+    # `__init__.py`, so rootdir-based import would collide on the shared basename (audit 2026-09-05);
+    # `lib.sibling_modules` does the same for their bare `import preflight` / `import script`.
     # A brain-root conftest.py (e.g. a `pii_columns` override) reaches every collected dir; rootdir
     # becomes the brain root as soon as a second dir is collected.
     print(f"collecting: {' '.join(d + '/' for d in dirs)}", file=sys.stderr)
     pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-p", "lib.mirror_skip",
-                   "-p", "lib.pii_pytest", "--import-mode=importlib", "-m", marker, "-q", *args.pytest_args]
+                   "-p", "lib.pii_pytest", "-p", "lib.sibling_modules", "--import-mode=importlib", "-m", marker, "-q", *args.pytest_args]
     if args.require_live:
         pytest_args.append("--require-live")
 
@@ -121,12 +122,13 @@ def _run_uv(brain_dir: Path, dirs: list[str], mirrors: dict[str, Path], live: bo
     if not E.preflight_lib_db(child, extra_with=["pytest"]):
         return 1
     print(f"[uv mode] {E.UV_MODE_CAVEATS}", file=sys.stderr)
-    smoke = subprocess.run(
-        [*E.uv_base_cmd(extra_with=["pytest"]), "python", "-m", "lib.import_smoke", str(brain_dir)],
-        env=child,
-    )
-    if smoke.returncode:
-        return smoke.returncode
+    if dirs[0] == "skills":  # import smoke covers skills/ scripts; an actions-only brain has none
+        smoke = subprocess.run(
+            [*E.uv_base_cmd(extra_with=["pytest"]), "python", "-m", "lib.import_smoke", str(brain_dir)],
+            env=child,
+        )
+        if smoke.returncode:
+            return smoke.returncode
     cmd = [*E.uv_base_cmd(extra_with=["pytest"]), "pytest", *(str(brain_dir / d) for d in dirs), *pytest_args]
     return subprocess.run(cmd, env=child).returncode
 
@@ -141,7 +143,7 @@ def _run_docker(brain_dir: Path, dirs: list[str], mirrors: dict[str, Path], live
         return 1
     if not brain_dir.resolve().is_relative_to(Path.home()) and subprocess.run(
         ["docker", "run", "--rm", "-v", f"{brain_dir.resolve()}:/brain:ro", "--entrypoint", "test", args.image,
-         "-d", "/brain/skills"], capture_output=True).returncode:
+         "-d", f"/brain/{dirs[0]}"], capture_output=True).returncode:
         # colima (and Docker Desktop's defaults) share only $HOME: a /tmp worktree mounts as an empty /brain.
         print(f"error: docker cannot see {brain_dir} (the VM shares only $HOME); put the worktree under ~, "
               "e.g. `git worktree add --detach ~/.cache/replypen-wt/<name> origin/main`.", file=sys.stderr)
@@ -157,13 +159,13 @@ def _run_docker(brain_dir: Path, dirs: list[str], mirrors: dict[str, Path], live
             print(f"warning: mirror {name!r} path missing: {path}", file=sys.stderr)
     print(f"[docker mode] image={args.image} — egress is OPEN (default bridge), not the prod "
           "default-deny firewall.", file=sys.stderr)
-    smoke_args = E.docker_run_args(
-        image=args.image, brain_dir=brain_dir, mirrors=mirrors,
-        env_names=list(secrets), command=["python", "-m", "lib.import_smoke", E.BRAIN_MOUNT],
-    )
-    smoke_code = E.run_docker(smoke_args, secrets)
-    if smoke_code:
-        return smoke_code
+    if dirs[0] == "skills":  # import smoke covers skills/ scripts; an actions-only brain has none
+        smoke_args = E.docker_run_args(
+            image=args.image, brain_dir=brain_dir, mirrors=mirrors,
+            env_names=list(secrets), command=["python", "-m", "lib.import_smoke", E.BRAIN_MOUNT],
+        )
+        if smoke_code := E.run_docker(smoke_args, secrets):
+            return smoke_code
     # pytest over the read-only /brain test dirs; lib + the livecheck plugin are baked into the image.
     # `-p no:cacheprovider`: /brain is :ro (EROFS), and the cache is useless for a one-shot --rm run.
     command = ["pytest", "-p", "no:cacheprovider", *(f"{E.BRAIN_MOUNT}/{d}" for d in dirs), *pytest_args]
