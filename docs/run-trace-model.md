@@ -37,3 +37,10 @@ Use `rp run thread <run-id>` when you need that run's provider thread, session, 
 A single failed run is evidence, not permission to oversteer the brain. For `rp-debug`, inspect,
 state the best hypothesis, cite trace/file evidence, propose the smallest useful brain change, and stop
 before editing unless the user asked for implementation.
+
+## Phone-lab calls
+
+Phone-lab uses a separate event store: `rp run list --phone-lab --project <project> --limit 5`, then
+`rp run debug <id> --phone-lab --project <project>`. The index leads with anomalies and transcript
+turns; JSONL preserves safe API events with original indices, while JSON preserves the full response.
+See [rp-debug phone evidence](../skills/rp-debug/references/phone-lab.md) for the schema and queries.

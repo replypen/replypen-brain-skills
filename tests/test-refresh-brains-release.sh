@@ -11,6 +11,7 @@ mkdir -p "$TMP/brains"
 mkdir -p "$TMP/not-a-brain"
 git init -q --bare "$REMOTE"
 git clone -q "$ROOT" "$CHECKOUT"
+git -C "$CHECKOUT" switch -q -C main
 git -C "$CHECKOUT" remote set-url origin "$REMOTE"
 git -C "$CHECKOUT" config user.name "Release Test"
 git -C "$CHECKOUT" config user.email "release-test@example.com"
@@ -70,6 +71,14 @@ git -C "$CHECKOUT" switch -q main
 RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump \
   --dry-run "$TMP/not-a-brain" >"$TMP/dry.out" 2>&1
 grep -q -- "--verify-command ./scripts/test-skills.sh" "$TMP/dry.out"
+# A detached main-lineage worktree uses the same publisher; no shared branch switch is needed.
+DETACHED="$TMP/detached"
+git -C "$CHECKOUT" worktree add -q --detach "$DETACHED" HEAD
+RC_BRAINS_ROOT="$TMP/brains" "$DETACHED/refresh-brains.sh" --release patch --no-image --no-prod-bump \
+  --dry-run "$TMP/not-a-brain" >"$TMP/detached.out" 2>&1
+grep -q "Reconcile and publish release commit" "$TMP/detached.out"
+git -C "$CHECKOUT" worktree remove "$DETACHED"
+
 export SKIP_TESTS=1
 # Simulate another computer publishing after this checkout's last fetch. The release must merge this
 # commit through the same brain-git-sync primitive before it tags anything.
@@ -180,6 +189,7 @@ CL_REMOTE="$TMP/classify-origin.git"
 CL="$TMP/classify-kit"
 git init -q --bare "$CL_REMOTE"
 git clone -q "$ROOT" "$CL"
+git -C "$CL" switch -q -C main
 git -C "$CL" remote set-url origin "$CL_REMOTE"
 git -C "$CL" config user.name "Classify Test"
 git -C "$CL" config user.email "classify-test@example.com"

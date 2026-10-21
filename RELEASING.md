@@ -1,7 +1,7 @@
 # Releasing — the single version line
 
 > **The standard flow is one command** — [`./refresh-brains.sh`](refresh-brains.sh). It does the
-> whole table below, requires `main`, pushes and verifies the release commit at `origin/main`, then
+> whole table below, requires `main` or a detached worktree descended from `origin/main`, pushes and verifies the release commit at `origin/main`, then
 > pushes the version tag and re-points every local brain:
 >
 > ```bash

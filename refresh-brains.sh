@@ -96,9 +96,16 @@ verify_origin_main() {
 # ── 1. release (optional) ───────────────────────────────────────────────────
 if [ -n "$RELEASE" ]; then
   BRANCH="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD || true)"
-  if [ "$BRANCH" != "main" ]; then
-    echo "error: releases must be cut from main (current: ${BRANCH:-detached HEAD})" >&2
+  if [ "$BRANCH" != "main" ] && [ -n "$BRANCH" ]; then
+    echo "error: releases must be cut from main or a detached main-lineage worktree (current: $BRANCH)" >&2
     exit 1
+  fi
+
+  if [ -z "$BRANCH" ]; then
+    git -C "$ROOT" fetch -q origin main
+    git -C "$ROOT" merge-base --is-ancestor origin/main HEAD || {
+      echo "error: detached release HEAD must descend from origin/main" >&2; exit 1;
+    }
   fi
 
   # Releases carry committed work only, so the whole release phase (bump → commit → sync → tag → image)

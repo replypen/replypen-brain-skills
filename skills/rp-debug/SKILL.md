@@ -43,26 +43,13 @@ This uses your project-level developer login, including from another brain check
 share-token link. Bare ID: `rp run debug <uuid> --phone-lab --project <project>`.
 Do not use `rp run thread` first: phone-lab runs have their own event store.
 
-Read the returned markdown index: historical brain ref, tenant, status, signals, then timeline.
-Full evidence is the adjacent JSON (`jq '.events[INDEX]' <file.json>`); unknown/new event fields survive.
-`--out-dir <dir>` chooses the artifact directory; JSON stdout is the standard artifact manifest.
+List recent calls: `rp run list --phone-lab --project <project> --limit 5` (JSON: raw `items`).
+Read the returned Markdown index: anomalies → transcript turns → event timeline. Adjacent JSON keeps
+the API response; JSONL preserves each full event with its original array index.
+`--out-dir <dir>` chooses the artifact directory; JSON stdout is the artifact manifest.
 
-- `latency_ms` measures **transcripts**, not audible speech or proven silence. Caller-event timestamps
-  mark the first delta, so subtracting caller/agent event timestamps overstates response latency.
-  Typed commentary tests the backend only. Tool `t` is start time; `exec_ms` is its duration.
-- `stale` means a newer delegation superseded an answer; `retired` means voicemail capture prevented
-  that queued turn from running. Inspect delegation IDs and caller corrections before blaming latency.
-- Failed bash: inspect `cmd`, `stdout`, `stderr`, `exit_code`; compare the saved brain ref with today.
-- Voicemail: inspect the whole event for capture/closure, audio metadata when present, `outcome` and
-  DentAI POST `result`. Captured text alone does not prove upload/delivery. A missing audio field in an
-  old run cannot be recovered by a newer CLI.
-- Final `note` events carry end reasons and event-limit notices. The dump preserves stored evidence;
-  event/byte caps and truncated tool output cannot be reconstructed. A linked console run is a
-  separate drill-down, not the phone transcript.
-
-Fix ownership: brain AGENTS.md/phone persona/scripts for wording, lookup strategy or tool choice;
-ReplyPen host `phonelab` for turn ordering, stale delivery, capture or persistence; the practice app's
-phone facade for lookup/voicemail POST failures. Diagnose first; edit only when asked to implement.
+For model rounds, tool stdout/exit/duration, stalled lookups, stale commentary or voicemail,
+read [phone-lab queries and offline helper](references/phone-lab.md).
 
 ## Files in a chat session
 
