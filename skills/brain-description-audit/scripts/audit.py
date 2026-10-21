@@ -458,7 +458,7 @@ def apply_kb(work: Path, skip: set[str], dry_run: bool) -> None:
     if not patches:
         print("no rewrites to apply")
         return
-    path = work / "patches.json"
+    path = work.resolve() / "patches.json"  # rp runs from the brain dir: a relative --work would miss
     path.write_text(json.dumps({"patches": patches}, ensure_ascii=False, indent=1), encoding="utf-8")
     argv = [_cli()] + (["--tenant", meta["tenant"]] if meta.get("tenant") else ["--scope", "project"])
     argv += ["project", "knowledge", "summaries", "apply", "--from", str(path), "-o", "json"]
