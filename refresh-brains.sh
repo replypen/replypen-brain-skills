@@ -290,7 +290,10 @@ if [ -n "$RELEASE" ]; then
   ROOT="$SHARED"
   if [ "$DRY" != 1 ]; then
     say "Sync the shared checkout"
-    if [ -z "$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)" ]; then
+    # Tracked edits block the pull (other agents' WIP); untracked files never do: git aborts the merge
+    # itself if one would be overwritten. A stale untracked symlink kept this checkout on the old
+    # release, pairing new scripts with the old image (2026-10-21).
+    if [ -z "$(git -C "$ROOT" status --porcelain=v1 --untracked-files=no)" ]; then
       run git -C "$ROOT" pull -q --no-rebase origin main
     else
       echo "  uncommitted work here — NOT pulled. $TARGET = $RELEASE_SHA on origin/main;"
@@ -488,3 +491,5 @@ if [ "$PROD_BUMP_FAILED" = 1 ]; then
   exit 1
 fi
 echo; echo "✅ done — brains now run $TARGET"
+echo "   publish a brain from its checkout (installed kit, never this source checkout):"
+echo "   uv run --no-project python .agents/skills/brain-publish/scripts/brain_publish.py --project <p>"

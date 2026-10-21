@@ -14,26 +14,8 @@ build/
 
 # Local rc/kit artifacts (rp CLI debug dumps, brain_dump run dumps) — gitignored wholesale, regenerable.
 /.replypen/
-/.agents/skills/brain-ask
-/.claude/skills/brain-ask
-/.agents/skills/brain-debug
-/.claude/skills/brain-debug
-/.agents/skills/brain-dev
-/.claude/skills/brain-dev
-/.agents/skills/brain-dev-upgrade
-/.claude/skills/brain-dev-upgrade
-/.agents/skills/local-brain-work
-/.claude/skills/local-brain-work
-/.agents/skills/observability
-/.claude/skills/observability
-/.agents/skills/rp-fleet
-/.claude/skills/rp-fleet
-/.agents/skills/rp-health
-/.claude/skills/rp-health
-/.agents/skills/rc-inspect
-/.claude/skills/rc-inspect
-/.agents/skills/rc-run
-/.claude/skills/rc-run
-/.agents/skills/rc-thread
-/.claude/skills/rc-thread
+# Local skill installs (symlinks into ~/.replypen-brain-skills): ignored wholesale so a renamed skill's
+# stale link never dirties the tree (it kept refresh-brains.sh from pulling, 2026-10-21).
+/.agents/skills/
+/.claude/skills/
 _internal/

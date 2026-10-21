@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -228,7 +229,8 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
         note(f"-> brain_git_sync (checks rerun after every merge): {len(checks)} commands")
         try:
             result = bgs.synchronize(repo, commit_message=args.commit_message, verify_commands=checks,
-                                     project=args.project, reporter=bgs.Reporter(False))
+                                     project=args.project, reporter=bgs.Reporter(False),
+                                     allow_detached=args.detached)
         except bgs.SyncError as error:
             if error.kind == "conflict":
                 raise Stop(EXIT_CONFLICT, "git-sync", f"{error}. Resolve with both sides' intent, stage, "
@@ -386,7 +388,37 @@ def render(receipt: dict, code: int) -> str:
     return "\n".join(lines)
 
 
+def _released(kit: Path) -> str | None:
+    """The release tag `kit` sits on with no tracked edits, else None (a source checkout mid-work)."""
+    tag = subprocess.run(["git", "-C", str(kit), "describe", "--tags", "--exact-match", "HEAD"],
+                         capture_output=True, text=True)
+    dirty = subprocess.run(["git", "-C", str(kit), "status", "--porcelain", "--untracked-files=no"],
+                           capture_output=True, text=True)
+    return tag.stdout.strip() if tag.returncode == 0 and dirty.returncode == 0 and not dirty.stdout else None
+
+
+def _installed_publisher() -> Path | None:
+    """Re-exec target: the brain's installed, tag-pinned kit when this script runs from a different kit
+    that is not a clean release (a source checkout). Publishing from a source checkout paired its new
+    scripts with the old release image (2026-10-21). `RC_KIT_DEV=1` keeps the source kit on purpose."""
+    if os.environ.get("RC_KIT_DEV") == "1" or _released(SKILLS.parent):
+        return None
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+    installed = Path(top or ".") / ".agents" / "skills" / "brain-publish" / "scripts" / "brain_publish.py"
+    if not installed.is_file():
+        return None
+    installed = installed.resolve()
+    kit = installed.parents[3]
+    if kit == SKILLS.parent.resolve() or not _released(kit):
+        return None
+    return installed
+
+
 def main(argv: list[str] | None = None) -> int:
+    if (installed := _installed_publisher()) is not None:
+        note(f"kit: {SKILLS.parent} is a source checkout, not a release; publishing with the brain's installed "
+             f"kit {installed.parents[3]} ({_released(installed.parents[3])}). RC_KIT_DEV=1 keeps the source kit.")
+        os.execv(sys.executable, [sys.executable, str(installed), *(sys.argv[1:] if argv is None else argv)])
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--project", required=True, help="project slug; must match .replypen.toml")
     p.add_argument("--channel", choices=("stable", "edge"), default="stable")
@@ -395,6 +427,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="extra check on top of lint + brain_test, rerun after every merge (repeatable)")
     p.add_argument("--skip-docker-tier", action="store_true",
                    help="run brain_test on the host instead of the workspace image (loud warning)")
+    p.add_argument("--detached", action="store_true",
+                   help="publish a detached worktree (under ~, e.g. ~/.cache/replypen-wt/<name> at origin/main + "
+                        "your commit; docker sees only $HOME): keeps other agents' local commits out")
     p.add_argument("--dry-run", action="store_true", help="no commit/push/promote; preflight origin/main")
     p.add_argument("--json", action="store_true", help="print the receipt as one JSON object")
     args = p.parse_args(argv)

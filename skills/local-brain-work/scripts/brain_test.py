@@ -136,6 +136,16 @@ def _run_docker(brain_dir: Path, dirs: list[str], mirrors: dict[str, Path], live
     if not E.docker_available():
         print("error: docker not available (is colima/Docker running?)", file=sys.stderr)
         return 1
+    if skew := E.runtime_skew():  # before pytest: an image/kit mismatch is not a brain test failure
+        print(f"error: {skew}", file=sys.stderr)
+        return 1
+    if not brain_dir.resolve().is_relative_to(Path.home()) and subprocess.run(
+        ["docker", "run", "--rm", "-v", f"{brain_dir.resolve()}:/brain:ro", "--entrypoint", "test", args.image,
+         "-d", "/brain/skills"], capture_output=True).returncode:
+        # colima (and Docker Desktop's defaults) share only $HOME: a /tmp worktree mounts as an empty /brain.
+        print(f"error: docker cannot see {brain_dir} (the VM shares only $HOME); put the worktree under ~, "
+              "e.g. `git worktree add --detach ~/.cache/replypen-wt/<name> origin/main`.", file=sys.stderr)
+        return 1
     # Inject ONLY the brain's .env (not the host environ) — matches prod, no host-var leakage.
     secrets = E.brain_secrets(brain_dir, required=live)
     if secrets is None:

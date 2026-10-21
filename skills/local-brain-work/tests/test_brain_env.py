@@ -123,3 +123,19 @@ def test_declared_mirror_path_must_be_relative(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="must be relative to the brain root"):
         E.declared_mirrors(tmp_path)
+
+
+def test_runtime_skew_names_the_mismatch_and_the_fix(monkeypatch):
+    monkeypatch.delenv("RC_WORKSPACE_IMAGE", raising=False)
+    kit = E.RUNTIME.parent
+    if not (kit / ".git").exists() or not (kit / "RUNTIME_DIGEST").is_file():
+        pytest.skip("needs a kit git checkout")
+    real = subprocess.run
+    matching = real([sys.executable, str(kit / "scripts" / "runtime_digest.py"), "--worktree"], cwd=kit,
+                    capture_output=True, text=True).stdout.strip() == (kit / "RUNTIME_DIGEST").read_text().strip()
+    assert (E.runtime_skew() is None) == matching
+    monkeypatch.setattr(E.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "0" * 64 + "\n", ""))
+    msg = E.runtime_skew()
+    assert msg.startswith("KIT_RUNTIME_MISMATCH") and "--mode uv" in msg and E.DEFAULT_IMAGE in msg
+    monkeypatch.setenv("RC_WORKSPACE_IMAGE", "local/custom:dev")
+    assert E.runtime_skew() is None  # an explicit custom image is the developer's call
