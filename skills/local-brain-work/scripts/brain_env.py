@@ -55,6 +55,27 @@ RUNTIME_LOCK = (RUNTIME / "requirements.lock").resolve()
 # The published workspace image prod uses. Overridable for a local build or a fork.
 DEFAULT_IMAGE = os.environ.get("RC_WORKSPACE_IMAGE", f"ghcr.io/replypen/workspace:v{VERSION}")
 
+
+def runtime_skew() -> str | None:
+    """Why docker mode's image would NOT carry this kit's `runtime/` bytes, else None.
+
+    The image is picked by VERSION, but the scripts come from whatever kit checkout runs them. A
+    checkout with unreleased (or unpulled-release) runtime work then asks the image for code it lacks,
+    e.g. `-p lib.pii_pytest` → ImportError deep in pytest (2026-10-21). The release records the runtime
+    digest in `RUNTIME_DIGEST`; a working tree that differs is not what `v{VERSION}` baked. Skipped for
+    an explicit `RC_WORKSPACE_IMAGE` and for kits without git (nothing to compare)."""
+    kit = RUNTIME.parent
+    recorded, script = kit / "RUNTIME_DIGEST", kit / "scripts" / "runtime_digest.py"
+    if "RC_WORKSPACE_IMAGE" in os.environ or not (recorded.is_file() and script.is_file() and (kit / ".git").exists()):
+        return None
+    out = subprocess.run([sys.executable, str(script), "--worktree"], cwd=kit, capture_output=True, text=True)
+    if out.returncode or out.stdout.strip() == recorded.read_text().strip():
+        return None
+    return (f"KIT_RUNTIME_MISMATCH: {kit}/runtime differs from the released v{VERSION} that image "
+            f"{DEFAULT_IMAGE} bakes (unreleased or unpulled runtime work). Fix one of: `git -C {kit} pull "
+            "--no-rebase` (a release landed); run the brain's installed kit (`.agents/skills/…`); test this "
+            "checkout's runtime with `--mode uv`; release it (`./refresh-brains.sh --release patch`).")
+
 # Container constants, mirrored from replypen internal/workspace/docker.go so docker mode is
 # byte-faithful to a real run.
 CONTAINER_UID = 10001

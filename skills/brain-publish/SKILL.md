@@ -62,6 +62,10 @@ publish edge, observe, later rerun for stable) · `--verify-command '<cmd>'` add
 --no-project python .agents/skills/local-brain-work/scripts/brain_paths.py'` when the change cites
 `/brain`, `/tenant`, `/mirrors` or `/kb` paths ·
 `--skip-docker-tier` only when Docker cannot run (prints a lower-fidelity warning) · `--json`.
+`--detached`: publish a worktree under `~` (docker sees only `$HOME`) at `origin/main` plus your commit,
+when the shared `main` holds other agents' local commits. Run from a kit source checkout, the script
+re-execs the brain's installed release kit (`RC_KIT_DEV=1` keeps the source kit), and `brain_test.py
+--mode docker` stops with `KIT_RUNTIME_MISMATCH` when the kit's `runtime/` isn't the released image's.
 
 Optional, before it: `rp dev brain render --project <p> --tenant <slug> --sha <sha>` to read 1–2
 representative tenants' view; `rp ask --brain-ref dev/<branch>` for production-infra confidence
