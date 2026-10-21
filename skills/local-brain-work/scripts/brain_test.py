@@ -141,12 +141,12 @@ def _run_docker(brain_dir: Path, dirs: list[str], mirrors: dict[str, Path], live
     if skew := E.runtime_skew():  # before pytest: an image/kit mismatch is not a brain test failure
         print(f"error: {skew}", file=sys.stderr)
         return 1
-    if not brain_dir.resolve().is_relative_to(Path.home()) and subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{brain_dir.resolve()}:/brain:ro", "--entrypoint", "test", args.image,
-         "-d", f"/brain/{dirs[0]}"], capture_output=True).returncode:
-        # colima (and Docker Desktop's defaults) share only $HOME: a /tmp worktree mounts as an empty /brain.
-        print(f"error: docker cannot see {brain_dir} (the VM shares only $HOME); put the worktree under ~, "
-              "e.g. `git worktree add --detach ~/.cache/replypen-wt/<name> origin/main`.", file=sys.stderr)
+    if subprocess.run(["docker", "run", "--rm", "-v", f"{brain_dir.resolve()}:/brain:ro", "--entrypoint", "test",
+                       args.image, "-d", f"/brain/{dirs[0]}"], capture_output=True).returncode:
+        # A path the Docker VM doesn't share (colima default: only $HOME, so /tmp) mounts as an empty /brain.
+        print(f"error: docker cannot read the bind mount {brain_dir}: choose a Docker-shared location. A brain "
+              "worktree belongs beside its checkout so relative mirror paths resolve too: `git worktree add "
+              "--detach ../<repo>-wt-<task> origin/main`.", file=sys.stderr)
         return 1
     # Inject ONLY the brain's .env (not the host environ) — matches prod, no host-var leakage.
     secrets = E.brain_secrets(brain_dir, required=live)
