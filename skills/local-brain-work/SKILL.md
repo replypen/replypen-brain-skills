@@ -77,9 +77,13 @@ Each rung costs more and proves more; stop at the cheapest one that covers the c
 report which rung you reached.
 
 1. **uv mode** (default) — fast inner loop. Host Python, host filesystem, host network.
-2. **`--mode docker`** — the published workspace image, `/brain:ro`, `/mirrors:ro`, container
-   user/rootfs/env isolation. Catches image/dependency/read-only-mount breakage. Does **not** prove the
-   production egress allowlist.
+2. **`--mode docker`** — the published workspace image, `/brain:ro`, `/mirrors:ro`, every platform
+   skill at `/skills/<name>:ro` (the host's deployed bytes via `rp dev platform-skills pull`, cached;
+   `RC_PLATFORM_SKILLS_DIR=<dir>` mounts a local library instead, `RC_PLATFORM_SKILLS=off` none),
+   container user/rootfs/env isolation. Catches image/dependency/read-only-mount breakage. Does **not**
+   prove the production egress allowlist or per-scenario skill eligibility (prod mounts only the
+   skills a run's scenario gets). A tenant overlay declares its project's mirrors in its own
+   `.replypen.toml [mirrors]`.
 3. **`rp ask --brain-ref dev/<branch>`** (`brain-ask`) — the real loop: LLM turns, warm start, grounding
    step, tenant scoping, egress, callback, journal. The only rung that is a production statement.
 

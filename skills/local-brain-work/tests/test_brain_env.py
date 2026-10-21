@@ -16,6 +16,13 @@ E = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(E)
 
 
+@pytest.fixture(autouse=True)
+def _no_platform_skills_pull(monkeypatch):
+    """docker_run_args resolves platform skills via `rp`; tests stay hermetic unless they opt back in."""
+    monkeypatch.setenv("RC_PLATFORM_SKILLS", "off")
+    E.platform_skills.cache_clear()
+
+
 def _write_probe(root: Path, value: str) -> None:
     package = root / "lib"
     package.mkdir(parents=True, exist_ok=True)
@@ -139,3 +146,45 @@ def test_runtime_skew_names_the_mismatch_and_the_fix(monkeypatch):
     assert msg.startswith("KIT_RUNTIME_MISMATCH") and "--mode uv" in msg and E.DEFAULT_IMAGE in msg
     monkeypatch.setenv("RC_WORKSPACE_IMAGE", "local/custom:dev")
     assert E.runtime_skew() is None  # an explicit custom image is the developer's call
+
+
+def _library(root: Path) -> Path:
+    for name in ("website", "pdf", "__pycache__"):
+        (root / name).mkdir(parents=True)
+    return root
+
+
+def _skills_args(monkeypatch) -> list[str]:
+    E.platform_skills.cache_clear()
+    args = E.docker_run_args(image="img", brain_dir=Path("/b"), mirrors={}, env_names=[], command=["true"])
+    return [args[i + 1] for i, a in enumerate(args) if a == "-v" and ":/skills/" in args[i + 1]]
+
+
+def test_platform_skills_mount_each_skill_read_only_from_the_pulled_snapshot(tmp_path, monkeypatch) -> None:
+    lib = _library(tmp_path / "abc123")
+    monkeypatch.delenv("RC_PLATFORM_SKILLS_DIR", raising=False)
+    monkeypatch.delenv("RC_PLATFORM_SKILLS", raising=False)
+    monkeypatch.setattr(E, "_rp_json", lambda cmd: ({"digest": "abc123", "dir": str(lib)}, "") if "--offline" not in cmd else (None, "x"))
+    assert _skills_args(monkeypatch) == [f"{lib}/pdf:/skills/pdf:ro", f"{lib}/website:/skills/website:ro"]
+
+
+def test_platform_skills_fall_back_to_the_cache_loudly_then_to_none(tmp_path, monkeypatch, capsys) -> None:
+    lib = _library(tmp_path / "abc123")
+    monkeypatch.delenv("RC_PLATFORM_SKILLS_DIR", raising=False)
+    monkeypatch.delenv("RC_PLATFORM_SKILLS", raising=False)
+    monkeypatch.setattr(E, "_rp_json", lambda cmd: ({"digest": "abc123", "dir": str(lib)}, "") if "--offline" in cmd else (None, "offline"))
+    assert len(_skills_args(monkeypatch)) == 2
+    assert "NOT checked against the host" in capsys.readouterr().err
+    monkeypatch.setattr(E, "_rp_json", lambda cmd: (None, "not logged in"))
+    assert _skills_args(monkeypatch) == []
+    assert "rp dev platform-skills pull" in capsys.readouterr().err
+
+
+def test_platform_skills_override_dir_and_off_switch(tmp_path, monkeypatch) -> None:
+    lib = _library(tmp_path / "skills")
+    monkeypatch.setattr(E, "_rp_json", lambda cmd: pytest.fail("override must not call rp"))
+    monkeypatch.delenv("RC_PLATFORM_SKILLS", raising=False)
+    monkeypatch.setenv("RC_PLATFORM_SKILLS_DIR", str(lib))
+    assert _skills_args(monkeypatch) == [f"{lib}/pdf:/skills/pdf:ro", f"{lib}/website:/skills/website:ro"]
+    monkeypatch.setenv("RC_PLATFORM_SKILLS", "off")
+    assert _skills_args(monkeypatch) == []

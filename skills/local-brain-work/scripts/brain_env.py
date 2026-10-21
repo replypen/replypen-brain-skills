@@ -17,8 +17,11 @@ Two run modes:
 
 from __future__ import annotations
 
+import functools
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -90,7 +93,8 @@ UV_MODE_CAVEATS = (
     "the image's Linux — same arm64 arch, but macOS wheels ≠ the manylinux wheels prod installs, so "
     "native deps and OS behaviour can still differ. Deps (lockfile) and the Python 3.12 interpreter "
     "ARE pinned. In a kit checkout, current runtime/ source wins over the installed wheel, so "
-    "unreleased lib edits intentionally differ from prod until released. A green uv run is NOT a "
+    "unreleased lib edits intentionally differ from prod until released. No /skills (platform skills "
+    "mount in docker mode only). A green uv run is NOT a "
     "guaranteed-green prod run — gate with `--mode docker` before pushing."
 )
 
@@ -335,6 +339,52 @@ def preflight_lib_db(child_env: dict[str, str], extra_with: list[str] | None = N
 
 
 # ── docker mode ─────────────────────────────────────────────────────────────────────────────────
+PLATFORM_SKILLS_MOUNT = "/skills"
+
+
+@functools.cache
+def platform_skills() -> dict[str, Path]:
+    """The platform skill library prod mounts at /skills/<name> (`rp dev platform-skills pull`: the
+    host's deployed bytes, cached under the user cache dir), resolved once per process so import smoke
+    and pytest see one snapshot. `RC_PLATFORM_SKILLS_DIR=<dir>` mounts a local library instead (testing
+    unreleased skills); `RC_PLATFORM_SKILLS=off` mounts none. Offline / no login → the last pulled
+    snapshot, loudly; nothing cached → no /skills (a brain importing one then fails as it would without)."""
+    if os.environ.get("RC_PLATFORM_SKILLS", "").lower() in ("0", "off", "false", "no"):
+        return {}
+    override = os.environ.get("RC_PLATFORM_SKILLS_DIR")
+    if override:
+        root, note = Path(override).expanduser().resolve(), f"RC_PLATFORM_SKILLS_DIR={override}"
+    else:
+        cli = "rp" if shutil.which("rp") else "rc"
+        pull, why = _rp_json([cli, "dev", "platform-skills", "pull", "-o", "json"])
+        if pull is None:
+            pull, _ = _rp_json([cli, "dev", "platform-skills", "pull", "--offline", "-o", "json"])
+            if pull is None:
+                print(f"warning: no /skills mount (platform skills not pulled: {why}). Fix: `rp auth login`, "
+                      "then `rp dev platform-skills pull` (needs a current rp: brain-dev-upgrade).", file=sys.stderr)
+                return {}
+            print(f"warning: platform skills NOT checked against the host ({why}); mounting the last pulled "
+                  f"snapshot {pull['digest'][:12]}.", file=sys.stderr)
+        root, note = Path(pull["dir"]), f"platform skills {pull['digest'][:12]}"
+    skills = {d.name: d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith((".", "_"))} \
+        if root.is_dir() else {}
+    print(f"[/skills] {note}: {' '.join(skills) or 'none'}", file=sys.stderr)
+    return skills
+
+
+def _rp_json(cmd: list[str]) -> tuple[dict | None, str]:
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, str(exc)
+    if proc.returncode:
+        return None, (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}").splitlines()[-1]
+    try:
+        return json.loads(proc.stdout), ""
+    except json.JSONDecodeError:
+        return None, "non-JSON output"
+
+
 def docker_run_args(
     *,
     image: str,
@@ -360,6 +410,10 @@ def docker_run_args(
     ]
     for name, path in mirrors.items():
         args += ["-v", f"{path}:{MIRRORS_MOUNT}/{name}:ro"]
+    # Every platform skill, like prod's per-skill :ro mounts (prod filters by run scenario; a gate
+    # mounts the whole library so any helper or test that builds on one imports).
+    for name, path in platform_skills().items():
+        args += ["-v", f"{path}:{PLATFORM_SKILLS_MOUNT}/{name}:ro"]
     for k in sorted(env_names):
         args += ["-e", k]  # value comes from the docker client's process env (off argv)
     args += ["-w", workdir, image, *command]
