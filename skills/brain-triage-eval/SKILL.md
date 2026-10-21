@@ -51,7 +51,7 @@ One file per case in `_internal/triage/cases/<id>.md` (run-hidden: `/_internal/`
 ---
 id: akkoord-op-voorgesteld-moment          # = file name, [a-z0-9-]
 subject: "Re: Herinnering afspraak"        # the thread subject
-status: proposed                           # proposed | approved (only the project owner approves)
+status: proposed                           # proposed | approved (owner sign-off; see Labels and review)
 expect: {process: true, needs_action: true, needs_patient_text: true}
 why: "The practice proposed a slot and asked to confirm; the acceptance still has to be booked."
 tags: [acceptance, same-last-text]
@@ -107,9 +107,11 @@ corpus when one file is invalid.
 
 ## Labels and review
 
-New cases start `status: proposed`. The project owner reviews the expected outcome and the `why`
-(not the prose) and flips `status: approved`; never approve on their behalf. Disagreement on a label is
-a policy question: write it down in the case's `why`, don't tune wording until it is settled.
+`status` records sign-off only; the eval runs every case either way. New cases start `proposed`; the
+project owner reviews the expected outcome and the `why` (not the prose) and flips `approved`. When the
+labels follow a brief or decision the owner already approved, approve them yourself in the same change
+and say so in the commit; never invent the owner's policy. Disagreement on a label is a policy question:
+write it down in the case's `why`, don't tune wording until it is settled.
 
 ## Related
 
