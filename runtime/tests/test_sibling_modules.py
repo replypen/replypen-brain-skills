@@ -62,3 +62,28 @@ def test_deferred_import_inside_a_test_gets_its_own_sibling(pytester: pytest.Pyt
     pytester.runpytest("--import-mode=importlib", "actions").assert_outcomes(passed=1, failed=1)
     result = pytester.runpytest("-p", "lib.sibling_modules", "--import-mode=importlib", "actions")
     result.assert_outcomes(passed=2)
+
+
+def test_own_dirs_keep_the_order_the_test_chose(pytester: pytest.Pytester) -> None:
+    """A stem in both `tests/` and the action dir: the test's own sys.path order still decides."""
+    body = textwrap.dedent(
+        """
+        import sys
+        from pathlib import Path
+        here = Path(__file__).parent
+        sys.path.insert(0, str(here))
+        sys.path.insert(0, str(here.parent))  # action dir first: production helper wins
+
+        def test_deferred_helper_is_production():
+            import helper
+            assert helper.KIND == "prod"
+        """
+    )
+    for name in ("alpha", "beta"):
+        tests = pytester.path / "actions" / name / "tests"
+        tests.mkdir(parents=True)
+        (tests.parent / "helper.py").write_text('KIND = "prod"\n')
+        (tests / "helper.py").write_text('KIND = "test"\n')
+        (tests / "test_helper.py").write_text(body)
+    result = pytester.runpytest("-p", "lib.sibling_modules", "--import-mode=importlib", "actions")
+    result.assert_outcomes(passed=2)

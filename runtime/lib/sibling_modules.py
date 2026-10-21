@@ -32,10 +32,14 @@ def _homes(test_file: Path) -> list[Path]:
     return [here, here.parent] if here.name == "tests" else [here]
 
 
-def _siblings(test_file: Path) -> dict[str, Path]:
-    # reversed: the nearest dir's file wins a stem clash between `tests/` and its parent
-    return {py.stem: py.resolve() for home in _homes(test_file)[::-1] for py in home.glob("*.py")
-            if py.stem != "conftest" and not py.stem.startswith(("test_", "__"))}
+def _siblings(test_file: Path) -> dict[str, set[Path]]:
+    """stem -> the test's own files with that name (a stem may exist both in `tests/` and above it)."""
+    out: dict[str, set[Path]] = {}
+    for home in _homes(test_file):
+        for py in home.glob("*.py"):
+            if py.stem != "conftest" and not py.stem.startswith(("test_", "__")):
+                out.setdefault(py.stem, set()).add(py.resolve())
+    return out
 
 
 def _origin(mod: ModuleType | None) -> Path | None:
@@ -49,7 +53,7 @@ def evict_foreign_siblings(test_file: Path, root: Path) -> list[str]:
     root, evicted = root.resolve(), []
     for stem, own in _siblings(test_file).items():
         origin = _origin(sys.modules.get(stem))
-        if origin and origin != own and origin.is_relative_to(root):
+        if origin and origin not in own and origin.is_relative_to(root):
             del sys.modules[stem]
             evicted.append(stem)
     return evicted
@@ -58,19 +62,18 @@ def evict_foreign_siblings(test_file: Path, root: Path) -> list[str]:
 def own_siblings(test_file: Path) -> dict[str, ModuleType]:
     """The sibling modules currently cached that were loaded from `test_file`'s own dirs."""
     return {stem: sys.modules[stem] for stem, own in _siblings(test_file).items()
-            if _origin(sys.modules.get(stem)) == own}
+            if _origin(sys.modules.get(stem)) in own}
 
 
 def restore_siblings(test_file: Path, root: Path, own: dict[str, ModuleType]) -> None:
     """Make `test_file`'s siblings win again: evict foreign ones, put back the objects its module-level
-    import bound, and move its own dirs to the front of sys.path if they are on it, so a deferred
+    import bound, and move its own dirs (in their relative order) to the front of sys.path, so a deferred
     `import preflight` resolves to its own file instead of whichever action dir was inserted last."""
     evict_foreign_siblings(test_file, root)
     sys.modules.update(own)
-    for home in _homes(test_file)[::-1]:
-        hits = [p for p in sys.path if p and Path(p).resolve() == home]
-        if hits:
-            sys.path[:] = [hits[0], *(p for p in sys.path if p not in hits)]
+    homes = set(_homes(test_file))
+    mine = [p for p in sys.path if p and Path(p).resolve() in homes]  # keeps the test's own order
+    sys.path[:] = [*mine, *(p for p in sys.path if p not in mine)]
 
 
 @pytest.hookimpl(wrapper=True)
