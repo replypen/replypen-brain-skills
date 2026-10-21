@@ -428,8 +428,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--skip-docker-tier", action="store_true",
                    help="run brain_test on the host instead of the workspace image (loud warning)")
     p.add_argument("--detached", action="store_true",
-                   help="publish a detached worktree (under ~, e.g. ~/.cache/replypen-wt/<name> at origin/main + "
-                        "your commit; docker sees only $HOME): keeps other agents' local commits out")
+                   help="publish a detached sibling worktree (../<repo>-wt-<task> at origin/main + your commit): "
+                        "keeps other agents' local commits on the shared main out")
     p.add_argument("--dry-run", action="store_true", help="no commit/push/promote; preflight origin/main")
     p.add_argument("--json", action="store_true", help="print the receipt as one JSON object")
     args = p.parse_args(argv)
