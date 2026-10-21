@@ -77,6 +77,9 @@ Keep these planes explicit in every skill, template, and brain edit:
   (`lib.runctx` — what KIND of run this is (plane, ingress surface, simulation, principal-scoped):
   branch on the host-stamped document, never on the prompt's prose. Descriptive, never authorization:
   [docs/run-context.md](docs/run-context.md).)
+  (`lib.conversation` — the staged `/tmp/rc-conversation.jsonl` read by code: `last_outbound()` +
+  `euro_amounts()` so a preflight checks the model against what staff wrote; missing file ⇒
+  `ConversationUnavailable`, never "nothing said".)
   (`lib.image` — cheap preview → refine-from-preview image generation over the broker's `image`
   mount, saving to `/tmp/outbox`; absent mount ⇒ one clear "not enabled" sentence. Cost model + ladder decisions: `docs/image-generation.md`.)
   (`lib.transcribe` — on-demand transcript of a chat recording over the broker's `transcribe` mount,

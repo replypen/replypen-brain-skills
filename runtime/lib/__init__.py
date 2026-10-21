@@ -27,6 +27,10 @@ fallback `/brain/run_context.json`): plane, ingress surface, simulation flag, an
 whether the run is scoped to one asserted end-user (`runctx.is_principal_scoped()`). Branch on it
 instead of on the prompt's prose — it is descriptive only, never an authorization check.
 
+`conversation` reads the run's staged `/tmp/rc-conversation.jsonl`: `last_outbound()` (what staff last
+wrote, quoted history stripped) and `euro_amounts(text)`. A missing file raises
+`ConversationUnavailable`, never "nothing was said" (absent in hosted action containers).
+
 A project has several databases — pick one with ``db=`` (short name, env-var name, or DSN); see
 ``db.databases()``. ``db`` and ``cloudwatch`` also have a CLI for one-off queries from bash
 (``python -m lib.db --list``, ``python -m lib.cloudwatch --tail <group>``).
@@ -41,7 +45,7 @@ Typical use from a `bash` Python script:
 
 # Submodules are imported on demand (`from lib import db`), not eagerly here: eager imports make
 # `python -m lib.db` double-import the module it's running and emit a RuntimeWarning on every call.
-__all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "action", "tenant", "runctx", "rc_client", "telemetry"]
+__all__ = ["db", "api", "stripe", "cloudwatch", "fs", "http", "html", "oauth", "action", "tenant", "runctx", "conversation", "rc_client", "telemetry"]
 
 # Auto-wire best-effort PostHog error tracking (no-op unless the host stamps RC_TELEMETRY_POSTHOG_KEY). Swallow any
 # failure here — importing `lib` must never fail because telemetry couldn't initialize.
