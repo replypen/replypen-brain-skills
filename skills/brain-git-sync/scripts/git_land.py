@@ -11,10 +11,11 @@ paths' working-tree bytes, or one cherry-picked commit), commits with the repo's
 non-force (optionally the same commit to more branches, e.g. a mirror's `stable`, also when main already
 has it), verifies each remote ref contains it, and removes the worktree on every exit. A push lost to a
 concurrent publisher is retried from the new tip; nothing is ever force-pushed or rewritten. Optionally
-refreshes the mirror per project with `rp dev mirror refresh --expect-sha`.
+refreshes the mirror: without --project every project mirroring it (`rp dev mirror publish`), else per
+project with `rp dev mirror refresh --expect-sha`.
 
     uv run --no-project python git_land.py --repo ~/code/x/mirror --paths a.py docs/b.md \
-      --message 'fix: …' --also stable --refresh-mirror mirror --project p1 --project p2
+      --message 'fix: …' --also stable --refresh-mirror mirror
 """
 from __future__ import annotations
 
@@ -192,6 +193,13 @@ def land(repo: Path, args: argparse.Namespace) -> dict:
 
 
 def refresh(repo: Path, name: str, projects: list[str], sha: str, dry_run: bool) -> list[dict]:
+    if not projects:  # every consumer, each at its tracked branch; refuses if one lacks sha
+        cmd = [_cli(), 'dev', 'mirror', 'publish', '--repo', name, '--sha', sha, '-o', 'table']
+        if dry_run:
+            return [dict(project='all consumers', ok=True, detail='dry-run: ' + ' '.join(cmd))]
+        done = subprocess.run(cmd, cwd=repo, capture_output=True, text=True)
+        return [dict(project='all consumers', ok=done.returncode == 0,
+                     detail=' | '.join((done.stdout + done.stderr).strip().splitlines()))]
     helped = subprocess.run([_cli(), 'dev', 'mirror', 'refresh', '--help'], capture_output=True, text=True)
     extra = ['--accept-descendant'] if '--accept-descendant' in helped.stdout + helped.stderr else []
     verdicts = []
@@ -217,7 +225,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument('--message', help='commit message (required with --paths)')
     p.add_argument('--push-to', default='main', help='branch the worktree starts from and pushes to')
     p.add_argument('--also', action='append', default=[], help='also push the same commit here (e.g. stable)')
-    p.add_argument('--refresh-mirror', metavar='NAME', help='rc mirror name to refresh per --project')
+    p.add_argument('--refresh-mirror', metavar='NAME', help='mirror name to refresh: every consumer, or per --project')
     p.add_argument('--project', action='append', default=[])
     p.add_argument('--max-attempts', type=int, default=3)
     p.add_argument('--dry-run', action='store_true', help='build + commit in the worktree, push nothing')
@@ -229,8 +237,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.paths and not args.message:
         parser().error('--paths needs --message')
-    if bool(args.refresh_mirror) != bool(args.project):
-        parser().error('--refresh-mirror and --project go together')
+    if args.project and not args.refresh_mirror:
+        parser().error('--project needs --refresh-mirror')
     try:
         repo = Path(out(args.repo.expanduser(), 'rev-parse', '--show-toplevel')).resolve()
         if args.commit:

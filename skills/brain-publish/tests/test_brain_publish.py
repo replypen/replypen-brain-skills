@@ -33,7 +33,13 @@ FAKE_RC = textwrap.dedent('''\
     state["calls"].append([sub, channel])
     def chans():
         return [{"channel": c, "resolved_sha": s, "matches_origin": True} for c, s in state["channels"].items()]
-    if sub == "status":
+    if "--tenant" in argv:
+        if sub == "publish" and not state.get("proof_lie"):
+            state["tenant_main"] = sha
+        if sub == "publish" and state.get("fail_after_promote"):
+            json.dump(state, open(path, "w")); print("verify: connection reset", file=sys.stderr); sys.exit(1)
+        out = {"project": "demo", "status": {"local_sha": state.get("tenant_main")}}
+    elif sub == "status":
         # A concurrent publisher moves stable after the first read: status runs in parallel with
         # the preflights, so only the publish-recheck (a later status) may see the advance.
         if state.get("advance_before_recheck") and [c[0] for c in state["calls"]].count("status") > 1:
@@ -201,12 +207,41 @@ class BrainPublishTest(unittest.TestCase):
         code, receipt = self.publish("--commit-message", "local")
         self.assertEqual((code, receipt["status"], self.published()), (3, "conflict", []))
 
-    def test_refuses_tenant_brain_and_wrong_project(self) -> None:
+    def test_refuses_wrong_project(self) -> None:
         code, receipt = self.publish_with_project("other")
         self.assertEqual((code, receipt["stage"]), (2, "classify"))
+
+    def tenant_brain(self, **state) -> None:
         (self.repo / ".replypen.toml").write_text('project = "demo"\ntenant = "t1"\n')
+        git(self.repo, "commit", "-qam", "tenant marker")
+        self.rc_state(tenant_main=self.old, **state)
+
+    def test_tenant_brain_syncs_and_proves_served_main(self) -> None:
+        self.tenant_brain()
         code, receipt = self.publish()
-        self.assertIn("tenant brain", receipt["error"])
+        sha = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual((code, receipt["status"], receipt["sha"]), (0, "published", sha))
+        self.assertEqual(receipt["after"], {"tenant t1 main": sha})
+        self.assertIn("LIVE demo tenant t1 main", bp.render(receipt, code))
+        self.assertEqual(self.publish()[1]["status"], "noop")
+
+    def test_tenant_brain_unproven_served_main_exits_1(self) -> None:
+        self.tenant_brain(proof_lie=True)
+        code, receipt = self.publish()
+        self.assertEqual((code, receipt["stage"]), (1, "proof"))
+
+    def test_tenant_failed_publish_that_moved_main_is_reported_uncertain(self) -> None:
+        self.tenant_brain(fail_after_promote=True)
+        code, receipt = self.publish()
+        self.assertEqual((code, receipt["stage"]), (1, "publish"))
+        self.assertEqual(receipt["published"][0]["now"], git(self.repo, "rev-parse", "HEAD"))
+        self.assertIn("UNCERTAIN", bp.render(receipt, code))
+        self.assertNotIn("nothing published", bp.render(receipt, code))
+
+    def test_tenant_brain_refuses_channel(self) -> None:
+        self.tenant_brain()
+        code, receipt = self.publish("--channel", "edge")
+        self.assertEqual((code, receipt["stage"]), (2, "classify"))
 
     def publish_with_project(self, project: str) -> tuple[int, dict]:
         out = io.StringIO()

@@ -28,8 +28,10 @@ publishing `actions/<id>/`.
 
 - `replypen-brain-skills` (the **kit**) → `./refresh-brains.sh --release patch` and stop; no generic
   Git step first, never `rp dev brain sync`/promote.
-- **tenant brain** (`tenant =` in `.replypen.toml`) → no channel; its own `main` runs, so
-  brain-git-sync is the publish.
+- **tenant brain** (`tenant =` in `.replypen.toml`) → the same command below. No channel or preflight:
+  the box serves its own clone of `main`, which a push never moves, so the script syncs it (`rp dev
+  brain publish --sha`, no `--channel`) and proves served `main` contains the SHA. `LIVE <p> tenant
+  <slug> main @ <sha>`.
 - **shared project brain**, including its `actions/<id>/` → below.
 
 ## Workflow: one command

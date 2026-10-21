@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Publish a shared project brain in one command: local checks -> brain_git_sync -> preflight ->
-edge/stable gate -> `rp dev brain publish` -> proof. Run from the brain checkout root:
+"""Publish a brain in one command: local checks -> brain_git_sync -> preflight -> edge/stable gate ->
+`rp dev brain publish` -> proof. A tenant brain (`tenant =` in .replypen.toml) has no channel: after
+the sync it runs the tenant `rp dev brain publish` and proves the box serves the SHA. Run from the
+brain checkout root:
 
     uv run --no-project python .agents/skills/brain-publish/scripts/brain_publish.py --project <p>
 
@@ -56,8 +58,8 @@ def note(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def classify(repo: Path, project: str) -> None:
-    """Only a shared project brain has channels; the kit and tenant brains have other routes."""
+def classify(repo: Path, project: str) -> str:
+    """Returns the tenant slug for a tenant brain, "" for a shared project brain; refuses the kit."""
     if (repo / "runtime" / "lib").is_dir() and (repo / "plugin.json").is_file():
         raise Stop(EXIT_BLOCKED, "classify", "this is the brain-skills kit, not a brain: run "
                    "`./refresh-brains.sh --release patch` instead")
@@ -65,14 +67,14 @@ def classify(repo: Path, project: str) -> None:
     if not marker.is_file():
         raise Stop(EXIT_BLOCKED, "classify", f"no .replypen.toml in {repo}; run from a brain checkout root")
     data = tomllib.loads(marker.read_text("utf-8"))
-    if data.get("tenant"):
-        raise Stop(EXIT_BLOCKED, "classify", f"tenant brain ({data['tenant']}): it runs from its own "
-                   "main and has no channel to publish; brain-git-sync is its publish")
     if data.get("project") != project:
         raise Stop(EXIT_BLOCKED, "classify", f"--project {project!r} but .replypen.toml binds "
                    f"{data.get('project')!r}; refusing to publish the wrong brain")
+    if data.get("tenant"):
+        return str(data["tenant"])
     if not ((repo / "skills").is_dir() or (repo / "actions").is_dir()):
         raise Stop(EXIT_BLOCKED, "classify", "no skills/ or actions/: not a shared project brain")
+    return ""
 
 
 def docker_up() -> bool:
@@ -95,11 +97,12 @@ def default_checks(skip_docker: bool, warnings: list[str]) -> list[str]:
 
 
 class Rc:
-    def __init__(self, repo: Path, project: str) -> None:
-        self.repo, self.project = repo, project
+    def __init__(self, repo: Path, project: str, tenant: str = "") -> None:
+        self.repo, self.project, self.tenant = repo, project, tenant
 
     def __call__(self, *args: str, stage: str) -> dict:
-        cmd = [_cli(), "dev", "brain", *args, "--project", self.project, "--scope", "project",
+        scope = ["--tenant", self.tenant] if self.tenant else ["--scope", "project"]
+        cmd = [_cli(), "dev", "brain", *args, "--project", self.project, *scope,
                "-o", "json", "--raw-output"]
         try:
             proc = subprocess.run(cmd, cwd=self.repo, capture_output=True, text=True, timeout=600)
@@ -196,9 +199,11 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
         raise Stop(EXIT_BLOCKED, "classify", "rp is not on PATH (brain-dev-upgrade)")
     top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
     repo = Path(top.stdout.strip() or ".").resolve()
-    classify(repo, args.project)
-    git, rc = bgs.Git(repo), Rc(repo, args.project)
-    receipt.update(project=args.project, channel=args.channel, repo=str(repo))
+    tenant = classify(repo, args.project)
+    if tenant and args.channel != "stable":
+        raise Stop(EXIT_BLOCKED, "classify", f"tenant brain ({tenant}) has no channel; drop --channel")
+    git, rc = bgs.Git(repo), Rc(repo, args.project, tenant)
+    receipt.update(project=args.project, repo=str(repo), **({"tenant": tenant} if tenant else {"channel": args.channel}))
 
     warnings: list[str] = receipt.setdefault("warnings", [])
     sys.path.insert(0, str(CHECKS))
@@ -236,6 +241,8 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
                            ("local_commits", "remote_commits", "committed_files", "push_attempts")}
     receipt["sha"] = sha
     lap("git_fetch" if args.dry_run else "git_sync", t0)
+    if tenant:
+        return publish_tenant(args, receipt, git, rc, sha, started)
 
     t0 = time.monotonic()
     preflight_channels = ["stable", "edge"] if args.channel == "stable" else ["edge"]
@@ -299,6 +306,44 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
                         "server GC did not run, check `rp dev brain status`")
     receipt["status"] = "published" if any(p["changed"] for p in published) else "noop"
     timings["total"] = round(time.monotonic() - started, 1)
+    return 0
+
+
+def served(rc: Rc, stage: str) -> str:
+    return ((rc("status", stage=stage).get("status") or {}).get("local_sha") or "").lower()
+
+
+def publish_tenant(args: argparse.Namespace, receipt: dict, git: bgs.Git, rc: Rc, sha: str, started: float) -> int:
+    """A tenant overlay serves the box's local main, which a push never moves: sync it, then prove
+    served main contains sha (a host journal commit may already sit on top)."""
+    move = f"tenant {rc.tenant} main"
+    receipt["moves"] = [move]
+    before = served(rc, "status")
+    receipt["before"] = {move: before}
+    if args.dry_run:
+        receipt["status"] = "dry_run"
+        return 0
+    note(f"-> rp dev brain publish --tenant {rc.tenant} --sha {sha}")
+    try:
+        rc("publish", "--sha", sha, stage="publish")
+        after = served(rc, "proof")
+    except Stop as stop:  # the sync may have moved served main before the failure
+        try:
+            now = served(rc, "proof")
+        except Stop:
+            now = ""
+        receipt["published"] = [{"channel": move, "attempted": True, "now": now, "changed": (now != before) if now else None}]
+        stop.details["uncertain"] = (f"{move} now serves {now or 'UNKNOWN'} after the failed publish; check "
+                                     f"`rp dev brain status --tenant {rc.tenant}` before retrying")
+        raise
+    receipt["after"] = {move: after}
+    if after and after != sha and git.run("cat-file", "-e", f"{after}^{{commit}}", check=False).returncode:
+        bgs._fetch(git)  # served main may carry a host journal commit pushed after our sync
+    if not after or not (after == sha or bgs._is_ancestor(git, sha, after)):
+        raise Stop(EXIT_FAILED, "proof", f"tenant {rc.tenant} serves {after or 'nothing'}, not proven to contain {sha}; not live")
+    receipt["published"] = [{"channel": move, "old_sha": before, "changed": before != after}]
+    receipt["status"] = "published" if before != after else "noop"
+    receipt.setdefault("timings_s", {})["total"] = round(time.monotonic() - started, 1)
     return 0
 
 

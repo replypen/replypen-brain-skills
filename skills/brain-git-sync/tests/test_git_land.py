@@ -229,3 +229,16 @@ def test_landing_survives_descendant_pushed_before_verification(world, capsys, m
     assert remote(world) != result['sha']
     sh(world['origin'], 'merge-base', '--is-ancestor', result['sha'], remote(world))
     assert sh(world['origin'], 'show', f'{remote(world)}:mine.txt') == 'my change'
+
+
+def test_refresh_mirror_without_project_publishes_to_every_consumer(world, capsys, monkeypatch, tmp_path):
+    bin_dir, log = tmp_path / 'bin', tmp_path / 'rc.log'
+    bin_dir.mkdir()
+    (bin_dir / 'rp').write_text(f'#!/bin/sh\necho "$*" >> {log}\necho "LIVE  p1  stable  x"\n')
+    (bin_dir / 'rp').chmod(0o755)
+    monkeypatch.setenv('PATH', f"{bin_dir}:{__import__('os').environ['PATH']}")
+    (world['shared'] / 'mine.txt').write_text('m\n')
+    code, result = run(capsys, '--repo', str(world['shared']), '--paths', 'mine.txt', '--message', 'x',
+                       '--also', 'stable', '--refresh-mirror', 'common')
+    assert code == 0 and result['mirrors'][0]['ok'], result
+    assert log.read_text().split() == f"dev mirror publish --repo common --sha {result['sha']} -o table".split()

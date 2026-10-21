@@ -66,8 +66,12 @@ worktree at `origin/main` (hooks run, push retried on a race, never forced, work
 ```bash
 uv run --no-project python "<skills>/brain-git-sync/scripts/git_land.py" --repo "$CHECKOUT" \
   --paths skills/a.py docs/b.md --message 'fix: …' \   # or --commit <sha> (reuses its message)
-  --also stable --refresh-mirror <mirror-name> --project p1 --project p2   # mirrors only
+  --also stable --refresh-mirror <mirror-name>   # mirrors only
 ```
+
+`--refresh-mirror` alone runs `rp dev mirror publish`: every project mirroring the repo is refreshed at
+its tracked branch and verified, so exit 0 means the next runs read the commit. `--project p` (repeatable)
+narrows it to per-project `rp dev mirror refresh`.
 
 Reruns are safe: when `main` already has the bytes the status is `noop`, yet `--also` branches still
 fast-forward and mirrors still refresh. `--dry-run` builds the commit and pushes nothing. Exit 2 = blocked (hook, secret/ignored path,
