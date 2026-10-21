@@ -8,6 +8,7 @@ on `./skills`. Tiers (from `lib.livecheck`):
 
   * **offline (default)** — `-m "not live"`: hermetic L1 fixture tests + the brain description lint + action-script hygiene lint
                             (`lib.brain_lint_pytest`, injected — no per-brain test file). No DSN, no network.
+                            Tests requesting `pii_rows` (`lib.pii_pytest`) run twice: plain and PII-masked rows.
   * **live** (`--live`)   — `-m live`: L2 schema canary + L3 render-smoke, read-only against the
                             project's real prod DSN (the brain's `./.env`).
   * **gated** (`--require-live`) — `--live` plus fail-if-no-live-test-ran (CI/cron drift alarm).
@@ -60,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     # --import-mode=importlib: brains keep one `tests/test_preflight.py` per action dir with no
     # `__init__.py`, so rootdir-based import would collide on the shared basename (audit 2026-09-05).
     pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-p", "lib.mirror_skip",
-                   "--import-mode=importlib", "-m", marker, "-q", *args.pytest_args]
+                   "-p", "lib.pii_pytest", "--import-mode=importlib", "-m", marker, "-q", *args.pytest_args]
     if args.require_live:
         pytest_args.append("--require-live")
 

@@ -45,7 +45,7 @@ Set `SKILL` to the directory holding this `SKILL.md`; every command below is
 | Script | For |
 |---|---|
 | `brain_run.py` | one grounding script, or `-m lib.db` for ad-hoc read-only SQL; `--brief` maps the brain |
-| `brain_test.py` | test tiers: import smoke + offline pytest, `--live`, `--tenant` |
+| `brain_test.py` | test tiers: import smoke + offline pytest, `--live`, `--tenant`; tests requesting `pii_rows` run plain + PII-masked ([why](../brain-helper-devloop/SKILL.md#2-build-read-only-scope-safe)) |
 | `brain_smoke.py` | import smoke alone (what publish verification runs) |
 | `brain_lint.py` | dependency-light action + frontmatter lint (tags the host never reads; `action-manifest-enums` rejects unknown autonomy/risk/confirm/min_tier/runtime values); `doc-size` FAILs an on-demand doc over 6000 bytes (the bash spill cliff), WARNs past 5000; whole tree by default (`--all`) or only the paths you pass; `--as tenant\|mirror` lints an overlay or mirror repo (auto-detected); non-zero on FAIL |
 | `brain_structure.py` | links, frontmatter, routing, privacy lint, hygiene |

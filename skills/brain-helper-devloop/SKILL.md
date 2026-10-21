@@ -58,7 +58,18 @@ Each step links the skill that owns the mechanics; this file owns the order and 
   a big fixture. Exclude records that are legitimately odd (leader-audience activities at €0/uncapped)
   from price/pax checks.
 - Error text names the **next call** ("not a subscription id — try `--person-id`"), never a trace.
+- **PII-masked columns: compute in SQL, return a verdict or a coarse value.** A declared-PII column
+  reaches Python as a `⟦pii:<column>:<hash>⟧` string, a `date` included. Select
+  `date_part('year', birthdate)::int AS birth_year`, `age(birthdate)`, `birthdate < %s` or
+  `IS NOT NULL`, never the column to parse it. A value that still arrives as a token gets an honest
+  line (`lib.pii.is_token(v)` → "leeftijd onbekend (gemaskeerd)"), never a silent "—". Catch-alls name
+  the error (`type(exc).__name__: exc`), never relabel it as a scope/usage error: that hid a crash
+  for 12 days. Test it with the `pii_rows` fixture (below). Operators: host
+  `.agents/skills/features/pii_masking.md`.
 - Unit tests only for non-trivial ported rules (money, eligibility, dates), on pure rows→lines functions.
+  A test that feeds fake rows to a helper reading people data requests `pii_rows` and passes its
+  rows / fake `db` / patched fetch function through it: it runs `[pii-plain]` and `[pii-masked]`
+  (`lib.pii_pytest`; brain conftest overrides `pii_columns` with the project's declared columns).
 - Register it — each artefact has one job: the brain `AGENTS.md` routing line = helper path + the
   admin's symptom words (this is what pickup matches); the case runbook (`skills/cases/<slug>.md`:
   symptom → call lines → what to say / escalate) = procedure; the module docstring (read by the
