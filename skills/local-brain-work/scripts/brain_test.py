@@ -68,6 +68,10 @@ def main(argv: list[str] | None = None) -> int:
     brain_dir = E.resolve_brain_dir(args.brain)
     dirs = test_dirs(brain_dir)
     if not dirs:
+        if args.require_live:
+            print(f"error: --require-live but {brain_dir} has no skills/ or test dirs — no live test can run",
+                  file=sys.stderr)
+            return 1
         if any((brain_dir / f).is_file() for f in (".replypen.toml", ".rootcause.toml")):
             # Docs-only brain (tenant overlay): nothing to import or test; brain_lint.py covers it.
             print("brain_test: no skills/ or test dirs (docs-only brain) — nothing to test", file=sys.stderr)

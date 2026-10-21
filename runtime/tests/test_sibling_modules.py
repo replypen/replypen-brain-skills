@@ -38,3 +38,27 @@ def test_plugin_gives_each_test_module_its_own_sibling(pytester: pytest.Pytester
     _actions(pytester)
     result = pytester.runpytest("-p", "lib.sibling_modules", "--import-mode=importlib", "actions")
     result.assert_outcomes(passed=2)
+
+
+DEFERRED = textwrap.dedent(
+    """
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parents[1]))
+
+    def test_deferred_import_gets_own_module():
+        import preflight
+        assert preflight.NAME == Path(__file__).parents[1].name
+    """
+)
+
+
+def test_deferred_import_inside_a_test_gets_its_own_sibling(pytester: pytest.Pytester) -> None:
+    for name in ("alpha", "beta"):
+        tests = pytester.path / "actions" / name / "tests"
+        tests.mkdir(parents=True)
+        (tests.parent / "preflight.py").write_text(f"NAME = {name!r}\n")
+        (tests / "test_preflight.py").write_text(DEFERRED)
+    pytester.runpytest("--import-mode=importlib", "actions").assert_outcomes(passed=1, failed=1)
+    result = pytester.runpytest("-p", "lib.sibling_modules", "--import-mode=importlib", "actions")
+    result.assert_outcomes(passed=2)

@@ -31,6 +31,7 @@ def test_docs_only_brain_passes_and_a_non_brain_errors(tmp_path: Path, capsys) -
     _touch(tmp_path / ".replypen.toml")
     assert brain_test.main(["--brain", str(tmp_path)]) == 0
     assert "docs-only" in capsys.readouterr().err
+    assert brain_test.main(["--brain", str(tmp_path), "--require-live"]) == 1
 
 
 def test_pytest_flags_pass_through_in_order(tmp_path: Path, monkeypatch) -> None:
