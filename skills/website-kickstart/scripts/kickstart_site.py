@@ -160,8 +160,10 @@ class Kickstart:
         return f"tenant {self.a.tenant}" if self.a.tenant else f"project {self.a.project}"
 
     def rp_scope(self):
-        """rp CLI + scope flags: the tenant's mirrors, or the project's own when no --tenant was given."""
-        return [_cli(), "--project", self.a.project] + (["--tenant", self.a.tenant] if self.a.tenant else [])
+        """rp CLI + scope flags: the tenant's mirrors, or the project's own. `--scope project` clears a tenant
+        rp would otherwise inherit (RC_TENANT, a tenant brain checkout, a tenant-bound login)."""
+        return [_cli(), "--project", self.a.project] + (
+            ["--tenant", self.a.tenant] if self.a.tenant else ["--scope", "project"])
 
     def plan(self, what):
         print(f"    (dry-run) would {what}", flush=True)
@@ -821,8 +823,10 @@ def parse_args(argv=None):
     p.add_argument("org", help="GitHub org that owns the site repo (dentai-org, kampadmin, …)")
     p.add_argument("slug", help="site slug: repo + Worker become site-<slug>")
     p.add_argument("--project", required=True, help="ReplyPen project (dentai, kampadmin, …)")
-    p.add_argument("--tenant", help="ReplyPen tenant slug; omit for the project's own site (project-scope "
-                                    "mirror, form → /forms/<project>)")
+    scope = p.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--tenant", help="ReplyPen tenant slug: the tenant's site (form → /forms/<project>/<tenant>)")
+    scope.add_argument("--project-scope", action="store_true",
+                       help="the project's own site, no tenant: project mirror, form → /forms/<project>")
     p.add_argument("--name", help="display name for _data/site.yml (default: title-cased slug)")
     p.add_argument("--worker-name", help="Worker name (default: site-<slug>)")
     p.add_argument("--account", default=DEFAULT_ACCOUNT, help="Cloudflare account id (default: Rootcause Sites)")

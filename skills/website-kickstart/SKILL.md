@@ -12,12 +12,13 @@ rerun after a failure continues where it stopped. Operator laptop only (Cloudfla
 ```bash
 KS=~/code/replypen/replypen-brain-skills/skills/website-kickstart/scripts/kickstart_site.py
 mise -C ~/code/replypen/replypen exec -- uv run -q $KS <github-org> <slug> \
-  --project <rp project> [--tenant <rp tenant>] --name "<Naam zoals op de site>" [--dry-run]
+  --project <rp project> (--tenant <rp tenant> | --project-scope) --name "<Naam zoals op de site>" [--dry-run]
 ```
 
-`--tenant` = a tenant's site (mirror on the tenant, form → `/forms/<project>/<tenant>`). Omit it for the
-**project's own site** (no tenants, e.g. `momentum-tools`): project-scope mirror, form → `/forms/<project>`,
-landing in the project's tenant-less mailbox. Never invent a tenant just to host a site.
+Scope is explicit: `--tenant` = a tenant's site (mirror on the tenant, form → `/forms/<project>/<tenant>`);
+`--project-scope` = the **project's own site** (e.g. `momentum-tools`, no tenants): project mirror (`rp --scope
+project`, so an inherited tenant can't capture it), form → `/forms/<project>`, landing in the project's
+tenant-less mailbox. Never invent a tenant just to host a site.
 
 Repo + Worker = `site-<slug>`; live `https://site-<slug>.rootcause-sites.workers.dev`, previews
 `https://<branch>-site-<slug>.rootcause-sites.workers.dev`. Output: `✓/✗ step — detail` per step, then a
