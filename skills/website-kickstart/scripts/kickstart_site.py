@@ -150,6 +150,19 @@ class Kickstart:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(json.dumps(self.state, indent=2, sort_keys=True) + "\n")
 
+    @property
+    def form_scope(self):
+        """Form endpoint path after /forms/: <project>/<tenant>, or <project> for a project-scope site."""
+        return f"{self.a.project}/{self.a.tenant}" if self.a.tenant else self.a.project
+
+    @property
+    def scope_label(self):
+        return f"tenant {self.a.tenant}" if self.a.tenant else f"project {self.a.project}"
+
+    def rp_scope(self):
+        """rp CLI + scope flags: the tenant's mirrors, or the project's own when no --tenant was given."""
+        return [_cli(), "--project", self.a.project] + (["--tenant", self.a.tenant] if self.a.tenant else [])
+
     def plan(self, what):
         print(f"    (dry-run) would {what}", flush=True)
 
@@ -241,7 +254,7 @@ class Kickstart:
                      "description": f"Website {self.a.name} (Eleventy → Cloudflare Workers Builds)"})
             if self.a.dry_run:
                 self.plan(f"clone, fill placeholders (__WORKER_NAME__={self.worker}, "
-                          f"__SITE_NAME__={self.a.name}, form → {self.a.project}/{self.a.tenant}), push main")
+                          f"__SITE_NAME__={self.a.name}, form → {self.form_scope}), push main")
                 return f"would create {self.full_name} from {TEMPLATE}"
             for _ in range(6):
                 repo = self.get_repo()
@@ -318,8 +331,10 @@ class Kickstart:
         # Slugs are validated by parse_args; the free-text name becomes a JSON-encoded (= valid YAML
         # double-quoted) scalar, replacing the template's quoted placeholder whole.
         name = json.dumps(self.a.name, ensure_ascii=False)
+        # "__PROJECT__/__TENANT__" first: a project-scope site (no tenant) posts to /forms/<project>.
         values = {'"__SITE_NAME__"': name, "__SITE_NAME__": name, "__WORKER_NAME__": self.worker,
-                  "__PROJECT__": self.a.project, "__TENANT__": self.a.tenant}
+                  "__PROJECT__/__TENANT__": self.form_scope,
+                  "__PROJECT__": self.a.project, "__TENANT__": self.a.tenant or ""}
         for rel in ("wrangler.jsonc", "package.json", "_data/site.yml"):
             path = root / rel
             text = path.read_text()
@@ -334,7 +349,7 @@ class Kickstart:
             raise StepFailed(f"_data/site.yml name reads back as {site.get('name')!r}, not {self.a.name!r}")
         self.run(["git", "-C", str(root), "add", "-A"])
         self.run(["git", "-C", str(root), "commit", "--quiet", "-m",
-                  f"Kickstart {self.a.name}: worker {self.worker}, form {self.a.project}/{self.a.tenant}"])
+                  f"Kickstart {self.a.name}: worker {self.worker}, form {self.form_scope}"])
         self.run(["git", "-C", str(root), "push", "--quiet", "origin", "HEAD:main"])
 
     # ---- 2. GitHub App access -------------------------------------------------------------------
@@ -589,7 +604,7 @@ class Kickstart:
     # ---- 5. ReplyPen mirror --------------------------------------------------------------------
 
     def step_replypen(self):
-        scope = [_cli(), "--project", self.a.project, "--tenant", self.a.tenant]
+        scope = self.rp_scope()
         want = {"git_url": f"https://github.com/{self.full_name}.git", "role": "website",
                 "live_url": self.live_url, "preview_url_template": self.preview_template,
                 "deploy_check": DEPLOY_CHECK}
@@ -602,7 +617,7 @@ class Kickstart:
         name = self.a.mirror_name
         have = next((r for r in repos if r.get("name") == name), None)
         if have and have.get("git_url") not in (None, "", want["git_url"]):
-            raise StepFailed(f"tenant already has mirror {name!r} for {have['git_url']} (pass --mirror-name)")
+            raise StepFailed(f"{self.scope_label} already has mirror {name!r} for {have['git_url']} (pass --mirror-name)")
         if have is None:
             cmd, verb = scope + ["project", "repo", "add", f"name={name}"], "added"
             cmd += [f"{k}={v}" for k, v in want.items()]
@@ -710,7 +725,7 @@ class Kickstart:
                 self.sleep(POLL_SECONDS)
 
     def teardown_replypen(self):
-        scope = [_cli(), "--project", self.a.project, "--tenant", self.a.tenant]
+        scope = self.rp_scope()
         repos = json.loads(self.run(scope + ["project", "repo", "ls", "-o", "json"]) or "[]")
         git_url = f"https://github.com/{self.full_name}.git"
         have = next((r for r in repos if r.get("name") == self.a.mirror_name and r.get("git_url") == git_url), None)
@@ -790,7 +805,7 @@ class Kickstart:
             ("trigger json", s.get("triggers_json", "-")),
             ("screenshots", ", ".join(s.get("screenshots", [])) or "-"),
             ("try in chat", f'"{chat}"'),
-            ("or from cli", f'rp --project {self.a.project} --tenant {self.a.tenant} project chat send --lane setup "{chat}"'),
+            ("or from cli", " ".join(["rp"] + self.rp_scope()[1:] + ["project", "chat", "send", "--lane", "setup", f'"{chat}"'])),
         ]
         print("\n── website kickstart " + "─" * 40)
         for key, value in rows:
@@ -806,7 +821,8 @@ def parse_args(argv=None):
     p.add_argument("org", help="GitHub org that owns the site repo (dentai-org, kampadmin, …)")
     p.add_argument("slug", help="site slug: repo + Worker become site-<slug>")
     p.add_argument("--project", required=True, help="ReplyPen project (dentai, kampadmin, …)")
-    p.add_argument("--tenant", required=True, help="ReplyPen tenant slug")
+    p.add_argument("--tenant", help="ReplyPen tenant slug; omit for the project's own site (project-scope "
+                                    "mirror, form → /forms/<project>)")
     p.add_argument("--name", help="display name for _data/site.yml (default: title-cased slug)")
     p.add_argument("--worker-name", help="Worker name (default: site-<slug>)")
     p.add_argument("--account", default=DEFAULT_ACCOUNT, help="Cloudflare account id (default: Rootcause Sites)")

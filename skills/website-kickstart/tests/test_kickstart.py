@@ -47,6 +47,7 @@ class World:
         self.redirects = {}  # old full_name -> new (GitHub keeps answering renamed repos)
         self.fail_once = set()  # (method, path prefix) answered 503 once
         self.writes = []
+        self.rp_scopes = []
         self.n = 0
 
     def uid(self, prefix):
@@ -204,7 +205,9 @@ class World:
             self.writes.append(("cmd", "wrangler deploy", None))
             return ""
         if cmd[0] == "rp":
-            args = cmd[5:]
+            n = 5 if cmd[3:4] == ["--tenant"] else 3  # rp --project P [--tenant T] …
+            self.rp_scopes.append(cmd[1:n])
+            args = cmd[n:]
             args = args[1:] if args[0] == "project" else args
             verb, params = args[:2], args[2:]
             if verb == ["repo", "ls"]:
@@ -227,10 +230,11 @@ class KickstartTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
-    def kick(self, *extra, env=TOKENS):
+    def kick(self, *extra, env=TOKENS, tenant="test"):
         org = extra[0] if extra and not extra[0].startswith("-") else "dentai-org"
         extra = extra[1:] if extra and not extra[0].startswith("-") else extra
-        args = ks.parse_args([org, "test", "--project", "dentai", "--tenant", "test", "--name", "Praktijk Test",
+        scope = ["--tenant", tenant] if tenant else []
+        args = ks.parse_args([org, "test", "--project", "dentai", *scope, "--name", "Praktijk Test",
                               "--out", self.tmp.name, "--state-dir", self.tmp.name + "/state", *extra])
         k = ks.Kickstart(args, http=self.world, run=self.world.run, sleep=lambda s: None, env=env)
         out = io.StringIO()
@@ -277,6 +281,15 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(len(json.loads((Path(self.tmp.name) / "test-triggers.json").read_text())), 2)
         self.assertIn("✓ screenshots", out)
         self.assertIn("Pas op de website", out)
+
+    def test_project_scope_site_has_no_tenant(self):
+        """No --tenant ⇒ the project's own site: form posts to /forms/<project>, mirror at project scope."""
+        code, out, _ = self.kick(tenant=None)
+        self.assertEqual(code, 0, out)
+        site = yaml.safe_load(self.world.repos["dentai-org/site-test"]["files"]["_data/site.yml"])
+        self.assertEqual(site["contact_form_action"], "https://app.replypen.com/forms/dentai")
+        self.assertEqual({tuple(s) for s in self.world.rp_scopes}, {("--project", "dentai")})
+        self.assertIn("rp --project dentai project chat send", out)
 
     def test_rerun_skips_done_steps(self):
         self.kick()

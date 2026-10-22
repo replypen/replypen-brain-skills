@@ -12,8 +12,12 @@ rerun after a failure continues where it stopped. Operator laptop only (Cloudfla
 ```bash
 KS=~/code/replypen/replypen-brain-skills/skills/website-kickstart/scripts/kickstart_site.py
 mise -C ~/code/replypen/replypen exec -- uv run -q $KS <github-org> <slug> \
-  --project <rp project> --tenant <rp tenant> --name "<Naam zoals op de site>" [--dry-run]
+  --project <rp project> [--tenant <rp tenant>] --name "<Naam zoals op de site>" [--dry-run]
 ```
+
+`--tenant` = a tenant's site (mirror on the tenant, form → `/forms/<project>/<tenant>`). Omit it for the
+**project's own site** (no tenants, e.g. `momentum-tools`): project-scope mirror, form → `/forms/<project>`,
+landing in the project's tenant-less mailbox. Never invent a tenant just to host a site.
 
 Repo + Worker = `site-<slug>`; live `https://site-<slug>.rootcause-sites.workers.dev`, previews
 `https://<branch>-site-<slug>.rootcause-sites.workers.dev`. Output: `✓/✗ step — detail` per step, then a
@@ -23,7 +27,7 @@ summary (repo, URLs, worker tag, trigger uuids, `--out` files: `<slug>-triggers.
 | Step | What | Notes |
 |---|---|---|
 | preflight | a same-named Worker in the shared account must already be ours | read-only; refuses before any write |
-| repo | `POST /repos/replypen/site-template/generate`, fill `__WORKER_NAME__`/`__SITE_NAME__`/`__PROJECT__`/`__TENANT__`, push main | `--adopt`: existing repo, only checks `wrangler.jsonc` name = Worker |
+| repo | `POST /repos/replypen/site-template/generate`, fill `__WORKER_NAME__`/`__SITE_NAME__`/`__PROJECT__`/`__TENANT__` (no tenant ⇒ `__PROJECT__/__TENANT__` → `<project>`), push main | `--adopt`: existing repo, only checks `wrangler.jsonc` name = Worker |
 | github apps | add repo to `rootcause-app` + `cloudflare-workers-and-pages` on the org | ids via `GET /orgs/<org>/installations` (gh login); `PUT /user/installations/{id}/repositories/{repo}` with the PAT. A missing install = one-time browser step |
 | worker | first `bash build.sh && wrangler@4 deploy` creates the Worker | Builds triggers need its `tag` |
 | workers builds | repo connection upsert, the account's build token, 2 triggers | prod `main` → `npx wrangler@4 deploy`; preview `*` minus `main` → `npx wrangler@4 preview`; `bash build.sh`, build cache on. Drift is PATCHed |
