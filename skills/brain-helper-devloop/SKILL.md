@@ -12,6 +12,26 @@ run — [run-trace-model § Debug Discipline](../../docs/run-trace-model.md#debu
 
 Each step links the skill that owns the mechanics; this file owns the order and the stop rules.
 
+## 0. Script, playbook, or both
+
+A script earns its bytes where code beats the run model; elsewhere the model reads and decides from a
+markdown playbook, with small fetch tools.
+
+- **Script:** API/DB lookups on a known schema, identifiers, dates and money arithmetic, structured
+  status codes and what they mean, write guards (actions). Verdict-first holds *within the script's
+  evidence*: "IRS record: 501(c)(4)" yes, "this customer qualifies" no.
+- **Playbook + primitives:** reading prose, choosing which page or record to open, whose claim a
+  sentence makes, aliases, other languages. Ship tools that fetch (list pages, read page, look up
+  record) plus a checklist of traps, never a regex classifier over prose. Smell: review rounds spent
+  patching false positives in text matching (ProBackup nonprofit check, 2026-10: replaced by
+  `web_page.py` + `irs_lookup.py` + runbook).
+- **Uncertainty stays visible:** missing, conflicting and unavailable evidence are distinct outputs; a
+  failed fetch or empty search never means "absent".
+- **Consequence lives at the boundary:** the action/human gate enforces what must hold; the note
+  carries evidence URL + record + policy branch, so review needs no re-investigation.
+- **Prove the split** on the same real cases with and without the helper, traps included; count wrong
+  answers and needless customer questions, not helper calls.
+
 ## 1. Design from tickets, not from the spec sentence
 
 - Start from 5–8 **real** tickets of the topic (support dump, `rp run list`, help-centre threads).
@@ -26,7 +46,8 @@ Each step links the skill that owns the mechanics; this file owns the order and 
   existing seam when a symptom is "one record"; add a new script only for a new question shape
   (per-person sweep, export membership, cross-record diagnosis).
 - Overlapping topics: decide per symptom which helper owns it **before** writing two routing lines.
-- 80/20: one helper, ≤ ~60 lines of output, verdict in the first two lines, `--json` for chaining.
+- 80/20: one helper, ≤ ~60 lines of output, verdict in the first two lines (data helpers; a text
+  primitive returns the text), `--json` for chaining.
   No settings, no per-tenant knobs, no writes ([side-effects](../../docs/side-effects.md)).
 
 ## 2. Build read-only, scope-safe
