@@ -12,15 +12,17 @@ sys.path.insert(0, str(SCRIPTS))
 import brain_hygiene  # noqa: E402
 
 # The 2026-09-25 DentAI failure shape: an unresolved merge committed into a published SKILL.md.
-CONFLICTED_SKILL = """---
+LAPTOP = "/Users/" + "pj"  # built at runtime, like the markers below
+# Markers built at runtime so this fixture never trips the whole-tree conflict scan itself.
+CONFLICTED_SKILL = f"""---
 name: scheduling
 description: Plan appointments.
 ---
-<<<<<<< HEAD
+{"<" * 7} HEAD
 Boek maximaal 3 momenten.
-=======
+{"=" * 7}
 Boek maximaal 5 momenten.
->>>>>>> origin/main
+{">" * 7} origin/main
 """
 
 FIXTURES = {
@@ -28,7 +30,7 @@ FIXTURES = {
     "placeholder": {"playbooks/a.md": "Bel {{ contact_phone }} of {{ nope }}.\n",
                     "projection.yaml": "placeholders:\n  contact_phone: { type: string }\n"
                                        "templated_globs:\n  - \"playbooks/**/*.md\"\n"},
-    "abs-path": {"skills/x/SKILL.md": "Run /Users/pj/code/x.py first.\n"},
+    "abs-path": {"skills/x/SKILL.md": f"Run {LAPTOP}/code/x.py first.\n"},
     "links": {"AGENTS.md": "See [gone](playbooks/missing.md).\n"},
     "em-dash": {"actions/refund/manifest.yaml": "id: refund\ndescription: Refund\n"
                                                 "display_name: \"Terugbetaling — snel\"\n"},
@@ -66,7 +68,7 @@ def test_clean_brain_passes(tmp_path: Path) -> None:
     root = make_brain(tmp_path, {
         "playbooks/a.md": "Placeholder docs use `{{ key }}` in code. See [router](../AGENTS.md).\n",
         "docs/flow.md": "Tom — plain prose may use em dashes.\n",
-        "_internal/notes.md": "/Users/pj/code and {{ nope }} are maintainer-only.\n",
+        "_internal/notes.md": f"{LAPTOP}/code and {{{{ nope }}}} are maintainer-only.\n",
     })
     assert rules(root) == set()
 
@@ -162,8 +164,8 @@ def test_git_sync_refuses_to_push_conflict_markers(tmp_path: Path) -> None:
 def test_staged_mode_judges_only_the_index(tmp_path: Path) -> None:
     """What the managed pre-commit hook runs: a staged bad file fails, an unstaged one is ignored."""
     root = make_brain(tmp_path, {})
-    (root / "a.md").write_text("Run /Users/pj/x first.\n", "utf-8")
-    (root / "b.md").write_text("Run /Users/pj/y first.\n", "utf-8")
+    (root / "a.md").write_text(f"Run {LAPTOP}/x first.\n", "utf-8")
+    (root / "b.md").write_text(f"Run {LAPTOP}/y first.\n", "utf-8")
     git(root, "add", "a.md")
     run = subprocess.run([sys.executable, str(SCRIPTS / "brain_hygiene.py"), "--staged",
                           "--root", str(root)], capture_output=True, text=True)
