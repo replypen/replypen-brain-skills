@@ -556,6 +556,7 @@ def cmd_open(args: argparse.Namespace, ctx: Ctx) -> int:
         "principal": principal, "logged_in": authed, "expected": expected,
         "seed": seeds, "zero_runs": zero, "turns": turns, "notes": notes,
         "session_feedback": (row or {}).get("feedback"),
+        "opened_run": src.get("run_id") or src.get("id"),
     }
     case_dir.mkdir(parents=True, exist_ok=True)
     write_json(case_dir / "case.json", case)
@@ -584,9 +585,13 @@ def case_summary(case: dict[str, Any], md_path: str | None) -> list[str]:
     p = case.get("principal") or {}
     rated = [f"t{t['n']}={t['feedback']['score']}★" for t in turns if (t.get("feedback") or {}).get("score") is not None]
     last = turns[-1]["n"] if turns else None
-    scored = [t for t in turns if (t.get("feedback") or {}).get("score") is not None]
-    # the turn to replay is the worst-rated one (latest on a tie), not simply the last turn
-    target = min(reversed(scored), key=lambda t: t["feedback"]["score"])["n"] if scored else last
+    # replay target: the turn whose run was opened; else the worst-rated (a comment-only complaint
+    # counts as 1, latest on a tie); else the last turn
+    opened = next((t["n"] for t in turns if t.get("run_id") and t.get("run_id") == case.get("opened_run")), None)
+    judged = [t for t in turns if (t.get("feedback") or {}).get("score") is not None
+              or (t.get("feedback") or {}).get("comment")]
+    worst = min(reversed(judged), key=lambda t: t["feedback"].get("score") or 1)["n"] if judged else None
+    target = opened or worst or last
     return [
         f"case: {md_path}",
         f"project {case.get('project') or '?'} · tenant {case.get('tenant') or '?'} · surface {case.get('surface') or '?'}",
