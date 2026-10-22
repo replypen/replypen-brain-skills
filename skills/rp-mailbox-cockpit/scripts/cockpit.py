@@ -393,6 +393,14 @@ def check_finding(item, detail_data, require_fresh=True):
                     and all(isinstance(point, str) and point.strip() and len(point) <= 160
                             for point in block['points']) for block in item['technical_evidence'])):
         raise Refused('Technical evidence needs one to four titled source blocks with short result points')
+    if 'brain_proposal' in item and not (
+            isinstance(item['brain_proposal'], dict)
+            and all(isinstance(item['brain_proposal'].get(k), str) and item['brain_proposal'][k].strip()
+                    and len(item['brain_proposal'][k]) <= limit
+                    for k, limit in (('target', 200), ('change', 400), ('why', 300)))
+            and isinstance(item['brain_proposal'].get('detail', ''), str)
+            and len(item['brain_proposal'].get('detail', '')) <= 300):
+        raise Refused('Brain proposal needs target, change and why (short strings), optional detail path')
     if item['draft_id'] is not None and item['draft_id'] not in [
             d['id'] for d in detail_data.get('drafts', [])]:
         raise Refused('Finding references an unknown Gmail draft')
@@ -421,8 +429,16 @@ def findings(bundle, path, require_fresh=True):
         if item.get('thread_id') in seen:
             raise Refused('One final finding per thread')
         seen.add(item.get('thread_id'))
-        check_finding(item, read(Path(bundle) / 'details' / f'{item.get("thread_id")}.json'),
-                      require_fresh=require_fresh)
+        detail_path = Path(bundle) / 'details' / f'{item["thread_id"]}.json'
+        # Thread IDs are validated hex, so naming them never leaks mail content.
+        if not detail_path.exists():
+            raise Refused(f'Thread {item["thread_id"]}: no detail file; run detail before validating')
+        try:
+            check_finding(item, read(detail_path), require_fresh=require_fresh)
+        except Refused as exc:
+            raise Refused(f'Thread {item["thread_id"]}: {exc}') from None
+        except (KeyError, ValueError, TypeError):
+            raise Refused(f'Thread {item["thread_id"]}: malformed finding or detail file') from None
     return data
 
 
@@ -491,6 +507,20 @@ def render(args):
                  + f'{len(remaining_rows)} more action' + ('s' if len(remaining_rows) != 1 else '')
                  + '</summary>' + ''.join(remaining_rows) + '</details>'
                  if remaining_rows else '')
+    proposals = []
+    for item in sorted(items, key=lambda i: rank[i['priority']]):
+        bp = item.get('brain_proposal')
+        if not bp:
+            continue
+        entry = next(t for t in index['threads'] if t['thread_id'] == item['thread_id'])
+        detail_note = ('<pre><code>' + html.escape(safe_text(bp['detail'], None)) + '</code></pre>'
+                       if bp.get('detail') else '')
+        proposals.append(f'<li><a href="{html.escape(gmail_url(index["account"], item["thread_id"]), quote=True)}">'
+                         f'{html.escape(entry["subject"])}</a> · <code>{html.escape(safe_text(bp["target"], 200))}</code>'
+                         f'<br><strong>{html.escape(safe_text(bp["change"], 400))}</strong>'
+                         f'<small>{html.escape(safe_text(bp["why"], 300))}</small>{detail_note}</li>')
+    brain = ('<section class="brain"><h2>Proposed brain changes</h2><p>Not applied; the owner decides.</p><ol>'
+             + ''.join(proposals) + '</ol></section>' if proposals else '')
     reviewed = {i['thread_id'] for i in items}
     unresolved = sum(t['state'] not in ('answered', 'no_unanswered_inbound') and
                      t['thread_id'] not in reviewed for t in index['threads'])
@@ -504,13 +534,14 @@ def render(args):
               'details{font-size:14px;margin-top:8px;overflow-wrap:anywhere}'
               '.source-block{background:#f6f8fa;border-left:3px solid #dce2e7;padding:10px 14px;margin:12px 0}'
               '.source-block h3{font-size:14px;margin:0 0 4px}.source-block>a,pre{font:12px/1.5 monospace}'
-              'pre{white-space:pre-wrap;margin:4px 0}'
+              'pre{white-space:pre-wrap;margin:4px 0}.brain{border-top:2px solid #dce2e7;margin-top:24px}'
+              '.brain h2{font-size:20px}.brain li{margin:10px 0}'
               '@media(max-width:600px){.action-header{grid-template-columns:1fr;gap:4px}}'
               '@media print{body{font-size:11px;margin:12px}details{display:none}}</style><h1>Mailbox today</h1><p>'
               + html.escape(index['account']) + ' · ' + html.escape(index['collected_at'][:10]) + '</p>'
               + freshness_note
               + (''.join(primary_rows) or '<p>No reviewed actions to surface.</p>')
-              + remaining + '<p>'
+              + remaining + brain + '<p>'
               + f'Draft threads {c["checked_threads"]}/{c["discovered_threads"]} checked · '
               + f'{c["uncovered_threads"]} discovered threads uncovered'
               + ('; additional unlisted threads unknown (pagination capped)' if c['list_truncated'] else '')

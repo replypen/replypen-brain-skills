@@ -226,6 +226,46 @@ class Tests(unittest.TestCase):
             self.assertEqual(index['coverage']['standalone_drafts_excluded'], 1)
             self.assertEqual(index['threads'][0]['state'], 'not_processed')
 
+    def test_findings_errors_name_the_thread(self):
+        detail, finding = fixture()
+        del finding['replacement_body']
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp)
+            c.save(bundle / 'findings.json', [finding])
+            c.save(bundle / 'index.json', {'threads': [{'thread_id': 'abc'}]})
+            with self.assertRaisesRegex(c.Refused, 'Thread abc: no detail file'):
+                c.findings(bundle, bundle / 'findings.json')
+            c.save(bundle / 'details/abc.json', detail)
+            finding['owner_evidence'] = ['a'] * 4
+            c.save(bundle / 'findings.json', [finding])
+            with self.assertRaisesRegex(c.Refused, 'Thread abc: Owner evidence'):
+                c.findings(bundle, bundle / 'findings.json')
+
+    def test_brain_proposal_validates_and_renders_escaped(self):
+        detail, finding = fixture()
+        del finding['replacement_body']
+        finding['actionable'] = False
+        finding['brain_proposal'] = {'target': 'bug_report.md', 'change': 'Add <b>workaround</b>',
+                                     'why': 'Run escalated without a fix', 'detail': '/private/x.brain.md'}
+        c.check_finding(finding, detail)
+        for change in ({'target': ''}, {'change': 'x' * 401}, {'why': None}, {'detail': 1}):
+            with self.subTest(change=change), self.assertRaises(c.Refused):
+                c.check_finding(dict(finding, brain_proposal=dict(finding['brain_proposal'], **change)), detail)
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp)
+            c.save(bundle / 'details/abc.json', detail)
+            c.save(bundle / 'findings.json', [finding])
+            c.save(bundle / 'index.json', {'account': ACCOUNT, 'collected_at': c.now(), 'threads': [
+                {'thread_id': 'abc', 'subject': 'Subject', 'state': 'draft_ready'}],
+                'coverage': {'discovered_threads': 1, 'checked_threads': 1, 'uncovered_threads': 0,
+                             'list_truncated': False, 'standalone_drafts_excluded': 0}})
+            c.render(argparse.Namespace(bundle=temp, findings=str(bundle / 'findings.json'),
+                                        out=str(bundle / 'report.html')))
+            report = (bundle / 'report.html').read_text()
+            self.assertIn('Proposed brain changes', report)  # Shown even for non-actionable threads.
+            self.assertIn('Add &lt;b&gt;workaround&lt;/b&gt;', report)
+            self.assertIn('/private/x.brain.md', report)
+
     def test_html_escaping_secret_links_and_confirmed_action(self):
         detail, finding = fixture()
         del finding['replacement_body']
