@@ -87,7 +87,7 @@ Keep these planes explicit in every skill, template, and brain edit:
   (`lib.docs` — the HOST downloads a document of record (Stripe invoice/credit-note PDF link, or an
   ActiveStorage blob on a project with a document store) and keeps a receipt of its bytes; attached
   unchanged, the file skips the code-shape delivery check. Use it instead of downloading such a document
-  yourself; the host owns the source list and the store keys.)
+  yourself; the host owns the source list and the store keys: [docs/host-documents.md](docs/host-documents.md).)
   (`lib.gsheets` — Google Sheets read/edit wrapper over `lib.api`; edits only on an Editor-shared file, host-verified.)
   (`lib.gdocs` — Google Docs read/edit wrapper over `lib.api`; same delegated-write rule.)
 
