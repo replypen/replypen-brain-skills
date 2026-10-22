@@ -36,7 +36,7 @@ def _marker(root: Path) -> Path:
 # ── version line ────────────────────────────────────────────────────────────────────────────────
 # The single version line: plugin tag == replypen-runtime pin == workspace image tag == prod
 # Dockerfile pin. Bump all together (see RELEASING.md) so local and prod cannot diverge.
-VERSION = "0.14.3"
+VERSION = "0.14.4"
 REPO_URL = "https://github.com/replypen/replypen-brain-skills"
 
 # The interpreter prod runs (docker/Dockerfile `FROM python:3.12-slim`). uv mode pins to it with
