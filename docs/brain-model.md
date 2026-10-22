@@ -231,7 +231,7 @@ commit/push hygiene gate (`doc-spill`) catches the crossing commit earlier. Fix:
 |---|---|---|
 | `/brain/AGENTS.md` | automatic | automatic |
 | `/tenant/AGENTS.md` | selectable; tag `grounding` only to guarantee it | automatic, after the project brain |
-| `/mirrors/<repo>/AGENTS.md` | explicit `grounding` tag | explicit `agent` tag |
+| `/mirrors/<repo>/AGENTS.md` | explicit `grounding` tag | explicit `agent` tag; a **website** mirror's root one is automatic on a website-editing chat run ([website-context](website-context.md)) |
 
 Use both tags when both consumers must hold a mirror's instructions. Do not tag `/brain/AGENTS.md`, and
 do not add the redundant `agent` tag to `/tenant/AGENTS.md`. Triage is separate: every file, including

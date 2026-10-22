@@ -54,7 +54,8 @@ login that owns the org, `rp` login, `pnpm`. Account default: Rootcause Sites `6
 (reference: `momentumtools/site-momentumtools` `wp-json/*.liquid`, page ≥ 2 → 400 like WP). Zone in another
 Cloudflare account than Rootcause Sites? A route proxy Worker on that zone (same repo, `ops/b4b-proxy/`) avoids DNS changes.
 
-**After:** fill the `[placeholders]` via chat (never invent facts); domain/DNS move → the project's site
+**After:** fill the `[placeholders]` via chat (never invent facts); keep the site's `AGENTS.md` current
+(the chat agent gets it pasted; what belongs there: [docs/website-context.md](../../docs/website-context.md)); domain/DNS move → the project's site
 runbook (DentAI: `dentai/.agents/skills/practice-websites/SKILL.md`), then
 `rp … project repo set site live_url=https://www.<domain>` and `url:` in `_data/site.yml`.
 
