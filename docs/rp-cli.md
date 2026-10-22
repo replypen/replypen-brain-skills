@@ -441,6 +441,11 @@ rp --tenant <slug> project knowledge article apply --from ./article.md   # one h
 A no-op block reports `changed: false` and sends nothing. Every real write lands an
 `helpcenter.article.update` row in `rp fleet actions` and queues a `/kb` resync.
 
+Changed an article outside ReplyPen (a site-published bundle, the help desk's own editor)? `/kb` catches up on
+the periodic sweep (daily; bundles hourly), or now with `rp project knowledge sync run --wait` (needs
+`knowledge:write`; `--tenant` for a tenant's own KB): prints the article total and the changed article files,
+exits non-zero unless the source was read cleanly.
+
 Prefer `rp dev console database` and `rp dev console bash` for debugging, tool parity, and "does this script/query work?" loops.
 They run the production primitive directly and return faster than `rp ask`, which adds the LLM wrapper
 and is best for full-loop behavior checks or ambiguous investigations.

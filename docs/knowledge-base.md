@@ -14,7 +14,7 @@ Hosted runs may have three relevant read-only trees:
 | Path | Meaning |
 |---|---|
 | `/brain` | Committed brain ref. |
-| `/kb` | Synced external knowledge-base snapshot, if configured. |
+| `/kb` | Synced external knowledge-base snapshot, if configured (periodic; force with `rp project knowledge sync run --wait`). |
 | `/brain/knowledge` | Committed project knowledge directory, if that brain uses one. |
 
 Probe before assuming a shape:
