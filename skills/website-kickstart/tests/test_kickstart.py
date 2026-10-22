@@ -48,6 +48,7 @@ class World:
         self.fail_once = set()  # (method, path prefix) answered 503 once
         self.writes = []
         self.rp_scopes = []
+        self.perms = {}  # app_slug -> installation permissions override
         self.n = 0
 
     def uid(self, prefix):
@@ -110,7 +111,8 @@ class World:
             runs = [{"status": "completed", "conclusion": done[-1]["outcome"]}] if done else []
             return js({"check_runs": runs})
         if re.fullmatch(r"/orgs/[^/]+/installations", path):
-            return js({"installations": [{"id": i, "app_slug": slug, "repository_selection": "selected"}
+            return js({"installations": [{"id": i, "app_slug": slug, "repository_selection": "selected",
+                                          "permissions": self.perms.get(slug, {"checks": "read", "statuses": "read"})}
                                          for slug, (i, _) in self.installs.items()]})
         if m := re.fullmatch(r"/user/installations/(\d+)/repositories(?:/(\d+))?", path):
             members = next(r for i, r in self.installs.values() if i == int(m.group(1)))
@@ -290,6 +292,14 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(site["contact_form_action"], "https://app.replypen.com/forms/dentai")
         self.assertEqual({tuple(s) for s in self.world.rp_scopes}, {("--project", "dentai", "--scope", "project")})
         self.assertIn("rp --project dentai --scope project project chat send", out)
+
+    def test_replypen_app_without_check_permissions_stops_with_the_accept_url(self):
+        self.world.perms["rootcause-app"] = {"contents": "write", "pull_requests": "write"}
+        code, out, writes = self.kick()
+        self.assertEqual(code, 1)
+        self.assertIn("lacks checks, statuses: read", out)
+        self.assertIn("/settings/installations/168123503/permissions/update", out)
+        self.assertNotIn("cmd wrangler deploy", self.names(writes))
 
     def test_scope_is_explicit(self):
         for argv in ([], ["--tenant", "t", "--project-scope"]):

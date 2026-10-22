@@ -371,7 +371,18 @@ class Kickstart:
         missing = [slug for slug in APP_SLUGS if slug not in installs]
         if missing:
             raise StepFailed(f"no {', '.join(missing)} installation on {self.a.org}: install it once in the "
-                             "browser (Cloudflare: Workers & Pages → any Worker → Settings → Builds → Connect)")
+                             "browser, from Cloudflare (Rootcause Sites → Workers & Pages → Create → Import a "
+                             "repository → Add GitHub account → the org, only this repo). A GitHub-side install "
+                             "alone does not link Cloudflare (the Workers Builds step then fails)")
+        # The ReplyPen App's website scope needs Checks + Commit statuses read (preview readiness); an org
+        # that installed it earlier keeps the old set until an owner accepts the update, and every chat
+        # edit then fails with "could not authenticate with GitHub".
+        rp_app = installs[APP_SLUGS[0]]
+        lacking = [k for k in ("checks", "statuses") if (rp_app.get("permissions") or {}).get(k) not in ("read", "write")]
+        if lacking:
+            raise StepFailed(f"{APP_SLUGS[0]} on {self.a.org} lacks {', '.join(lacking)}: read; accept the pending "
+                             f"permission update at https://github.com/organizations/{self.a.org}/settings/"
+                             f"installations/{rp_app['id']}/permissions/update")
         repo_id = self.s.get("repo_id")
         parts = []
         for slug in APP_SLUGS:
@@ -474,7 +485,9 @@ class Kickstart:
             if "8000008" in str(err):  # "This project is disconnected from your Git account"
                 raise StepFailed(f"Cloudflare is not linked to GitHub org {self.a.org}: link the GitHub org to the "
                                  "Cloudflare account once: Workers & Pages → Create → Import a repository → "
-                                 f"Add GitHub account → {self.a.org}; then rerun (the Worker is reused)",
+                                 f"Add GitHub account → {self.a.org}; then rerun (the Worker is reused). App already "
+                                 "installed from the GitHub side? That install never reached Cloudflare: uninstall "
+                                 "it, then install through this Cloudflare flow",
                                  err.status) from err
             raise
         conn_uuid = (conn or {}).get("repo_connection_uuid", "<repo_connection_uuid>")
