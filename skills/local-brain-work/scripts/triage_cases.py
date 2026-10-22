@@ -43,7 +43,7 @@ CHANNEL_RE = re.compile(r"^[a-z][a-z_]{0,31}$")
 SECTION_RE = re.compile(r"^## ([a-z0-9][a-z0-9-]{0,31})[ \t]*$")
 RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
 
-TOP_KEYS = {"id", "subject", "status", "expect", "why", "tags", "channel", "messages"}
+TOP_KEYS = {"id", "subject", "status", "expect", "why", "tags", "channel", "follow_up_from", "messages"}
 EXPECT_KEYS = {"process", "needs_action", "needs_patient_text"}
 MESSAGE_KEYS = {"id", "direction", "from", "to", "date", "html", "spam", "headers", "attachments"}
 
@@ -203,6 +203,7 @@ def parse_case(rel: str, raw: bytes) -> dict:
         raise CaseError(f"messages: want 1..{MAX_MESSAGES}, got {len(msgs)}")
     seen: set[str] = set()
     prev: float | None = None
+    stamps: list[float] = []
     for i, m in enumerate(msgs):
         where = f"messages[{i}]"
         if not isinstance(m, dict):
@@ -233,6 +234,7 @@ def parse_case(rel: str, raw: bytes) -> dict:
         if prev is not None and stamp < prev:
             raise CaseError(f"{where}: date goes back in time; list messages oldest first")
         prev = stamp
+        stamps.append(stamp)
         _bool(f"{where}.html", m.get("html"))
         if _bool(f"{where}.spam", m.get("spam")) and direction != "inbound":
             raise CaseError(f"{where}: spam applies to inbound messages only")
@@ -250,6 +252,14 @@ def parse_case(rel: str, raw: bytes) -> dict:
                 raise CaseError(f"{where}: attachment {att!r} must be media, calendar or document")
     if msgs[-1]["direction"] != "inbound":
         raise CaseError("the last message is the current turn and must be inbound")
+    follow = _str("follow_up_from", data.get("follow_up_from"))
+    if follow:
+        ids_ = [m["id"] for m in msgs]
+        at = ids_.index(follow) if follow in ids_ else -1
+        if at <= 0:
+            raise CaseError(f"follow_up_from {follow!r} must name a message after the first one")
+        if stamps[at] == stamps[at - 1]:
+            raise CaseError(f"follow_up_from {follow!r} must be dated after the message before it")
 
     ids = [m["id"] for m in msgs]
     bodies: dict[str, list[str]] = {}

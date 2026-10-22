@@ -36,11 +36,11 @@ Read the output worst first: **false_skip** (a mail that needed work was dropped
 disagree) > **failed_open** (classifier error, not a judgment) > **extra_process** (a needless draft a
 human discards). One green run is not proof: use `--repeat 2` or `3` for a wording decision.
 
-Every report says what it does **not** cover. Most important: a follow-up on a thread with an active
-session skips triage entirely and the main agent decides with the same `triage.md`
-(`include_in: [triage, agent]`). A green triage eval therefore says nothing about how the main agent
-handles that follow-up; check those with [`brain-simulate`](../brain-simulate/SKILL.md) or a real
-`rp ask --simulation` thread.
+Every report says what it does **not** cover. Most important: a follow-up on an already-handled thread
+gets only the host's narrow **follow-up check** (skip a pure courtesy close, process everything else;
+a delivered file always processes). Model those as `follow_up_from` cases. Whatever passes goes to the
+main agent, which decides with the same `triage.md` (`include_in: [triage, agent]`); check that half
+with [`brain-simulate`](../brain-simulate/SKILL.md) or a real `rp ask --simulation` thread.
 
 ## Case format
 
@@ -56,6 +56,7 @@ expect: {process: true, needs_action: true, needs_patient_text: true}
 why: "The practice proposed a slot and asked to confirm; the acceptance still has to be booked."
 tags: [acceptance, same-last-text]
 # channel: whatsapp                        # optional: the thread's source channel (conversation, whatsapp, ticket, …); omit for email
+# follow_up_from: m4                       # optional: first message of the current turn on an already-handled thread (follow-up check)
 messages:                                  # oldest first; the LAST one is the current turn (inbound)
   - {id: m1, direction: outbound, from: "Praktijk <info@praktijk.example>", date: 2026-10-06T11:40:00+02:00}
   - id: m2
@@ -85,6 +86,10 @@ Bedankt, akkoord!
   sibling, plus an email control with the same text.
 - Write the bodies as the provider stores them (quoted history included when a mail client would
   quote it). The classifier sees subject, sender and body text of every message, not attachments.
+- A follow-up case (`follow_up_from: <id>`) marks every message before that id "earlier turn" and the
+  rest "new this turn", like production's cut line. Only a `closure` verdict skips; a `document`
+  attachment on a new message processes without asking the model. Production often lacks the
+  mailbox's own reply (sent from another system), so include follow-ups with no outbound message.
 - **Synthetic only.** Invent names, addresses (`example.com`, `*.example`), phone numbers and ids;
   never paste a real mail. Lint checks structure, not de-identification: that stays your review.
 - What makes a useful corpus: the same last text under different histories, courtesy ladders (first

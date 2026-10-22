@@ -25,6 +25,7 @@ INVALID = {
     "last-outbound": "current turn",
     "bad-status": "status",
     "bad-channel": "channel",
+    "bad-follow-up": "follow_up_from",
     "text-before-section": "before the first",
     "uppercase-header": "lowercase",
     "duplicate-key": "already defined",
