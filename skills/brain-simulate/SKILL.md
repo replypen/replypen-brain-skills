@@ -146,6 +146,12 @@ pipeline as above, three extra fields:
 }
 ```
 
+Decision fixtures (should the brain answer at all?) add `"outcome": "draft" | "decline"` and
+`"decline_kind": "identity_unresolved" | "identity_ambiguous" | "identity_lookup_unavailable" | "none"`
+(`none` = no identity stop; an ordinary decline still passes). The kind is read from the run's `reply`
+event. That pins "needs no existing record → draft", "courtesy close → plain decline" and "unknown
+person, record required → identity stop" apart.
+
 Regexes are case-insensitive. `actions: []` asserts *no* proposal. Action params are hash-only on the
 API, so amounts are matched on the preflight preview (`description`). A ✗ caps the judge verdict
 below `pass`. Run output shows `✓ 8/8` per case, failed checks listed under it.

@@ -77,6 +77,10 @@ TRANSIENT_RE = re.compile(
 DURATION_RE = re.compile(r"^(\d+)\s*([smh]?)$")
 # Fixture-case `expect` keys: regex lists over the draft/note, plus expected action proposals.
 EXPECT_TEXT_KEYS = ("draft_matches", "draft_forbids", "note_matches", "note_forbids")
+# `outcome`: draft (a draft was placed) | decline (nothing placed). `decline_kind`: the identity stop's
+# category, or "none" (no identity stop: a decline, if any, is an ordinary one).
+EXPECT_OUTCOMES = ("draft", "decline")
+IDENTITY_KINDS = ("identity_unresolved", "identity_ambiguous", "identity_lookup_unavailable")
 
 
 # --- small helpers --------------------------------------------------------------------------
@@ -408,7 +412,11 @@ def expect_problems(expect: Any) -> list[str]:
     if not isinstance(expect, dict):
         return ["must be an object"]
     problems = [f"unknown key {key!r}" for key in expect
-                if key not in (*EXPECT_TEXT_KEYS, "actions", "only_listed_actions")]
+                if key not in (*EXPECT_TEXT_KEYS, "actions", "only_listed_actions", "outcome", "decline_kind")]
+    if "outcome" in expect and expect["outcome"] not in EXPECT_OUTCOMES:
+        problems.append(f"outcome must be one of {'/'.join(EXPECT_OUTCOMES)}")
+    if "decline_kind" in expect and expect["decline_kind"] not in (*IDENTITY_KINDS, "none"):
+        problems.append(f"decline_kind must be one of {'/'.join(IDENTITY_KINDS)}/none")
     patterns: list[Any] = []
     for key in EXPECT_TEXT_KEYS:
         value = expect.get(key, [])
@@ -444,6 +452,16 @@ def fixture_checks(case: dict[str, Any], record: dict[str, Any]) -> list[dict[st
             hit = found(pattern, text)
             checks.append({"check": f"{field} {'has' if mode == 'matches' else 'lacks'} /{pattern}/",
                            "ok": hit if mode == "matches" else not hit})
+    if expect.get("outcome"):
+        placed = "draft" if (record.get("draft_markdown") or "").strip() else (
+            "decline" if record.get("outcome") == "declined" else record.get("outcome") or "?")
+        checks.append({"check": f"outcome {expect['outcome']}", "ok": placed == expect["outcome"],
+                       "detail": "" if placed == expect["outcome"] else f"got {placed}"})
+    if expect.get("decline_kind"):
+        got = record.get("decline_kind") or "none"
+        checks.append({"check": f"decline_kind {expect['decline_kind']}", "ok": got == expect["decline_kind"],
+                       "detail": "" if got == expect["decline_kind"] else
+                       f"got {got}: {preview(record.get('decline_reason') or '', 160)}"})
     proposed = list(record.get("proposed_actions") or [])
     for want in expect.get("actions") or []:
         match = next((a for a in proposed if a.get("slug") == want["slug"] and all(
@@ -777,8 +795,30 @@ def result_record(case: dict[str, Any], ref: str, payload: dict[str, Any], attem
         "duration_ms": payload.get("duration_ms"), "attempts": attempts,
         "error": error, "command": elide_command(command), "ran_at": now_iso(),
     }
+    if (case.get("expect") or {}).get("decline_kind") and record["run_id"]:
+        record["decline_kind"], record["decline_reason"] = reply_decline(record["run_id"], case.get("tenant"))
     record["checks"] = fixture_checks(case, record)
     return record
+
+
+def reply_decline(run_id: str, tenant: str | None) -> tuple[str, str]:
+    """The identity stop's category lives on the run's `reply` event, not on the `rp ask` payload."""
+    command = [_cli(), "run", "events", run_id, "-o", "json", "--raw-output"]
+    if tenant:
+        command += ["--tenant", tenant]
+    try:
+        text = subprocess.run(command, capture_output=True, text=True, timeout=120).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return "", ""
+    try:
+        data = json.loads(text)
+        events = data if isinstance(data, list) else data.get("events") or []
+    except json.JSONDecodeError:  # JSON lines
+        events = [json.loads(line) for line in text.splitlines() if line.strip().startswith("{")]
+    for event in reversed(events):
+        if event.get("tool") == "reply" and isinstance(event.get("args"), dict):
+            return event["args"].get("decline_kind") or "", event["args"].get("decline_reason") or ""
+    return "", ""
 
 
 def note_text(payload: dict[str, Any]) -> str:

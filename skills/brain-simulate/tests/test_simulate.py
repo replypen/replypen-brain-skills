@@ -238,6 +238,29 @@ def test_fixture_checks_pass_and_fail(tmp_path):
                       "no unlisted action proposals"}
 
 
+def test_fixture_outcome_and_identity_stop(tmp_path, monkeypatch):
+    case = acquire_fixture(tmp_path, dict(FIXTURE_CASE, expect={"outcome": "draft", "decline_kind": "none"}))
+    monkeypatch.setattr(sim, "reply_decline", lambda run_id, tenant: ("", ""))
+    assert all(c["ok"] for c in sim.result_record(case, "main", FIXTURE_PAYLOAD, 1, ["rp"])["checks"])
+
+    stopped = dict(FIXTURE_PAYLOAD, draft_markdown="", outcome="declined")
+    monkeypatch.setattr(sim, "reply_decline", lambda run_id, tenant: ("identity_unresolved", "kind niet gekoppeld"))
+    failed = {c["check"]: c["detail"] for c in sim.result_record(case, "main", stopped, 1, ["rp"])["checks"]
+              if not c["ok"]}
+    assert failed == {"outcome draft": "got decline", "decline_kind none": "got identity_unresolved: kind niet gekoppeld"}
+
+    case["expect"] = {"outcome": "decline", "decline_kind": "identity_unresolved"}
+    assert all(c["ok"] for c in sim.result_record(case, "main", stopped, 1, ["rp"])["checks"])
+
+
+def test_fixture_outcome_is_validated(tmp_path):
+    bad = dict(FIXTURE_CASE, expect={"outcome": "maybe", "decline_kind": "unresolved"})
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps([bad]), encoding="utf-8")
+    with pytest.raises(sim.SimError, match="outcome must be.*decline_kind must be"):
+        sim.acquire_manual(str(path))
+
+
 def test_pass_score_contradicted_by_failing_checks_is_rejected(tmp_path, capsys):
     case = acquire_fixture(tmp_path, FIXTURE_CASE)
     assert cli(tmp_path, "select", "--pick", f"{case['id']}|cancellation|hard|fixture") == 0
