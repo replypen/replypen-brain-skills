@@ -584,6 +584,9 @@ def case_summary(case: dict[str, Any], md_path: str | None) -> list[str]:
     p = case.get("principal") or {}
     rated = [f"t{t['n']}={t['feedback']['score']}★" for t in turns if (t.get("feedback") or {}).get("score") is not None]
     last = turns[-1]["n"] if turns else None
+    scored = [t for t in turns if (t.get("feedback") or {}).get("score") is not None]
+    # the turn to replay is the worst-rated one (latest on a tie), not simply the last turn
+    target = min(reversed(scored), key=lambda t: t["feedback"]["score"])["n"] if scored else last
     return [
         f"case: {md_path}",
         f"project {case.get('project') or '?'} · tenant {case.get('tenant') or '?'} · surface {case.get('surface') or '?'}",
@@ -591,7 +594,7 @@ def case_summary(case: dict[str, Any], md_path: str | None) -> list[str]:
         f"turns {len(turns)} · runs {sum(1 for t in turns if t.get('run_id'))} · traced {sum(1 for t in turns if t.get('evidence'))}"
         + (f" · {ZERO_RUNS}" if case.get("zero_runs") else ""),
         f"feedback: {', '.join(rated) or 'none'} · expected: {'given' if case.get('expected') else 'not given'}",
-        f"next: read case.md, then replay --turn {last}" if last else
+        f"next: read case.md, then replay --turn {target}" if last else
         "next: find the chat with an answer: rp run sessions search --contains \"<words>\" --since <YYYY-MM-DD>",
     ]
 
