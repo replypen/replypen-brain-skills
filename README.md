@@ -19,6 +19,8 @@ The public `rp` CLI (legacy alias `rc`, same binary) belongs to **local brain de
 Its grounding path is `/brain` scripts plus the project/run's injected `lib.*` capabilities. Never
 copy CLI command guidance into committed project-brain instructions.
 
+Mailbox review of a ReplyPen Google mailbox lives in [`pjmuller/skills` `mailbox-review-core`](https://github.com/pjmuller/skills/tree/main/skills/mailbox-review-core) (installed per project with a `mailbox-review` wrapper).
+
 ## Install
 
 From a brain checkout:
@@ -61,7 +63,6 @@ Full walkthrough: [docs/onboarding.md](docs/onboarding.md).
 | [`brain-kb-mirror`](skills/brain-kb-mirror/SKILL.md) | Re-pull a public help center (Zendesk) into a committed Markdown + image snapshot under `knowledge/` from a per-brain source profile, describe new screenshots and summarize video transcripts with cheap sub-agents, check, publish. |
 | `brain-ask` | Last-mile production-loop `rp ask` validation, usually against a pushed `dev/*` ref. |
 | `rp-debug` | One run/thread/session to trace/debug/index/JSONL drilldown; analysis-first before edits. |
-| [`rp-mailbox-cockpit`](skills/rp-mailbox-cockpit/SKILL.md) | Independently check complex Google-mailbox drafts and surface neglected work in a concise daily cockpit; optional guarded draft corrections. |
 | `rp-health` | Stale mirrors plus dead-lettered runs. |
 | `rp-fleet` | Recent fleet digest plus recurring failure patterns. |
 | [`brain-helper-devloop`](skills/brain-helper-devloop/SKILL.md) | The loop for adding or changing a brain/mirror helper: design from real tickets, build read-only and verdict-first, prove on real data (`mirror-try`, `scope-check`), push a dev ref, ask synthetic admin questions with `rp ask`, read each trace for unprompted pickup, fix developer experience instead of adding prompt rules, publish, re-ask live; `usage.py` counts which helpers production runs actually execute and which SQL they hand-roll. |

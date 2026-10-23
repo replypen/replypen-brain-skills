@@ -143,8 +143,7 @@ Only these are first-class:
 - `brain-chat-debug` — one bad chat answer (share/run link, session id): case file, ownership
   decision, replay of the turn on a `dev/*` brain/mirror ref (`rp ask --replay-chat-run` when
   available, raw fallback), compare, widen to other tenants via devloop.
-- `rp-mailbox-cockpit` — local Google inbox/draft triage, independent Opus checks, concise cockpit,
-  and explicitly authorized guarded draft-body corrections.
+- Mailbox review (was `rp-mailbox-cockpit`) moved to `pjmuller/skills` `mailbox-review-core`; projects carry a copy + a `mailbox-review` wrapper.
 - `rp-health` — stale mirrors and dead-lettered runs.
 - `rp-fleet` — recent fleet and recurring failure patterns.
 - `brain-fleet-report` — the daily two-audience fleet report: Python collects a day of evidence;

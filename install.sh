@@ -254,6 +254,8 @@ for old in \
   "$BRAIN/.claude/skills/rc-health" \
   "$BRAIN/.agents/skills/rc-mailbox-cockpit" \
   "$BRAIN/.claude/skills/rc-mailbox-cockpit" \
+  "$BRAIN/.agents/skills/rp-mailbox-cockpit" \
+  "$BRAIN/.claude/skills/rp-mailbox-cockpit" \
   "$BRAIN/.agents/skills/rc-script-wrapper" \
   "$BRAIN/.claude/skills/rc-script-wrapper"
 do
