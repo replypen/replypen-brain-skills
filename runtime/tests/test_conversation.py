@@ -88,6 +88,11 @@ class EuroAmounts(unittest.TestCase):
         self.assertEqual(conversation.euro_amounts("op 12 maart 2026 €50, €50 op 12 maart, €40 12 keer"),
                          [5000, 5000, 4000])
 
+    def test_suffix_amount_followed_by_an_unrelated_number_keeps_the_amount(self):
+        for text in ("75 EUR 14 dagen", "75 euro 14 dagen", "75 € 14 dagen", "75€ 14 dagen", "75,00 EUR 30 dagen",
+                     "1 250 euro 14 dagen"):
+            self.assertEqual(conversation.euro_amounts(text), [7500 if text[0] == "7" else 125000], text)
+
     def test_plain_numbers_dates_and_phone_tokens_are_not_amounts(self):
         self.assertEqual(conversation.euro_amounts("3 keer, 20/10/2026, +32 472 24 10 18, 170"), [])
 

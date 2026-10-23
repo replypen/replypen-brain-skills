@@ -117,9 +117,11 @@ def last_outbound(path: str | None = None) -> dict[str, Any] | None:
 # Outlook's narrow U+202F) groups only exactly 3 digits, so "€50 op 12 maart" stays €50.
 _NUM = r"\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+(?:[.,]\d{1,2}|,-)?|\d+(?:[.,]\d{1,2}|,-)?"
 _END = r"(?![.,]?\d)"
-# A trailing sign that a number follows ("2026 €50") prefixes that number instead.
+# A suffix sign belongs to the number before it ("75 EUR 14 dagen" = €75), except a spaced-off "€"
+# glued to the next number: "2026 €50" = €50.
 _EURO = re.compile(
-    rf"(?:€|\bEUR\b)\s?(?P<a>{_NUM}){_END}|(?<![\d.,])(?P<b>{_NUM}){_END}\s?(?:€|\beuros?\b|\bEUR\b)(?!\s?\d)",
+    rf"(?:€|\bEUR\b)\s?(?P<a>{_NUM}){_END}"
+    rf"|(?<![\d.,])(?P<b>{_NUM}){_END}(?:€|\s?\beuros?\b|\s?\bEUR\b|\s€(?!\d))",
     re.I,
 )
 

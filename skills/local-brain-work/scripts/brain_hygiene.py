@@ -87,7 +87,7 @@ CONFLICT_RE = re.compile(r"^(<{7}|\|{7}|>{7})(?: |$)")
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")  # replypen internal/projection
 ABS_PATH_RE = re.compile(r"/Users/[A-Za-z0-9._-]+")
 MANIFEST_COPY_RE = re.compile(r"^\s*(display_name|customer_[a-z_]+)\s*:(.*)$")
-DEFAULT_VALUE_RE = re.compile(r"\bdefault:\s*(\"[^\"]*\"|'[^']*'|[^#,}]*)")
+DEFAULT_VALUE_RE = re.compile(r"\bdefault:\s*(\"(?:[^\"\\]|\\.)*\"|'(?:[^']|'')*'|[^#,}]*)")
 DEFAULT_TEMPLATED_GLOBS = ["**/*.md"]  # replypen internal/projection DefaultTemplatedGlobs
 TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".json", ".toml", ".sh", ".rb", ".txt", ".sql"}
 EM_DASH = "\u2014"
@@ -200,16 +200,47 @@ def _glob_re(glob: str) -> re.Pattern[str]:
     return re.compile(out + r"\Z")
 
 
+_YAML_ESCAPES = {"0": "\0", "a": "\a", "b": "\b", "t": "\t", "\t": "\t", "n": "\n", "v": "\v", "f": "\f",
+                 "r": "\r", "e": "\x1b", " ": " ", '"': '"', "/": "/", "\\": "\\", "N": "\x85", "_": "\xa0",
+                 "L": " ", "P": " "}
+
+
+def _yaml_scalar(value: str) -> str:
+    """One-line quoted YAML scalar decoded like PyYAML (escapes in "…", '' in '…'); plain stays as is."""
+    if len(value) > 1 and value[0] == value[-1] == '"':
+        return re.sub(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)",
+                      lambda m: chr(int(m[1][1:], 16)) if len(m[1]) > 1 else _YAML_ESCAPES.get(m[1], m[0]),
+                      value[1:-1])
+    if len(value) > 1 and value[0] == value[-1] == "'":
+        return value[1:-1].replace("''", "'")
+    return value
+
+
 def _projection_spec(root: Path) -> dict | None:
-    """projection.yaml as `{placeholders: {key: {default}}, templated_globs: [...]}` by a line scan
-    (this gate runs without PyYAML): flow (`key: { default: "x" }`) and block `default:` values."""
+    """projection.yaml as `{placeholders: {key: {default}}, templated_globs: [...]}`, decoded like the
+    publish lint (PyYAML) so `doc-spill` measures its bytes; this gate also runs without PyYAML, then a
+    line scan: flow (`key: { default: "x" }`) and block `default:` values, quoted escapes decoded."""
     spec = root / "projection.yaml"
     if not spec.is_file():
         return None
+    text = spec.read_text("utf-8", errors="replace")
+    try:
+        import yaml
+    except ModuleNotFoundError:
+        yaml = None
+    if yaml is not None:
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError:
+            data = None  # malformed: the line scan below still names its placeholders
+        if isinstance(data, dict) and isinstance(data.get("placeholders") or {}, dict):
+            return {"placeholders": data.get("placeholders") or {}, "templated_globs": data.get("templated_globs") or []}
     placeholders: dict[str, dict[str, str]] = {}
     globs: list[str] = []
     section = key = None
-    for line in spec.read_text("utf-8", errors="replace").splitlines():
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
         if top := re.match(r"^([A-Za-z_]+):", line):
             section = top.group(1)
         elif section == "placeholders" and (m := re.match(r"^  ([A-Za-z0-9_.]+):", line)):
@@ -218,8 +249,7 @@ def _projection_spec(root: Path) -> dict | None:
         elif section == "templated_globs" and (m := re.match(r"^\s*-\s*[\"']?([^\"'#]+?)[\"']?\s*(#.*)?$", line)):
             globs.append(m.group(1))
         if section == "placeholders" and key and (d := DEFAULT_VALUE_RE.search(line)):
-            value = d.group(1).strip()
-            placeholders[key]["default"] = value[1:-1] if value[:1] in "\"'" and value[-1:] == value[:1] else value
+            placeholders[key]["default"] = _yaml_scalar(d.group(1).strip())
     return {"placeholders": placeholders, "templated_globs": globs}
 
 

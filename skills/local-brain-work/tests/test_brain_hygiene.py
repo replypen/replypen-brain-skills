@@ -237,6 +237,21 @@ def test_doc_spill_measures_what_the_publish_lint_measures(tmp_path: Path) -> No
             if f.message.startswith("doc-spill")] == ["skills/cases/rule.md"]
 
 
+@pytest.mark.parametrize("decoder", ["pyyaml", "stdlib"])
+def test_doc_spill_decodes_yaml_escapes_like_the_publish_lint(tmp_path: Path, monkeypatch, decoder: str) -> None:
+    """`\\u0061` ×100 renders as 100 bytes, not 600: escaped defaults must not block a push the lint passes."""
+    if decoder == "stdlib":
+        monkeypatch.setitem(sys.modules, "yaml", None)  # the gate also runs without PyYAML
+    projection = ("placeholders:\n  name: { type: string, default: \"" + "\\u0061" * 100 + "\\\"q\\\"\" }\n"
+                  "  sig:\n    type: string\n    default: 'it''s'\n# `default:` is the \"else\" (a comment)\n")
+    root = make_brain(tmp_path / "brain", {"projection.yaml": projection, "skills/cases/a.md": "x" * 10})
+    defaults = {k: v["default"] for k, v in brain_hygiene._projection_spec(root)["placeholders"].items()}
+    assert defaults == {"name": "a" * 100 + '"q"', "sig": "it's"}
+    (root / "skills/cases/a.md").write_text("x" * 5880 + "{{ name }}{{ sig }}", "utf-8")  # 5987 rendered
+    git(root, "add", "-A")
+    assert not [f for f in brain_hygiene.check(root, None, "HEAD") if f.message.startswith("doc-spill")]
+
+
 def test_doc_spill_follows_renames(tmp_path: Path) -> None:
     """Moving an unchanged legacy 7000-byte doc is not a new crossing."""
     root = make_brain(tmp_path, {"skills/cases/legacy.md": "x" * 7000})
