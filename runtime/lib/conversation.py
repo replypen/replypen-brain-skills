@@ -113,9 +113,15 @@ def last_outbound(path: str | None = None) -> dict[str, Any] | None:
 
 # "€75", "€ 1.234,50", "€1,234.50", "75 euro", "75,00 EUR", "€75,-", "75€", "1 250 €". The whole numeric
 # token is captured (never a prefix: "€1,234.50" must not read as €1,23); `_cents` takes a trailing 1-2
-# digit group as the decimals and every other separator as thousands grouping. A space (plain, NBSP or
-# Outlook's narrow U+202F) groups only exactly 3 digits, so "€50 op 12 maart" stays €50.
-_NUM = r"\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+(?:[.,]\d{1,2}|,-)?|\d+(?:[.,]\d{1,2}|,-)?"
+# digit group as the decimals and every other separator as thousands grouping. NBSP and Outlook's narrow
+# U+202F group 3-digit runs (tool-formatted amounts). A plain space groups only when the amount ends in
+# decimals ("€ 1 234,50"): "€50 100 kinderen" stays €50, so plain "€1 250" reads €1 (a kept old misread
+# beats a new one).
+_NUM = (
+    r"\d{1,3}(?: \d{3})+[.,]\d{1,2}"
+    r"|\d{1,3}(?:[.,\u00a0\u202f]\d{3})+(?:[.,]\d{1,2}|,-)?"
+    r"|\d+(?:[.,]\d{1,2}|,-)?"
+)
 _END = r"(?![.,]?\d)"
 # A suffix sign belongs to the number before it ("75 EUR 14 dagen" = €75), except a spaced-off "€"
 # glued to the next number: "2026 €50" = €50.

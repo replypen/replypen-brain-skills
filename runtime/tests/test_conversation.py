@@ -79,18 +79,24 @@ class EuroAmounts(unittest.TestCase):
         self.assertEqual(conversation.euro_amounts("€1,234.50 en € 1.234 en €1,23"), [123450, 123400, 123])
         self.assertEqual(conversation.euro_amounts("€1,2345"), [])  # never a numeric prefix
 
-    def test_space_groups_thousands(self):
+    def test_nbsp_groups_thousands(self):
+        self.assertEqual(conversation.euro_amounts("€1\u00a0250"), [125000])
+        self.assertEqual(conversation.euro_amounts("1\u00a0250 € en 1\u202f250 €"), [125000, 125000])
+
+    def test_plain_space_groups_thousands_only_before_decimals(self):
         self.assertEqual(conversation.euro_amounts("€ 1 234,50"), [123450])
-        self.assertEqual(conversation.euro_amounts("€1 250"), [125000])
-        self.assertEqual(conversation.euro_amounts("1 250 € en 1\u202f250 €"), [125000, 125000])
+        self.assertEqual(conversation.euro_amounts("1 250,00 €"), [125000])
+        self.assertEqual(conversation.euro_amounts("€1 250"), [100])
 
     def test_space_never_joins_numbers_across_words(self):
         self.assertEqual(conversation.euro_amounts("op 12 maart 2026 €50, €50 op 12 maart, €40 12 keer"),
                          [5000, 5000, 4000])
+        self.assertEqual(conversation.euro_amounts("€50 100 kinderen"), [5000])
+        self.assertEqual(conversation.euro_amounts("€ 100 100 deelnemers"), [10000])
 
     def test_suffix_amount_followed_by_an_unrelated_number_keeps_the_amount(self):
         for text in ("75 EUR 14 dagen", "75 euro 14 dagen", "75 € 14 dagen", "75€ 14 dagen", "75,00 EUR 30 dagen",
-                     "1 250 euro 14 dagen"):
+                     "1\u00a0250 euro 14 dagen"):
             self.assertEqual(conversation.euro_amounts(text), [7500 if text[0] == "7" else 125000], text)
 
     def test_plain_numbers_dates_and_phone_tokens_are_not_amounts(self):
