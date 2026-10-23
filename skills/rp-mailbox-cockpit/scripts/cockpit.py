@@ -332,21 +332,40 @@ def render_html(client, stem, original_md, replacement_md):
     return html
 
 
+# ReplyPen places reviewer to-dos as leading "[[✏️ …]]" lines above the reply; Gmail may re-wrap a draft
+# that someone only opened. Neither is a human edit, so the guard compares words, not bytes.
+PLACED_NOTES = re.compile(r'\A(?:[ \t]*\[\[✏️[^\n]*\]\][ \t]*\r?\n)+')
+
+
+def ai_words(text):
+    return ' '.join(PLACED_NOTES.sub('', text.replace('\r\n', '\n').lstrip()).split())
+
+
+def html_words(value):
+    return ai_words(html.unescape(re.sub(r'<[^>]+>', ' ', value.replace('<br>', '\n'))))
+
+
 def matched_draft(detail_data, draft_id):
     run = detail_data.get('run') or {}
     target = run.get('draft_markdown')
     if not target:
         raise Refused('Latest ReplyPen run has no draft body')
-    matches = []
+    exact, loose = [], []
     for draft in detail_data.get('drafts', []):
         try:
-            if draft.get('message', {}).get('threadId') == detail_data['gmail']['id'] and (
-                    plain_body(draft['message']) == target):
-                matches.append(draft)
+            if draft.get('message', {}).get('threadId') != detail_data['gmail']['id']:
+                continue
+            body = plain_body(draft['message'])
         except Refused:
             continue
+        if body == target:
+            exact.append(draft)
+        elif ai_words(body) == ai_words(target):
+            loose.append(draft)
+    matches = exact or loose
     if len(matches) != 1 or matches[0].get('id') != draft_id:
-        raise Refused('No unique exact AI draft match; human edits are never overwritten')
+        raise Refused('No unique AI draft match (only placed ✏️ notes and re-wrapping are tolerated); '
+                      'human edits are never overwritten')
     return matches[0]
 
 
@@ -586,7 +605,9 @@ def apply(args):
                 'message_id_before': old['message']['id'], 'status': 'prepared', 'at': now()}
     original_html, replacement_html = render_html(client, audit.with_suffix(''), baseline['run']['draft_markdown'],
                                                   item['replacement_body'])
-    if not same_text(inline_body(old['message'], 'text/html'), original_html):
+    current_html = inline_body(old['message'], 'text/html')
+    exact = plain_body(old['message']) == baseline['run']['draft_markdown']
+    if not (same_text(current_html, original_html) if exact else html_words(current_html) == html_words(original_html)):
         raise Refused('Draft HTML is not ReplyPen\'s rendering of its markdown (font, signature, '
                       'body_html or human edit); correct it by hand')
     save(audit, original)

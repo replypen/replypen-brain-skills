@@ -109,13 +109,36 @@ class Tests(unittest.TestCase):
     def test_human_edit_or_multiple_match_refused(self):
         detail, _ = fixture()
         self.assertEqual(c.matched_draft(detail, 'gmail-draft')['id'], 'gmail-draft')
-        detail['drafts'][0]['message'] = message('changed', draft=True, text='AI body\n')
+        detail['drafts'][0]['message'] = message('changed', draft=True, text='AI body changed\n')
         with self.assertRaises(c.Refused):
             c.matched_draft(detail, 'gmail-draft')
         detail, _ = fixture()
         detail['drafts'].append({'id': 'second', 'message': detail['drafts'][0]['message']})
         with self.assertRaises(c.Refused):
             c.matched_draft(detail, 'gmail-draft')
+
+    def test_placed_notes_and_rewrap_match_but_word_edits_refuse(self):
+        note = '[[✏️ Escalation needed: check the timeouts.]]\n\n'
+        for body in (note + 'AI body', 'AI\r\nbody\r\n', note + 'AI  body\n'):
+            with self.subTest(body=body):
+                detail, _ = fixture()
+                detail['drafts'][0]['message'] = message('draft', draft=True, text=body)
+                self.assertEqual(c.matched_draft(detail, 'gmail-draft')['id'], 'gmail-draft')
+        for body in ('AI body, edited', 'Intro\n[[✏️ note]]\nAI body', '[[✏️ note]]\nAI changed'):
+            with self.subTest(body=body):
+                detail, _ = fixture()
+                detail['drafts'][0]['message'] = message('draft', draft=True, text=body)
+                with self.assertRaises(c.Refused):
+                    c.matched_draft(detail, 'gmail-draft')
+
+    def test_apply_corrects_draft_with_placed_note_and_rewrapped_html(self):
+        note = '[[✏️ Pass on: check this.]]\n\n'
+        bundle, writes, _ = self.run_apply(draft_text=note + AI_MD,
+                                           draft_html='<div>' + note + '</div>' + fake_render(AI_MD).replace(' ', '\n'))
+        self.assertEqual(c.read(bundle / 'corrections/abc.json')['status'], 'corrected')
+        self.assertEqual(len(writes), 1)
+        with self.assertRaises(c.Refused):  # Same words in plain text, but a human changed the HTML leg.
+            self.run_apply(draft_text=note + AI_MD, draft_html=fake_render(AI_MD + ' Thanks!'))
 
     def test_thread_change_or_new_reply_refused(self):
         detail, _ = fixture()
@@ -353,9 +376,9 @@ class Tests(unittest.TestCase):
         self.assertEqual(c.safe_url('javascript:alert(1)'), '')
         self.assertEqual(c.safe_url('https://example.test:bad/'), '')
 
-    def run_apply(self, draft_html=fake_render(AI_MD), rendered=True, readback_html=None):
+    def run_apply(self, draft_html=fake_render(AI_MD), rendered=True, readback_html=None, draft_text=AI_MD):
         detail, finding = fixture()
-        draft = message('draft', ACCOUNT, 'customer@example.test', draft=True, at=2, text=AI_MD, html=draft_html)
+        draft = message('draft', ACCOUNT, 'customer@example.test', draft=True, at=2, text=draft_text, html=draft_html)
         detail['gmail']['messages'][1] = draft
         detail['fingerprint'] = finding['evidence_fingerprint'] = c.fingerprint(detail['gmail'])
         detail['run']['draft_markdown'] = AI_MD
