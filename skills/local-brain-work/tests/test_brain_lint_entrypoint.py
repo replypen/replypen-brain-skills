@@ -75,6 +75,19 @@ def test_entrypoint_accepts_all_and_explicit_paths(tmp_path: Path) -> None:
     assert elsewhere.returncode == 0 and elsewhere.stdout.strip() == "brain lint: clean"
 
 
+def test_entrypoint_warns_near_the_spill_cliff_only_for_named_paths(tmp_path: Path) -> None:
+    brain = _brain(tmp_path, "x = 1\n")
+    (brain / "playbooks").mkdir()
+    (brain / "playbooks/near.md").write_text("x" * 5500, "utf-8")
+    command = [sys.executable, str(SCRIPT), "--brain", str(brain)]
+
+    whole = subprocess.run(command, text=True, capture_output=True, check=False)
+    named = subprocess.run([*command, "playbooks/near.md"], text=True, capture_output=True, check=False)
+
+    assert whole.stdout.strip() == "brain lint: clean"
+    assert "near the 6000-byte bash spill limit" in named.stdout
+
+
 def test_entrypoint_skips_run_hidden_paths(tmp_path: Path) -> None:
     """`.agents/` & co never reach a run, so their (machine-local) symlinks are not brain findings."""
     brain = _brain(tmp_path, "x = 1\n")

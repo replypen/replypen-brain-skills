@@ -61,19 +61,23 @@ from typing import Callable
 import yaml
 
 from .action_lint import lint_actions
-from .brain_doc import FRONTMATTER_CAP
+from .brain_doc import (
+    FRONTMATTER_CAP,
+    INCLUDE_IN_ROLES,
+    MIRROR_SCAN_DIRS,
+    ON_DEMAND_DOC_LIMIT,
+    REPO_KINDS,
+    TAG_PRUNED_DIRS,
+    detect_repo_kind,
+    hard_loaded,
+    on_demand_doc_bytes,
+    projection_renderer,
+    unread_roles,
+)
 from .brain_doc import frontmatter_lines as _frontmatter_lines
 from .brain_doc import include_in as _include_in
-from .brain_doc import match_glob as _match_glob
-from .brain_doc import mirrored_corpus as _mirrored_corpus
-from .brain_doc import render_upper_bound as _render_upper_bound
 from .brain_doc import strip_frontmatter as _strip_frontmatter
 
-
-def _marker(root: Path) -> Path:
-    """The brain's committed binding: `.replypen.toml`, else the pre-rebrand `.rootcause.toml`."""
-    new = root / ".replypen.toml"
-    return new if new.exists() or not (root / ".rootcause.toml").exists() else root / ".rootcause.toml"
 
 # Mirror treeview's descMaxLen (tree gloss) / descFullMaxLen (agentskills.io cap) / descHeadBytes
 # (legacy line-scan fallback) so the lint's verdict matches what the host reads.
@@ -447,15 +451,9 @@ HARD_LOAD_CAPS = {  # role -> (include_in tags, per-file cap, total cap)
     "grounding": (("grounding",), 8 << 10, 24 << 10),
     "agent": (("agent", "principal"), 16 << 10, 48 << 10),
 }
-# Untagged docs are read on demand with `cat`, and bash replaces a stream over 6000 bytes with a
-# 2000+1000-char preview (replypen internal/tool/tool.go defaultBashSpillThreshold): past it the run
-# rarely sees the middle (76% of 6-7 KB doc reads never fetched the spill, 10-12..10-19). So the limit
-# IS the cliff, on the whole file as `cat` prints it (frontmatter included; a templated doc at its
-# longest render); the warn level leaves room for one more paragraph. Change with the host threshold.
-ON_DEMAND_DOC_LIMIT = 6000
+# The near-cliff WARN leaves room for one more paragraph below brain_doc.ON_DEMAND_DOC_LIMIT; only for
+# paths a caller names (changed files), since a whole-tree run repeats it for docs nobody touches.
 ON_DEMAND_DOC_WARN = 5000
-# Brain dirs whose markdown no run reads as a doc: run notes, test fixtures, developer docs.
-_ON_DEMAND_SKIP_DIRS = frozenset({"journal", "tests", "docs"})
 # AGENTS.md is pasted whole, uncapped, every run: an advisory names a genuinely oversized one.
 AGENTS_MD_CAP = 16 << 10
 _DOC_SIZE_IGNORED_DIRS = frozenset({".agents", ".claude", ".replypen", ".rootcause", ".git", ".venv", "_internal",
@@ -480,25 +478,19 @@ def _doc_size_candidates(root: Path) -> list[str]:
 
 
 def _projection_renderer(root: Path, kind: str) -> Callable[[str, str], str]:
-    """(rel, text) -> the text a run `cat`s: a projection-templated doc of a project brain at its
-    longest render (`render_upper_bound` with the spec defaults), anything else verbatim."""
+    """`brain_doc.projection_renderer` over a project brain's projection.yaml (overlays copy verbatim)."""
     try:
         spec = yaml.safe_load((root / "projection.yaml").read_text("utf-8")) if kind == "brain" else None
     except (OSError, yaml.YAMLError):
         spec = None
-    if not isinstance(spec, dict):
-        return lambda rel, text: text
-    fills = {k: str(v["default"]) for k, v in (spec.get("placeholders") or {}).items()
-             if isinstance(v, dict) and v.get("default") is not None}
-    globs = spec.get("templated_globs") or ["**/*.md"]
-    return lambda rel, text: (_render_upper_bound(text, fills) if any(_match_glob(g, rel) for g in globs)
-                              else text)
+    return projection_renderer(spec)
 
 
-def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
+def _check_doc_sizes(root: Path, kind: str = "brain", near_cliff: bool = True) -> list[Finding]:
     """WARN when a markdown doc won't reach the model whole: a hard-loaded body over its per-file or
     total cap (the host truncates it), AGENTS.md over AGENTS_MD_CAP, an on-demand doc over
-    ON_DEMAND_DOC_WARN; FAIL an on-demand doc over ON_DEMAND_DOC_LIMIT (the bash spill cliff)."""
+    ON_DEMAND_DOC_WARN (`near_cliff`); FAIL an on-demand doc over ON_DEMAND_DOC_LIMIT (the bash spill
+    cliff, `brain_doc.on_demand_doc_bytes`, the measure the hygiene gate's `doc-spill` uses too)."""
     findings: list[Finding] = []
     totals = dict.fromkeys(HARD_LOAD_CAPS, 0)
     rendered = _projection_renderer(root, kind)
@@ -507,7 +499,7 @@ def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
             text = (root / rel).read_text("utf-8", "replace")
         except OSError:
             continue
-        tags = _include_in(text) - _unread_roles(rel, kind)
+        tags = _include_in(text) - unread_roles(rel, kind)
         size = len(_strip_frontmatter(text).encode("utf-8"))
         over: list[str] = []
         loaded = False
@@ -532,17 +524,16 @@ def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
                 findings.append(Finding(rel, "WARN",
                     f"AGENTS.md is {_kb(size)}: pasted whole into every run, every extra byte is tax on "
                     "every thread and buries the routing", "doc-size"))
-        elif (not loaded and not _mirrored_corpus(text)
-              and not _ON_DEMAND_SKIP_DIRS.intersection(rel.split("/")[:-1])):
+        elif not loaded:
             # `cat` bytes: decode without read_text's universal newlines, so CRLF counts twice.
             raw = (root / rel).read_bytes().decode("utf-8", "replace")
-            read = len(rendered(rel, raw).encode("utf-8"))
+            read = on_demand_doc_bytes(rel, raw, hard_loaded(rel, raw, kind), rendered) or 0
             if read > ON_DEMAND_DOC_LIMIT:
                 findings.append(Finding(rel, "FAIL",
                     f"on-demand doc is {read} bytes, over the {ON_DEMAND_DOC_LIMIT}-byte bash spill "
                     "limit: a `cat` past it shows only a 2000+1000-char preview and runs rarely read "
                     "the rest", "doc-size"))
-            elif read > ON_DEMAND_DOC_WARN:
+            elif near_cliff and read > ON_DEMAND_DOC_WARN:
                 findings.append(Finding(rel, "WARN",
                     f"on-demand doc is {read} bytes, near the {ON_DEMAND_DOC_LIMIT}-byte bash spill "
                     "limit (FAIL past it)", "doc-size"))
@@ -552,58 +543,11 @@ def _check_doc_sizes(root: Path, kind: str = "brain") -> list[Finding]:
 # ---- Frontmatter the host never reads ------------------------------------------------------------
 # Every constant below names the replypen source it mirrors; change them together with the host.
 
-# include_in roles the host collects: grounding/agent/principal in internal/grounding/hardload.go
-# (roleGrounding/roleAgent/rolePrincipal), triage in internal/triage/brainknowledge.go.
-INCLUDE_IN_ROLES = ("triage", "grounding", "agent", "principal")
-# A MIRROR repo is scanned for include_in only at its root *.md and recursively under these dirs —
-# replypen internal/grounding/hardload.go `mirrorScanSubdirs`. Brains and tenant overlays are scanned whole.
-MIRROR_SCAN_DIRS = (".agents", ".claude", "doc", "docs", "skills")
-# Dirs treeview.TaggedFiles prunes in every scan (internal/treeview/tagged.go + bootstrap.go skipDirs).
-_TAG_PRUNED_DIRS = frozenset({".git", ".replypen", ".rootcause", "__pycache__", "node_modules", ".venv", "venv",
-                              ".pytest_cache", ".ruff_cache", ".mypy_cache"})
 # Frontmatter keys the host reads from brain markdown, all by a top-level line scan (treeview.frontmatterList,
 # bootstrap.go mdDescription). Near-miss spellings the host silently ignores map to the real key.
 _HOST_KEYS = ("include_in", "surfaces", "description")
 _KEY_SPELLINGS = {"includein": "include_in", "include_in": "include_in", "surface": "surfaces",
                   "surfaces": "surfaces", "description": "description"}
-
-# How a repo is consumed decides which tags the host reads (see detect_repo_kind).
-REPO_KINDS = ("brain", "tenant", "mirror")
-
-
-def detect_repo_kind(root: str | Path) -> tuple[str, str]:
-    """(kind, reason): `tenant` when the committed `.replypen.toml` names a tenant; `mirror` when a
-    brain checkout beside it lists this repo in its `.replypen.toml [mirrors]` (the table brain_run.py
-    resolves) — checked before `project =`, which a source repo may carry only to scope `rp`; else
-    `brain`, the widest include_in scope."""
-    import tomllib
-
-    root = Path(root).resolve()
-
-    def toml(path: Path) -> dict:
-        try:
-            return tomllib.loads(path.read_text("utf-8"))
-        except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
-            return {}
-
-    own = toml(_marker(root))
-    if own.get("tenant"):
-        return "tenant", f".replypen.toml: project {own.get('project')!r}, tenant {own['tenant']!r}"
-    # Brains declare mirrors as paths relative to themselves; look in the sibling and cousin checkouts
-    # (`../brain`, `../../org/brain`). Skipped at filesystem depth 1 (a container's /brain).
-    if root.parent != root.parent.parent:
-        for cfg in sorted(c for name in (".replypen.toml", ".rootcause.toml")
-                         for c in [*root.parent.glob(f"*/{name}"), *root.parent.parent.glob(f"*/*/{name}")]):
-            mirrors = toml(cfg).get("mirrors") if cfg.parent != root else None
-            if not isinstance(mirrors, dict):
-                continue
-            for value in mirrors.values():
-                if isinstance(value, str) and (cfg.parent / value).resolve() == root:
-                    return "mirror", f"listed in {cfg.parent.name}/{cfg.name} [mirrors]"
-    if own.get("project"):
-        return "brain", f".replypen.toml: project {own['project']!r}"
-    return "brain", "no .replypen.toml identity and no brain lists it under [mirrors]"
-
 
 # Paths the host drops from every run view whatever the control files say (internal/treeview/visible.go
 # hiddenRunPath): `.git`, `.gitignore`/`.replypenignore` anywhere, the root `.rcignore`, dependency/cache
@@ -697,17 +641,6 @@ def run_hidden(root: str | Path) -> Callable[[str], bool]:
     return hidden
 
 
-def _unread_roles(rel: str, kind: str) -> set[str]:
-    """include_in roles the host never collects from `rel` in a repo of this kind."""
-    parts = rel.split("/")
-    if _TAG_PRUNED_DIRS.intersection(parts[:-1]):
-        return set(INCLUDE_IN_ROLES)
-    if kind == "mirror" and len(parts) > 1 and parts[0] not in MIRROR_SCAN_DIRS:
-        return set(INCLUDE_IN_ROLES)
-    # Triage reads only the flat project brain (internal/triage/brainknowledge.go BrainKnowledge).
-    return {"triage"} if kind != "brain" else set()
-
-
 def _intended_block(text: str) -> tuple[list[str], bool] | None:
     """The frontmatter block an author evidently meant, ignoring the host's byte-0 + 8KB rules:
     (lines, at_byte_0). None when the file opens with no `---` fence at all."""
@@ -758,11 +691,13 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
     block, at_byte_0 = intended
     # YAML gives the author's intent (values, nesting); when it can't decode the block, the host's own
     # line scan still reads top-level keys, so the line-scan checks below keep running on those.
-    yaml_error: yaml.YAMLError | None = None
+    # _HostLoader keeps an impossible date (`2026-02-30`) a string as yaml.v3 does; a value PyYAML still
+    # cannot construct (`T25:00:00`) raises ValueError, a parse failure of this file, not of the lint run.
+    yaml_error: Exception | None = None
     try:
-        node = yaml.compose(_host_yaml_text(block))
-        data = yaml.safe_load(_host_yaml_text(block))
-    except yaml.YAMLError as exc:
+        node = yaml.compose(_host_yaml_text(block), Loader=_HostLoader)
+        data = yaml.load(_host_yaml_text(block), Loader=_HostLoader)  # noqa: S506 - SafeLoader subclass
+    except (yaml.YAMLError, ValueError) as exc:
         node = data = None
         yaml_error = exc
     parsed = isinstance(data, dict)
@@ -872,10 +807,10 @@ def _frontmatter_doc_findings(root: Path, rel: str, kind: str, hidden: bool) -> 
                            f"{', '.join(INCLUDE_IN_ROLES)}, so this tag loads nothing", "include-in-value"))
 
     roles = tags & set(INCLUDE_IN_ROLES)
-    dead = roles & _unread_roles(rel, kind)
+    dead = roles & unread_roles(rel, kind)
     parts = rel.split("/")
-    if dead and _TAG_PRUNED_DIRS.intersection(parts[:-1]):
-        pruned = next(p for p in parts[:-1] if p in _TAG_PRUNED_DIRS)
+    if dead and TAG_PRUNED_DIRS.intersection(parts[:-1]):
+        pruned = next(p for p in parts[:-1] if p in TAG_PRUNED_DIRS)
         out.append(scope(f"`include_in` under `{pruned}/`: the host's tag scan skips that dir, so this "
                          "file is never hard-loaded; move it or drop the tag"))
     elif dead and kind == "mirror" and len(parts) > 1 and parts[0] not in MIRROR_SCAN_DIRS:
@@ -913,7 +848,7 @@ def _check_frontmatter(root: Path, kind: str) -> list[Finding]:
     else:
         rels = []
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if d not in _TAG_PRUNED_DIRS)
+            dirnames[:] = sorted(d for d in dirnames if d not in TAG_PRUNED_DIRS)
             rels += [_rel(root, Path(dirpath) / f) for f in sorted(filenames) if f.endswith(".md")]
     findings: list[Finding] = []
     for rel in rels:
@@ -1057,12 +992,13 @@ def _check_symlinks(root: Path) -> list[Finding]:
     return findings
 
 
-def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]:
+def lint_brain(brain_root: str | Path, kind: str | None = None, near_cliff: bool = False) -> list[Finding]:
     """Lint every routable file under `brain_root` for a host-readable, in-budget `description:`.
 
     Targets, mirroring the authoring mandate: `skills/*/SKILL.md`, `skills/cases/*.md`, and
     `actions/*/manifest.yaml`. Pure + deterministic (stdlib + PyYAML): no network, no DSN, no model.
     `kind` (brain | tenant | mirror) sets which frontmatter the host reads; None = detect_repo_kind.
+    `near_cliff` adds the on-demand doc-size WARN below the FAIL: for named/changed paths only.
     """
     root = Path(brain_root)
     findings: list[Finding] = []
@@ -1105,7 +1041,7 @@ def lint_brain(brain_root: str | Path, kind: str | None = None) -> list[Finding]
     kind = kind or detect_repo_kind(root)[0]
     if kind != "mirror":  # a mirror's `surfaces:` is never honored at all — _check_frontmatter FAILs it
         findings += _check_doc_surfaces(root)
-    findings += _check_doc_sizes(root, kind)
+    findings += _check_doc_sizes(root, kind, near_cliff)
     findings += _check_frontmatter(root, kind)
 
     # Bind the sibling lint when this plugin loads, before collected brain tests can replace the

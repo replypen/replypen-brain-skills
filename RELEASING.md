@@ -69,7 +69,7 @@ uv run --no-project python scripts/runtime_digest.py --worktree > RUNTIME_DIGEST
 uv run --no-project python skills/brain-git-sync/scripts/brain_git_sync.py \
   --repo "$PWD" --max-push-attempts 4 \
   --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh' \
-  --verify-command ./scripts/test-skills.sh   # + the runtime/ suite when RUNTIME_DIGEST moved
+  --verify-command 'RP_TEST_MERMAID=1 ./scripts/test-skills.sh'   # + the runtime/ suite when RUNTIME_DIGEST moved
 test "$(git rev-parse origin/main)" = "$(git rev-parse HEAD)"
 git tag -a -m vX.Y.Z vX.Y.Z  # only after verified origin/main
 git -c push.followTags=false push --atomic origin \

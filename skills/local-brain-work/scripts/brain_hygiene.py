@@ -43,9 +43,10 @@ and dev-tooling dot-dirs are judged for conflict markers only):
   * paths        — NOTICE only: a cited `/brain/…` (`/tenant/…` in an overlay, `/mirrors/<self>/…` in a
                    mirror) this checkout will not ship: absent, gitignored or run-hidden. Local only;
                    `brain_paths.py` also checks `/kb`, `/tenant`, other mirrors in production.
-  * doc-spill    — an on-demand doc (no `include_in`, no mirrored-corpus `source_url:`/`video_url:`
-                   frontmatter, not root AGENTS.md, not under
-                   journal/_internal/tests/docs/dot-dirs) whose whole file crosses 6000 bytes in this
+  * doc-spill    — an on-demand doc (no `include_in` the host reads there, no mirrored-corpus
+                   `source_url:`/`video_url:` frontmatter, not root AGENTS.md, not under
+                   journal/_internal/tests/docs/dot-dirs) whose `cat` output (whole file, a templated
+                   doc at its longest render: lint `doc-size`'s measure) crosses 6000 bytes in this
                    change (≤6000 or absent at the base: HEAD for --staged, else `--base`, also for
                    --all); bash shows such a read as a 2000+1000-char preview. Already-over docs stay
                    silent; no resolvable base skips the rule.
@@ -117,12 +118,10 @@ CI_SKILL_NAME_RE = re.compile(r"[A-Za-z0-9_-]+", re.ASCII)
 CI_SKILL_ROOTS = ("/brain/", "/tenant/", "/skills/", "/mirrors/")
 CI_SKILL_TYPOS = ("skill:", "skils:", "skillz:")
 
-SPILL_BYTES = 6000  # replypen internal/tool/tool.go defaultBashSpillThreshold (Go len = bytes)
-SPILL_SKIP_DIRS = {"journal", "_internal", "tests", "docs"}
 BRAIN_DOC = Path(__file__).resolve().parents[3] / "runtime" / "lib" / "brain_doc.py"
 
 
-def _brain_doc():
+def load_brain_doc():
     """The kit's stdlib-only `lib.brain_doc`, loaded by path: the hook and push gate run without
     PyYAML, and a brain's own `lib` package must not shadow it. None when the kit ships no runtime/."""
     spec = importlib.util.spec_from_file_location("rc_kit_brain_doc", BRAIN_DOC)
@@ -135,8 +134,9 @@ def _brain_doc():
 
 def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding]:
     """FAIL per on-demand doc this change pushes past the bash spill cliff (regression-only: a doc
-    already over at `base` stays silent). Whole-file bytes, because `cat` prints the frontmatter too."""
-    doc = _brain_doc()
+    already over at `base` stays silent). Measured by `brain_doc.on_demand_doc_bytes`, the publish
+    lint's `doc-size` measure: what `cat` prints, frontmatter included, a templated doc rendered."""
+    doc = load_brain_doc()
     if doc is None:
         return []
     if subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "-q", f"{base}^{{commit}}"],
@@ -144,23 +144,25 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
         return []  # no base to compare against, so no crossing can be proven
 
     out: list[bs.Finding] = []
+    kind = doc.detect_repo_kind(root)[0]
+    render = doc.projection_renderer(_projection_spec(root) if kind == "brain" else None)
     origins = _rename_origins(root, base)
+    limit = doc.ON_DEMAND_DOC_LIMIT
     for rel in sorted(files):
-        parts = rel.split("/")
-        if (not rel.endswith(".md") or rel == "AGENTS.md"
-                or any(d in SPILL_SKIP_DIRS or d.startswith(".") for d in parts[:-1])):
+        if not rel.endswith(".md"):
             continue
-        raw = (root / rel).read_bytes()
-        text = raw.decode("utf-8", errors="replace")
-        if (new := len(raw)) <= SPILL_BYTES or doc.include_in(text) or doc.mirrored_corpus(text):
+        text = (root / rel).read_bytes().decode("utf-8", errors="replace")
+        new = doc.on_demand_doc_bytes(rel, text, doc.hard_loaded(rel, text, kind), render)
+        if new is None or new <= limit:
             continue
-        prev = subprocess.run(["git", "-C", str(root), "cat-file", "-s", f"{base}:{origins.get(rel, rel)}"],
-                              capture_output=True, text=True)
-        old = int(prev.stdout) if prev.returncode == 0 else None
-        if old is not None and old > SPILL_BYTES:
+        prev = subprocess.run(["git", "-C", str(root), "show", f"{base}:{origins.get(rel, rel)}"],
+                              capture_output=True)
+        old = len(render(rel, prev.stdout.decode("utf-8", errors="replace")).encode("utf-8")) \
+            if prev.returncode == 0 else None
+        if old is not None and old > limit:
             continue
         out.append(bs.Finding("hygiene", f"doc-spill: {old if old is not None else 'new'}→{new} bytes; a "
-                              f"bash read past {SPILL_BYTES} shows only a 2000+1000-char preview: split into "
+                              f"bash read past {limit} shows only a 2000+1000-char preview: split into "
                               "a lean core + detail file linked by an \"Open X for Y\" line", path=rel))
     return out
 
@@ -198,22 +200,35 @@ def _glob_re(glob: str) -> re.Pattern[str]:
     return re.compile(out + r"\Z")
 
 
-def _projection(root: Path) -> tuple[set[str], list[re.Pattern[str]]] | None:
-    """(declared placeholder keys, templated-glob matchers) from projection.yaml, or None."""
+def _projection_spec(root: Path) -> dict | None:
+    """projection.yaml as `{placeholders: {key: {default}}, templated_globs: [...]}` by a line scan
+    (this gate runs without PyYAML): flow (`key: { default: "x" }`) and block `default:` values."""
     spec = root / "projection.yaml"
     if not spec.is_file():
         return None
-    keys: set[str] = set()
+    placeholders: dict[str, dict[str, str]] = {}
     globs: list[str] = []
-    section = None
+    section = key = None
     for line in spec.read_text("utf-8", errors="replace").splitlines():
         if top := re.match(r"^([A-Za-z_]+):", line):
             section = top.group(1)
         elif section == "placeholders" and (m := re.match(r"^  ([A-Za-z0-9_.]+):", line)):
-            keys.add(m.group(1))
+            key = m.group(1)
+            placeholders[key] = {}
         elif section == "templated_globs" and (m := re.match(r"^\s*-\s*[\"']?([^\"'#]+?)[\"']?\s*(#.*)?$", line)):
             globs.append(m.group(1))
-    return keys, [_glob_re(g) for g in globs or DEFAULT_TEMPLATED_GLOBS]
+        if section == "placeholders" and key and (d := DEFAULT_VALUE_RE.search(line)):
+            value = d.group(1).strip()
+            placeholders[key]["default"] = value[1:-1] if value[:1] in "\"'" and value[-1:] == value[:1] else value
+    return {"placeholders": placeholders, "templated_globs": globs}
+
+
+def _projection(root: Path) -> tuple[set[str], list[re.Pattern[str]]] | None:
+    """(declared placeholder keys, templated-glob matchers) from projection.yaml, or None."""
+    spec = _projection_spec(root)
+    if spec is None:
+        return None
+    return set(spec["placeholders"]), [_glob_re(g) for g in spec["templated_globs"] or DEFAULT_TEMPLATED_GLOBS]
 
 
 def _frontmatter_flag(text: str, key: str) -> bool:

@@ -20,10 +20,10 @@ def git(cwd, *args):
     subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
 
 
-def write(repo, version):
+def write(repo, version, header=""):
     s = repo / "skills" / "demo" / "scripts"
     s.mkdir(parents=True, exist_ok=True)
-    (s / "demo.py").write_text(SCRIPT.replace("{v}", version))
+    (s / "demo.py").write_text(header + SCRIPT.replace("{v}", version))
     (repo / "scripts").mkdir(exist_ok=True)
     shutil.copy(KIT_FRESH, repo / "scripts" / "kit_fresh.py")
 
@@ -80,3 +80,15 @@ def test_offline_warns_and_runs_installed(tmp_path):
     git(clone, "remote", "set-url", "origin", str(tmp_path / "gone.git"))
     out, err = run(clone, tmp_path)
     assert "VERSION old" in out and "could not check origin/main" in err
+
+
+def test_changed_dependency_header_runs_main_in_its_own_uv_env(tmp_path):
+    """The installed copy's interpreter lacks a dependency main's header adds; `uv run --script` builds it."""
+    dev, clone = setup(tmp_path)
+    write(dev, "dep", '# /// script\n# requires-python = ">=3.10"\n# dependencies = []\n# ///\n'
+          'print("PREFIX", __import__("sys").prefix)\n')
+    git(dev, "commit", "-qam", "header")
+    git(dev, "push", "-q", "origin", "main")
+    out, err = run(clone, tmp_path)
+    assert "VERSION dep ['--x']" in out, err
+    assert f"PREFIX {sys.prefix}\n" not in out

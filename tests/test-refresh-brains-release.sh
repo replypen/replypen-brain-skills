@@ -70,7 +70,7 @@ git -C "$CHECKOUT" switch -q main
 # The publish sync carries the skills test gate; the fixture releases below skip it (no full kit here).
 RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump \
   --dry-run "$TMP/not-a-brain" >"$TMP/dry.out" 2>&1
-grep -q -- "--verify-command ./scripts/test-skills.sh" "$TMP/dry.out"
+grep -q -- "--verify-command RP_TEST_MERMAID=1 ./scripts/test-skills.sh" "$TMP/dry.out"
 # A detached main-lineage worktree uses the same publisher; no shared branch switch is needed.
 DETACHED="$TMP/detached"
 git -C "$CHECKOUT" worktree add -q --detach "$DETACHED" HEAD

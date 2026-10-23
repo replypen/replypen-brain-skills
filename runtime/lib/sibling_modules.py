@@ -18,6 +18,7 @@ Registered by ``brain_test.py`` via ``-p lib.sibling_modules``.
 from __future__ import annotations
 
 import sys
+from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 
@@ -26,25 +27,38 @@ import pytest
 _OWN = pytest.StashKey[dict[Path, dict[str, ModuleType]]]()
 
 
-def _homes(test_file: Path) -> list[Path]:
+# Resolved per path, once per session: these run before every test (a 2000-test brain paid ~5 s for
+# re-globbing the same dirs and re-resolving the same sys.path entries).
+def _resolve(path: str) -> Path:
+    return _resolve_abs(path) if Path(path).is_absolute() else Path(path).resolve()  # relative: cwd moves
+
+
+@lru_cache(maxsize=None)
+def _resolve_abs(path: str) -> Path:
+    return Path(path).resolve()
+
+
+@lru_cache(maxsize=None)
+def _homes(test_file: Path) -> tuple[Path, ...]:
     """The test's own dirs, nearest first: its dir, plus the action dir above a `tests/` dir."""
     here = test_file.resolve().parent
-    return [here, here.parent] if here.name == "tests" else [here]
+    return (here, here.parent) if here.name == "tests" else (here,)
 
 
-def _siblings(test_file: Path) -> dict[str, set[Path]]:
+@lru_cache(maxsize=None)
+def _siblings(test_file: Path) -> dict[str, frozenset[Path]]:
     """stem -> the test's own files with that name (a stem may exist both in `tests/` and above it)."""
     out: dict[str, set[Path]] = {}
     for home in _homes(test_file):
         for py in home.glob("*.py"):
             if py.stem != "conftest" and not py.stem.startswith(("test_", "__")):
                 out.setdefault(py.stem, set()).add(py.resolve())
-    return out
+    return {stem: frozenset(paths) for stem, paths in out.items()}
 
 
 def _origin(mod: ModuleType | None) -> Path | None:
     origin = getattr(mod, "__file__", None)
-    return Path(origin).resolve() if origin else None
+    return _resolve(origin) if origin else None
 
 
 def evict_foreign_siblings(test_file: Path, root: Path) -> list[str]:
@@ -72,7 +86,7 @@ def restore_siblings(test_file: Path, root: Path, own: dict[str, ModuleType]) ->
     evict_foreign_siblings(test_file, root)
     sys.modules.update(own)
     homes = set(_homes(test_file))
-    mine = [p for p in sys.path if p and Path(p).resolve() in homes]  # keeps the test's own order
+    mine = [p for p in sys.path if p and _resolve(p) in homes]  # keeps the test's own order
     sys.path[:] = [*mine, *(p for p in sys.path if p not in mine)]
 
 

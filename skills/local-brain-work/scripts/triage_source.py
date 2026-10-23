@@ -20,16 +20,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
-FRONT_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.S)
-INLINE_RE = re.compile(r"^include_in:\s*\[([^\]]*)\]", re.M)
-BLOCK_RE = re.compile(r"^include_in:\s*\n((?:\s+-\s*\S+\s*\n?)+)", re.M)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from brain_hygiene import load_brain_doc  # noqa: E402  the kit's host-faithful `include_in` reader
 
 
 def _marker(root: Path) -> dict:
@@ -43,29 +41,18 @@ def _marker(root: Path) -> dict:
     return {}
 
 
-def _include_in(text: str) -> list[str]:
-    m = FRONT_RE.match(text)
-    if not m:
-        return []
-    front = m.group(1) + "\n"
-    if hit := INLINE_RE.search(front):
-        return [t.strip().strip("'\"") for t in hit.group(1).split(",") if t.strip()]
-    if hit := BLOCK_RE.search(front):
-        return [ln.strip()[1:].strip().strip("'\"") for ln in hit.group(1).splitlines() if ln.strip()]
-    return []
-
-
 def triage_docs(root: Path) -> list[str]:
     """Tracked .md files tagged `include_in: [triage]` (the host's selection, before ignore rules)."""
     tracked = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", "*.md"],
                              capture_output=True, text=True).stdout.split("\0")
+    doc = load_brain_doc()
     out = []
-    for rel in filter(None, tracked):
+    for rel in filter(None, tracked if doc else []):
         try:
             text = (root / rel).read_text("utf-8", errors="replace")
         except OSError:
             continue
-        if "triage" in _include_in(text):
+        if "triage" in doc.include_in(text):
             out.append(rel)
     return sorted(out)
 

@@ -20,6 +20,7 @@ context is not refreshed; only the code is.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -87,4 +88,16 @@ def ensure(script: str) -> None:
     print(f"kit: {path.name} runs from origin/main {main[:8]} (installed {here} is behind; "
           f"RP_KIT_FRESH=0 runs the installed copy)", file=sys.stderr)
     target = snap / path.relative_to(root)
-    os.execve(sys.executable, [sys.executable, str(target), *sys.argv[1:]], {**os.environ, "RP_KIT_FRESH": main})
+    env = {**os.environ, "RP_KIT_FRESH": main}
+    # This interpreter's environment was built from the INSTALLED script's dependency header; main's
+    # may add a package (ModuleNotFoundError), so a changed header gets its own `uv run --script` env.
+    uv = shutil.which("uv")
+    if uv and _script_header(target) != _script_header(path):
+        os.execve(uv, [uv, "run", "--script", str(target), *sys.argv[1:]], env)
+    os.execve(sys.executable, [sys.executable, str(target), *sys.argv[1:]], env)
+
+
+def _script_header(path: Path) -> str:
+    """The PEP 723 `# /// script` block (the inline dependency header `uv run` builds the env from)."""
+    match = re.search(r"(?ms)^# /// script\s*$(.*?)^# ///\s*$", path.read_text("utf-8", errors="replace"))
+    return match.group(1) if match else ""

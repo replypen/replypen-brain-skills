@@ -42,3 +42,15 @@ def test_pytest_flags_pass_through_in_order(tmp_path: Path, monkeypatch) -> None
     assert brain_test.main(["--brain", str(tmp_path), "-k", "refund and not slow", "-x"]) == 0
     assert seen["dirs"] == ["skills"]
     assert seen["args"][-3:] == ["-k", "refund and not slow", "-x"]
+
+
+def test_a_named_test_file_is_collected_alone(tmp_path: Path, monkeypatch) -> None:
+    _touch(tmp_path / "skills" / "a" / "SKILL.md")
+    _touch(tmp_path / "actions" / "refund" / "tests" / "test_preflight.py")
+    target = str(tmp_path / "actions" / "refund" / "tests" / "test_preflight.py")
+    seen = {}
+    monkeypatch.setattr(brain_test.E, "discover_mirrors", lambda *a: {})
+    monkeypatch.setattr(brain_test, "_run_uv", lambda brain, dirs, m, live, args, *rest: seen.update(dirs=dirs, args=args) or 0)
+    assert brain_test.main(["--brain", str(tmp_path), f"{target}::test_x", "-x"]) == 0
+    assert seen["dirs"] == []
+    assert seen["args"][-4:] == ["--rootdir", str(tmp_path), f"{target}::test_x", "-x"]

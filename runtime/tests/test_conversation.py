@@ -53,6 +53,9 @@ class ConversationFile(unittest.TestCase):
             conversation.messages(_write('{"type": "manifest"}\nnot json\n'))
         with self.assertRaises(conversation.ConversationUnavailable):
             conversation.messages(_write([{"type": "message", "role": "mailbox", "body": "x"}]))  # no manifest
+        with self.assertRaises(conversation.ConversationUnavailable):
+            conversation.last_outbound(_write([{**MANIFEST, "schema": "rootcause.conversation.v2"},
+                                               {"type": "message", "role": "mailbox", "body": "x"}]))
 
     def test_strip_quoted_handles_gt_lines_and_outlook_separator(self):
         self.assertEqual(conversation.strip_quoted("Nieuw\n> oud\nnog nieuw"), "Nieuw\nnog nieuw")
@@ -75,6 +78,15 @@ class EuroAmounts(unittest.TestCase):
     def test_whole_token_or_nothing(self):
         self.assertEqual(conversation.euro_amounts("€1,234.50 en € 1.234 en €1,23"), [123450, 123400, 123])
         self.assertEqual(conversation.euro_amounts("€1,2345"), [])  # never a numeric prefix
+
+    def test_space_groups_thousands(self):
+        self.assertEqual(conversation.euro_amounts("€ 1 234,50"), [123450])
+        self.assertEqual(conversation.euro_amounts("€1 250"), [125000])
+        self.assertEqual(conversation.euro_amounts("1 250 € en 1\u202f250 €"), [125000, 125000])
+
+    def test_space_never_joins_numbers_across_words(self):
+        self.assertEqual(conversation.euro_amounts("op 12 maart 2026 €50, €50 op 12 maart, €40 12 keer"),
+                         [5000, 5000, 4000])
 
     def test_plain_numbers_dates_and_phone_tokens_are_not_amounts(self):
         self.assertEqual(conversation.euro_amounts("3 keer, 20/10/2026, +32 472 24 10 18, 170"), [])

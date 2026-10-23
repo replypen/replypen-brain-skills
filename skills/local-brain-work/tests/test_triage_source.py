@@ -34,6 +34,15 @@ def test_block_list_frontmatter_counts(tmp_path: Path, policies: dict) -> None:
     assert "rules/skip.md" in triage_source.check(root)[0]
 
 
+def test_reads_include_in_like_the_host(tmp_path: Path, policies: dict) -> None:
+    """Zero-indent and bare values, comments and a closing fence at EOF count; `-triage` is no item."""
+    docs = {"zero.md": "---\ninclude_in:\n- triage\n---\n", "bare.md": "---\ninclude_in: triage\n---\n",
+            "comment.md": "---\ninclude_in:\n  # gate\n  - triage # skip rules\n---\n",
+            "eof.md": "---\ninclude_in: [triage]\n---", "dash.md": "---\ninclude_in:\n  -triage\n---\n"}
+    root = make_brain(tmp_path / "b", {".replypen.toml": 'project = "p"\n', **docs})
+    assert triage_source.triage_docs(root) == ["bare.md", "comment.md", "eof.md", "zero.md"]
+
+
 def test_one_source_per_scope_is_quiet(tmp_path: Path, policies: dict) -> None:
     root = make_brain(tmp_path / "b", {".replypen.toml": 'project = "p"\n', "triage.md": DOC})
     policies["acme"] = "tenant-only rule"  # another scope: not compared

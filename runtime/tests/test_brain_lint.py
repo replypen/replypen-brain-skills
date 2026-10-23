@@ -518,22 +518,26 @@ def test_lint_brain_warns_when_agent_total_cap_cuts_later_docs(tmp_path: Path) -
 
 
 def test_lint_brain_limits_on_demand_docs_at_the_spill_cliff(tmp_path: Path) -> None:
-    """Whole-file bytes as `cat` prints them: FAIL past 6000, WARN past 5000; AGENTS.md keeps its
-    16 KB advisory; tagged, journal/tests/docs and kit dot-dirs are not on-demand reads."""
+    """Whole-file bytes as `cat` prints them: FAIL past 6000, WARN past 5000 only for named paths
+    (`near_cliff`; a whole-tree run repeats it for docs nobody touches); AGENTS.md keeps its 16 KB
+    advisory; tagged, journal/tests/docs and dot-dirs (kit installs, .github) are not on-demand reads."""
     _seed_brain(tmp_path)
     _write(tmp_path / "AGENTS.md", _doc("", 17))
     _write(tmp_path / "playbooks/big.md", "x" * 6001)
     _write(tmp_path / "playbooks/near.md", "x" * 5001)
     _write(tmp_path / "playbooks/ok.md", "x" * 5000)
     _write(tmp_path / "playbooks/front.md", _doc("", 5000 / 1024))  # frontmatter pushes it past 5000
-    for rel in ("journal/2026-10-19.md", "skills/x/tests/fixture.md", "docs/dev.md", ".agents/skills/kit/SKILL.md"):
+    for rel in ("journal/2026-10-19.md", "skills/x/tests/fixture.md", "docs/dev.md", ".agents/skills/kit/SKILL.md",
+                ".github/pull_request_template.md"):
         _write(tmp_path / rel, "x" * 9000)
 
-    findings = {f.path: f for f in lint_brain(tmp_path) if f.rule == "doc-size"}
+    findings = {f.path: f for f in lint_brain(tmp_path, near_cliff=True) if f.rule == "doc-size"}
 
     assert {p: f.level for p, f in findings.items()} == {
         "AGENTS.md": "WARN", "playbooks/big.md": "FAIL", "playbooks/near.md": "WARN", "playbooks/front.md": "WARN"}
     assert "6001 bytes, over the 6000-byte bash spill limit" in findings["playbooks/big.md"].message
+    whole_tree = {f.path: f.level for f in lint_brain(tmp_path) if f.rule == "doc-size"}
+    assert whole_tree == {"AGENTS.md": "WARN", "playbooks/big.md": "FAIL"}
 
 
 def test_doc_size_measures_a_templated_doc_at_its_longest_render(tmp_path: Path) -> None:
@@ -814,6 +818,21 @@ def test_match_glob_follows_host_path_match() -> None:
     assert match_glob("skills/[ab].md", "skills/a.md") and not match_glob("skills/[^ab].md", "skills/a.md")
     assert match_glob("**/*.md", "AGENTS.md") and match_glob("skills/**/*.md", "skills/x/y/z.md")
     assert not match_glob("skills/*.md", "skills/x/y.md") and match_glob(r"skills/\*.md", "skills/*.md")
+
+
+def test_unconstructible_yaml_dates_stay_file_scoped(tmp_path: Path) -> None:
+    """PyYAML raises ValueError (not YAMLError) building an impossible timestamp; one such file must not
+    abort the whole lint. yaml.v3 keeps `2026-02-30` a string; an hour of 25 is that file's parse failure."""
+    date = "messages:\n  - {id: m1, date: 2026-02-30T08:10:00Z}\n"
+    _write(tmp_path / "notes/date.md", f"---\ndescription: Open when a refund fails\n{date}---\nx\n")
+    _write(tmp_path / "notes/hour.md", "---\ndescription: Open when\nat: 2026-02-28T25:00:00Z\n---\nx\n")
+    _write(tmp_path / "notes/bad.md", "---\ninclude_in: [agents]\n---\nx\n")
+
+    found = {p: [(f.rule, f.level) for f in fs] for p, fs in _fm(tmp_path, "brain").items()}
+
+    assert "notes/date.md" not in found
+    assert found["notes/hour.md"] == [("frontmatter-unread", "WARN")]
+    assert found["notes/bad.md"] == [("include-in-value", "FAIL")]
 
 
 def test_invalid_yaml_frontmatter_fails_only_when_the_fallback_drops_the_description(tmp_path: Path) -> None:

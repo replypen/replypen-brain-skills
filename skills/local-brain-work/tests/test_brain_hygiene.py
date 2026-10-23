@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -75,6 +76,10 @@ def test_clean_brain_passes(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("rule", sorted(FIXTURES))
 def test_each_failure_is_rejected(tmp_path: Path, rule: str) -> None:
+    if rule == "mermaid" and not os.environ.get("RP_TEST_MERMAID"):
+        # A ~16 s mermaid-cli cold start; the release gate sets it. The fast lane keeps the message contract
+        # in test_mermaid_renderer_failure_names_the_install_command.
+        pytest.skip("RP_TEST_MERMAID=1 renders a real diagram")
     root = make_brain(tmp_path, FIXTURES[rule])
     findings = brain_hygiene.check(root)
     if rule == "mermaid" and brain_hygiene._mermaid_renderer() is None:
@@ -209,6 +214,27 @@ def test_doc_spill_silent_when_already_over_tagged_or_exempt(tmp_path: Path) -> 
                          "AGENTS.md": "x" * 7000})
     assert run.returncode == 0, run.stdout
     assert "doc-spill" not in run.stdout
+
+
+def test_doc_spill_measures_what_the_publish_lint_measures(tmp_path: Path) -> None:
+    """One measure with lint `doc-size`: a templated doc at its longest render (5900 raw bytes, a long
+    default fills it past 6000), and a `[triage]` tag a tenant overlay's triage never reads."""
+    projection = ("placeholders:\n  name: { type: string, default: \"" + "n" * 300 + "\" }\n"
+                  "  sig:\n    type: string\n    default: '" + "s" * 300 + "'\n")
+    root = make_brain(tmp_path / "brain", {"projection.yaml": projection, "skills/cases/a.md": "x" * 10})
+    (root / "skills/cases/a.md").write_text("x" * 5880 + "{{ name }}{{ sig }}", "utf-8")
+    git(root, "add", "-A")
+    spills = [f.message for f in brain_hygiene.check(root, None, "HEAD") if f.message.startswith("doc-spill")]
+    assert spills == ["doc-spill: 10→6480 bytes; a bash read past 6000 shows only a 2000+1000-char preview: "
+                      "split into a lean core + detail file linked by an \"Open X for Y\" line"]
+
+    tenant = make_brain(tmp_path / "tenant", {".replypen.toml": "project = \"p\"\ntenant = \"t\"\n"})
+    (tenant / "skills/cases").mkdir(parents=True)
+    (tenant / "skills/cases/rule.md").write_text("---\ninclude_in: [triage]\n---\n" + "x" * 6000, "utf-8")
+    (tenant / "skills/cases/agent.md").write_text("---\ninclude_in: [agent]\n---\n" + "x" * 6000, "utf-8")
+    git(tenant, "add", "-A")
+    assert [f.path for f in brain_hygiene.check(tenant, None, "HEAD")
+            if f.message.startswith("doc-spill")] == ["skills/cases/rule.md"]
 
 
 def test_doc_spill_follows_renames(tmp_path: Path) -> None:

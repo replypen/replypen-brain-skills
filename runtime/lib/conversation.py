@@ -14,7 +14,7 @@ only check the model against itself.
 **Unavailable is not "nothing said".** The file exists only inside a run's workspace (and a mid-loop
 preflight there); it is absent in a hosted action container at execution time and in a bare
 `rp dev console`. A missing or unparseable file raises `ConversationUnavailable`, so a caller can never
-mistake it for "staff promised nothing".
+mistake it for "staff promised nothing". So does another schema version than `SCHEMA`.
 
     from lib import conversation
     try:
@@ -36,6 +36,7 @@ from typing import Any
 
 DEFAULT_PATH = "/tmp/rc-conversation.jsonl"
 ENV_VAR = "RC_CONVERSATION_PATH"
+SCHEMA = "rootcause.conversation.v1"  # host `conversationInputSchema`
 
 
 class ConversationUnavailable(RuntimeError):
@@ -67,6 +68,9 @@ def messages(path: str | None = None) -> list[dict[str, Any]]:
         rows.append(row)
     if not rows or rows[0].get("type") != "manifest":
         raise ConversationUnavailable(f"{target}: no manifest row")
+    # Another schema may rename the `role`s read here: unreadable, never "staff said nothing".
+    if rows[0].get("schema") != SCHEMA:
+        raise ConversationUnavailable(f"{target}: schema {rows[0].get('schema')!r}, expected {SCHEMA!r}")
     return [row for row in rows if row.get("type") == "message"]
 
 
@@ -107,19 +111,21 @@ def last_outbound(path: str | None = None) -> dict[str, Any] | None:
     return None
 
 
-# "€75", "€ 1.234,50", "€1,234.50", "75 euro", "75,00 EUR", "€75,-", "75€". The whole numeric token
-# is captured (never a prefix: "€1,234.50" must not read as €1,23); `_cents` takes a trailing 1-2 digit
-# group as the decimals and every other separator as thousands grouping.
-_NUM = r"\d{1,3}(?:[.,\u00a0]\d{3})+(?:[.,]\d{1,2}|,-)?|\d+(?:[.,]\d{1,2}|,-)?"
+# "€75", "€ 1.234,50", "€1,234.50", "75 euro", "75,00 EUR", "€75,-", "75€", "1 250 €". The whole numeric
+# token is captured (never a prefix: "€1,234.50" must not read as €1,23); `_cents` takes a trailing 1-2
+# digit group as the decimals and every other separator as thousands grouping. A space (plain, NBSP or
+# Outlook's narrow U+202F) groups only exactly 3 digits, so "€50 op 12 maart" stays €50.
+_NUM = r"\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+(?:[.,]\d{1,2}|,-)?|\d+(?:[.,]\d{1,2}|,-)?"
 _END = r"(?![.,]?\d)"
+# A trailing sign that a number follows ("2026 €50") prefixes that number instead.
 _EURO = re.compile(
-    rf"(?:€|\bEUR\b)\s?(?P<a>{_NUM}){_END}|(?<![\d.,])(?P<b>{_NUM}){_END}\s?(?:€|\beuros?\b|\bEUR\b)",
+    rf"(?:€|\bEUR\b)\s?(?P<a>{_NUM}){_END}|(?<![\d.,])(?P<b>{_NUM}){_END}\s?(?:€|\beuros?\b|\bEUR\b)(?!\s?\d)",
     re.I,
 )
 
 
 def _cents(raw: str) -> int | None:
-    match = re.fullmatch(r"(?P<whole>\d[\d.,\u00a0]*?)(?:[.,](?P<fraction>\d{1,2}))?", raw.removesuffix(",-"))
+    match = re.fullmatch(r"(?P<whole>\d[\d.,\u00a0\u202f ]*?)(?:[.,](?P<fraction>\d{1,2}))?", raw.removesuffix(",-"))
     if not match:
         return None
     return int(re.sub(r"\D", "", match["whole"])) * 100 + int(((match["fraction"] or "") + "00")[:2])

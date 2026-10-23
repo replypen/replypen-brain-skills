@@ -253,6 +253,15 @@ def test_fixture_outcome_and_identity_stop(tmp_path, monkeypatch):
     assert all(c["ok"] for c in sim.result_record(case, "main", stopped, 1, ["rp"])["checks"])
 
 
+def test_failed_decline_lookup_fails_the_check(tmp_path, monkeypatch):
+    case = acquire_fixture(tmp_path, dict(FIXTURE_CASE, expect={"decline_kind": "none"}))
+    monkeypatch.setattr(sim.subprocess, "run", lambda *a, **k: sim.subprocess.CompletedProcess(a, 1, "", "boom"))
+    assert sim.reply_decline("run-1", None) is None
+    failed = {c["check"]: c["detail"] for c in sim.result_record(case, "main", FIXTURE_PAYLOAD, 1, ["rp"])["checks"]
+              if not c["ok"]}
+    assert failed == {"decline_kind none": "unavailable: `rp run events` failed, so the decline is unknown"}
+
+
 def test_fixture_outcome_is_validated(tmp_path):
     bad = dict(FIXTURE_CASE, expect={"outcome": "maybe", "decline_kind": "unresolved"})
     path = tmp_path / "bad.json"

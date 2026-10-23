@@ -114,8 +114,10 @@ def main(argv: list[str] | None = None) -> int:
               "(lint a tenant overlay or mirror with --as tenant|mirror)", file=sys.stderr)
         return 1
 
-    findings = lint_brain(brain, kind)  # run-hidden paths are already filtered in the core
-    if args.paths and not args.all:
+    scoped = bool(args.paths) and not args.all
+    # run-hidden paths are already filtered in the core; the near-cliff doc-size WARN is for named paths
+    findings = lint_brain(brain, kind, near_cliff=scoped)
+    if scoped:
         selected = _select(args.paths, brain)
         dirs = tuple(p for p in selected if p.endswith("/"))
         # Some rules append `:<line>` to the path they report; scope on the file part.

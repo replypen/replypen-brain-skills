@@ -457,7 +457,10 @@ def fixture_checks(case: dict[str, Any], record: dict[str, Any]) -> list[dict[st
             "decline" if record.get("outcome") == "declined" else record.get("outcome") or "?")
         checks.append({"check": f"outcome {expect['outcome']}", "ok": placed == expect["outcome"],
                        "detail": "" if placed == expect["outcome"] else f"got {placed}"})
-    if expect.get("decline_kind"):
+    if expect.get("decline_kind") and record.get("decline_unavailable"):
+        checks.append({"check": f"decline_kind {expect['decline_kind']}", "ok": False,
+                       "detail": "unavailable: `rp run events` failed, so the decline is unknown"})
+    elif expect.get("decline_kind"):
         got = record.get("decline_kind") or "none"
         checks.append({"check": f"decline_kind {expect['decline_kind']}", "ok": got == expect["decline_kind"],
                        "detail": "" if got == expect["decline_kind"] else
@@ -796,25 +799,34 @@ def result_record(case: dict[str, Any], ref: str, payload: dict[str, Any], attem
         "error": error, "command": elide_command(command), "ran_at": now_iso(),
     }
     if (case.get("expect") or {}).get("decline_kind") and record["run_id"]:
-        record["decline_kind"], record["decline_reason"] = reply_decline(record["run_id"], case.get("tenant"))
+        decline = reply_decline(record["run_id"], case.get("tenant"))
+        record["decline_unavailable"] = decline is None
+        record["decline_kind"], record["decline_reason"] = decline or ("", "")
     record["checks"] = fixture_checks(case, record)
     return record
 
 
-def reply_decline(run_id: str, tenant: str | None) -> tuple[str, str]:
-    """The identity stop's category lives on the run's `reply` event, not on the `rp ask` payload."""
+def reply_decline(run_id: str, tenant: str | None) -> tuple[str, str] | None:
+    """The identity stop's category lives on the run's `reply` event, not on the `rp ask` payload.
+    None when the events could not be read: a failed lookup is not "no decline"."""
     command = [_cli(), "run", "events", run_id, "-o", "json", "--raw-output"]
     if tenant:
         command += ["--tenant", tenant]
     try:
-        text = subprocess.run(command, capture_output=True, text=True, timeout=120).stdout.strip()
+        done = subprocess.run(command, capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired):
-        return "", ""
+        return None
+    text = done.stdout.strip()
+    if done.returncode != 0 or not text:
+        return None
     try:
         data = json.loads(text)
         events = data if isinstance(data, list) else data.get("events") or []
     except json.JSONDecodeError:  # JSON lines
-        events = [json.loads(line) for line in text.splitlines() if line.strip().startswith("{")]
+        try:
+            events = [json.loads(line) for line in text.splitlines() if line.strip().startswith("{")]
+        except json.JSONDecodeError:
+            return None
     for event in reversed(events):
         if event.get("tool") == "reply" and isinstance(event.get("args"), dict):
             return event["args"].get("decline_kind") or "", event["args"].get("decline_reason") or ""

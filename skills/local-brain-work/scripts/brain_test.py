@@ -46,6 +46,12 @@ def test_dirs(brain_dir: Path) -> list[str]:
     return ["skills", *found] if (brain_dir / "skills").is_dir() else found
 
 
+def named_test_files(pytest_args: list[str]) -> bool:
+    """True when the passthrough args name an existing test file (`path.py` or `path.py::test`)."""
+    return any(not a.startswith("-") and (f := a.split("::", 1)[0]).endswith(".py") and Path(f).is_file()
+               for a in pytest_args)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="brain_test.py", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -81,13 +87,17 @@ def main(argv: list[str] | None = None) -> int:
 
     live = args.live or args.require_live
     marker = "live" if live else "not live"
+    if args.mode == "uv" and named_test_files(args.pytest_args):
+        # `brain_test.py actions/x/tests/test_preflight.py`: collect only that, not every dir plus it (and
+        # skip the whole-brain import smoke + lint item); --rootdir keeps the brain-root conftest.py.
+        dirs, args.pytest_args = [], ["--rootdir", str(brain_dir), *args.pytest_args]
     # The adapter injects one offline lint item and prints one compact end-of-tier report.
     # --import-mode=importlib: brains keep one `tests/test_preflight.py` per action dir with no
     # `__init__.py`, so rootdir-based import would collide on the shared basename (audit 2026-09-05);
     # `lib.sibling_modules` does the same for their bare `import preflight` / `import script`.
     # A brain-root conftest.py (e.g. a `pii_columns` override) reaches every collected dir; rootdir
     # becomes the brain root as soon as a second dir is collected.
-    print(f"collecting: {' '.join(d + '/' for d in dirs)}", file=sys.stderr)
+    print(f"collecting: {' '.join(d + '/' for d in dirs) or 'the named test files'}", file=sys.stderr)
     pytest_args = ["-p", "lib.livecheck", "-p", "lib.brain_lint_pytest", "-p", "lib.mirror_skip",
                    "-p", "lib.pii_pytest", "-p", "lib.sibling_modules", "--import-mode=importlib", "-m", marker, "-q", *args.pytest_args]
     if args.require_live:
@@ -126,7 +136,7 @@ def _run_uv(brain_dir: Path, dirs: list[str], mirrors: dict[str, Path], live: bo
     if not E.preflight_lib_db(child, extra_with=["pytest"]):
         return 1
     print(f"[uv mode] {E.UV_MODE_CAVEATS}", file=sys.stderr)
-    if dirs[0] == "skills":  # import smoke covers skills/ scripts; an actions-only brain has none
+    if dirs and dirs[0] == "skills":  # import smoke covers skills/ scripts; an actions-only brain has none
         smoke = subprocess.run(
             [*E.uv_base_cmd(extra_with=["pytest"]), "python", "-m", "lib.import_smoke", str(brain_dir)],
             env=child,

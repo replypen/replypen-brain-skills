@@ -229,7 +229,7 @@ if [ -n "$RELEASE" ]; then
   # SKIP_TESTS=1 only for a release whose tree another gate already proved (the plumbing test does).
   TEST_GATE=()
   if [ "${SKIP_TESTS:-}" != 1 ]; then
-    TEST_GATE+=(--verify-command ./scripts/test-skills.sh)
+    TEST_GATE+=(--verify-command 'RP_TEST_MERMAID=1 ./scripts/test-skills.sh')  # + the slow real-mermaid test
     [ "$RUNTIME_CHANGED" = 1 ] && TEST_GATE+=(--verify-command \
       "cd runtime && PYTHONPATH=\$PWD uv run --with '.[test]' --no-project pytest tests -q -p no:cacheprovider")
   fi
