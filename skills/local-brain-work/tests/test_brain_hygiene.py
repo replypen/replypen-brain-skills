@@ -252,6 +252,16 @@ def test_doc_spill_decodes_yaml_escapes_like_the_publish_lint(tmp_path: Path, mo
     assert not [f for f in brain_hygiene.check(root, None, "HEAD") if f.message.startswith("doc-spill")]
 
 
+def test_unconstructible_projection_default_does_not_abort_the_gate(tmp_path: Path) -> None:
+    """A default PyYAML cannot build (2026-02-30, hour 25) falls back to the line scan, never crashes the whole gate."""
+    projection = "placeholders:\n  day:\n    default: 2026-02-30\n  at:\n    default: 2026-10-23T25:00:00\n"
+    root = make_brain(tmp_path / "brain", {"projection.yaml": projection, "skills/cases/a.md": "x" * 10})
+    assert set(brain_hygiene._projection_spec(root)["placeholders"]) == {"day", "at"}
+    (root / "skills/cases/a.md").write_text("y" * 20, "utf-8")
+    git(root, "add", "-A")
+    assert not [f for f in brain_hygiene.check(root, None, "HEAD") if f.message.startswith("doc-spill")]
+
+
 def test_doc_spill_follows_renames(tmp_path: Path) -> None:
     """Moving an unchanged legacy 7000-byte doc is not a new crossing."""
     root = make_brain(tmp_path, {"skills/cases/legacy.md": "x" * 7000})

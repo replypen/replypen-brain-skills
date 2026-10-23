@@ -481,7 +481,7 @@ def _projection_renderer(root: Path, kind: str) -> Callable[[str, str], str]:
     """`brain_doc.projection_renderer` over a project brain's projection.yaml (overlays copy verbatim)."""
     try:
         spec = yaml.safe_load((root / "projection.yaml").read_text("utf-8")) if kind == "brain" else None
-    except (OSError, yaml.YAMLError):
+    except (OSError, yaml.YAMLError, ValueError):  # ValueError: an unconstructible timestamp default
         spec = None
     return projection_renderer(spec)
 

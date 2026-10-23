@@ -231,7 +231,7 @@ def _projection_spec(root: Path) -> dict | None:
     if yaml is not None:
         try:
             data = yaml.safe_load(text)
-        except yaml.YAMLError:
+        except (yaml.YAMLError, ValueError):  # ValueError: a timestamp PyYAML cannot construct (2026-02-30)
             data = None  # malformed: the line scan below still names its placeholders
         if isinstance(data, dict) and isinstance(data.get("placeholders") or {}, dict):
             return {"placeholders": data.get("placeholders") or {}, "templated_globs": data.get("templated_globs") or []}
