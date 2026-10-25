@@ -623,6 +623,10 @@ class Kickstart:
         want = {"git_url": f"https://github.com/{self.full_name}.git", "role": "website",
                 "live_url": self.live_url, "preview_url_template": self.preview_template,
                 "deploy_check": DEPLOY_CHECK}
+        # Bot check on by default: ReplyPen refuses form posts without a verified Turnstile token, but only
+        # once the site renders the widget (a filled turnstile_sitekey), else its form would break.
+        if self.has_turnstile_sitekey():
+            want["form_challenge"] = "turnstile"
         try:
             repos = json.loads(self.run(scope + ["project", "repo", "ls", "-o", "json"]) or "[]")
         except (StepFailed, json.JSONDecodeError) as err:
@@ -650,6 +654,13 @@ class Kickstart:
             else:
                 self.run(c)
         return f"mirror {name} {verb if not self.a.dry_run else 'would be ' + verb}; refreshed @ {sha[:12]}"
+
+    def has_turnstile_sitekey(self):
+        """Does the site render the bot-check widget? A clone failure fails the step (never a silent off)."""
+        if self.a.dry_run and not self._checkout:
+            return True  # plan as the template ships; a dry run clones nothing
+        site = yaml.safe_load((self.checkout() / "_data" / "site.yml").read_text()) or {}
+        return bool(str(site.get("turnstile_sitekey") or "").strip())
 
     # ---- 6. screenshots -------------------------------------------------------------------------
 

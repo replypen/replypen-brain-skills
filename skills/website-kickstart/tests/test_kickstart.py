@@ -27,7 +27,8 @@ ACC = ks.DEFAULT_ACCOUNT
 TEMPLATE_FILES = {
     "wrangler.jsonc": '{ "name": "__WORKER_NAME__", "previews": {} }\n',
     "package.json": '{ "name": "__WORKER_NAME__" }\n',
-    "_data/site.yml": 'name: "__SITE_NAME__"\ncontact_form_action: "https://app.replypen.com/forms/__PROJECT__/__TENANT__"\n',
+    "_data/site.yml": 'name: "__SITE_NAME__"\ncontact_form_action: "https://app.replypen.com/forms/__PROJECT__/__TENANT__"\n'
+                      'turnstile_sitekey: "0x4AAAAtest"\n',
 }
 TOKENS = {"CF_SITES_USER_TOKEN": "cf", "GH_SITE_PROVISIONING_PAT": "pat", "CF_BROWSER_RENDERING_TOKEN": "br"}
 
@@ -279,10 +280,32 @@ class KickstartTest(unittest.TestCase):
         rc_add = next(w[2] for w in writes if w[1] == "rp repo add")
         self.assertIn("preview_url_template=https://{branch}-site-test.rootcause-sites.workers.dev", rc_add)
         self.assertIn("deploy_check=Workers Builds", rc_add)
+        self.assertIn("form_challenge=turnstile", rc_add)  # bot check on: the template renders the widget
         self.assertTrue((Path(self.tmp.name) / "test-mobile.png").exists())
         self.assertEqual(len(json.loads((Path(self.tmp.name) / "test-triggers.json").read_text())), 2)
         self.assertIn("✓ screenshots", out)
         self.assertIn("Pas op de website", out)
+
+    def test_no_sitekey_no_bot_check(self):
+        """A template without a filled sitekey shows no widget, so the mirror must not demand a token."""
+        TEMPLATE_FILES["_data/site.yml"], orig = TEMPLATE_FILES["_data/site.yml"].replace('"0x4AAAAtest"', '""'), TEMPLATE_FILES["_data/site.yml"]
+        self.addCleanup(TEMPLATE_FILES.__setitem__, "_data/site.yml", orig)
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("form_challenge=turnstile", next(w[2] for w in writes if w[1] == "rp repo add"))
+
+    def test_sitekey_read_as_yaml(self):
+        """Unquoted or single-quoted keys render the widget too, so they must switch the check on."""
+        for line in ("turnstile_sitekey: 0x4AAAAtest\n", "turnstile_sitekey: '0x4AAAAtest'\n"):
+            with self.subTest(line=line):
+                self.setUp()
+                orig = TEMPLATE_FILES["_data/site.yml"]
+                TEMPLATE_FILES["_data/site.yml"] = orig.replace('turnstile_sitekey: "0x4AAAAtest"\n', line)
+                self.addCleanup(TEMPLATE_FILES.__setitem__, "_data/site.yml", orig)
+                code, out, writes = self.kick()
+                TEMPLATE_FILES["_data/site.yml"] = orig
+                self.assertEqual(code, 0, out)
+                self.assertIn("form_challenge=turnstile", next(w[2] for w in writes if w[1] == "rp repo add"))
 
     def test_project_scope_site_has_no_tenant(self):
         """No --tenant ⇒ the project's own site: form posts to /forms/<project>, mirror at project scope."""
