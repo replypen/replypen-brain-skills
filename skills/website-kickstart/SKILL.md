@@ -65,6 +65,9 @@ runbook (DentAI: `dentai/.agents/skills/practice-websites/SKILL.md`), then
 **Before the DNS switch:** `scripts/turnstile_domain.sh <apex>` (wrangler login of info@b4bit.be). Skip it and the
 widget won't render on the new domain: the form can't be sent at all. `*.rootcause-sites.workers.dev` is covered already.
 Adopting an older site without the widget: sitekey + markup deployed first, then `form_challenge=turnstile`, never reversed.
+Both apex and `www` as Worker custom domains serve 200: add one zone **Single Redirect** for the non-canonical host
+(`PUT /zones/<id>/rulesets/phases/http_request_dynamic_redirect/entrypoint`, `concat("https://www.<domain>", http.request.uri.path)`,
+301, `preserve_query_string`). `CF_SITES_USER_TOKEN` has Dynamic URL Redirects Write (since 2026-10-25); no other operator token does.
 
 **Throwaway:** `--teardown site-<slug>` removes the rp mirror, Cloudflare triggers + connection + Worker,
 App access, then renames the repo to `site-<slug>-teardown-<ts>` and archives it (our tokens lack
