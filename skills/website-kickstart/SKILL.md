@@ -7,7 +7,11 @@ description: Provision a new chat-editable public website for a tenant in one de
 
 **Intent:** a new tenant website costs one command and no dashboard clicks; the practice then edits it
 through ReplyPen chat (replypen `features/website-editing.md`). Every step reads live state first, so a
-rerun after a failure continues where it stopped. Operator laptop only (Cloudflare + GitHub admin creds).
+rerun after a failure continues where it stopped.
+
+**North star: no site goes live with an unguarded contact form.** Every form is bot-checked by default
+(Cloudflare Turnstile, one fleet widget, verified by ReplyPen before any mail goes out); the only human step
+is adding a custom domain to the widget. Contract and limits: replypen `.agents/skills/features/website-forms.md`. Operator laptop only (Cloudflare + GitHub admin creds).
 
 ```bash
 KS=~/code/replypen/replypen-brain-skills/skills/website-kickstart/scripts/kickstart_site.py
@@ -33,7 +37,7 @@ summary (repo, URLs, worker tag, trigger uuids, `--out` files: `<slug>-triggers.
 | worker | first `bash build.sh && wrangler@4 deploy` creates the Worker | Builds triggers need its `tag` |
 | workers builds | repo connection upsert, the account's build token, 2 triggers | prod `main` → `npx wrangler@4 deploy`; preview `*` minus `main` → `npx wrangler@4 preview`; `bash build.sh`, build cache on. Drift is PATCHed |
 | first build | `POST /builds/triggers/{prod}/builds`, poll, GitHub check-run `Workers Builds: <worker>`, live 200 + name | failed build → logs saved to `--out` |
-| ReplyPen mirror | `rp project repo add name=site role=website live_url preview_url_template deploy_check="Workers Builds"` + `dev mirror refresh --expect-sha` | `--mirror-name` if the tenant has another `site` |
+| ReplyPen mirror | `rp project repo add name=site role=website live_url preview_url_template deploy_check="Workers Builds" form_challenge=turnstile` + `dev mirror refresh --expect-sha` | `--mirror-name` if the tenant has another `site`. `form_challenge` only when the site's `_data/site.yml` has a `turnstile_sitekey` (template default), so the server never demands a token the page can't produce |
 | screenshots | Browser Rendering, 390 px + 1280 px full page | 429 = free-tier rate limit, retried |
 
 **Ownership (never touch someone else's site).** A Worker counts as ours when its Workers Builds
@@ -58,6 +62,9 @@ Cloudflare account than Rootcause Sites? A route proxy Worker on that zone (same
 (the chat agent gets it pasted; what belongs there: [docs/website-context.md](../../docs/website-context.md)); domain/DNS move → the project's site
 runbook (DentAI: `dentai/.agents/skills/practice-websites/SKILL.md`), then
 `rp … project repo set site live_url=https://www.<domain>` and `url:` in `_data/site.yml`.
+**Before the DNS switch:** `scripts/turnstile_domain.sh <apex>` (wrangler login of info@b4bit.be). Skip it and the
+widget won't render on the new domain: the form can't be sent at all. `*.rootcause-sites.workers.dev` is covered already.
+Adopting an older site without the widget: sitekey + markup deployed first, then `form_challenge=turnstile`, never reversed.
 
 **Throwaway:** `--teardown site-<slug>` removes the rp mirror, Cloudflare triggers + connection + Worker,
 App access, then renames the repo to `site-<slug>-teardown-<ts>` and archives it (our tokens lack
