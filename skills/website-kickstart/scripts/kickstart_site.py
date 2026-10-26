@@ -281,6 +281,8 @@ class Kickstart:
                 raise StepFailed(f"wrangler.jsonc name is {m.group(1) if m else 'missing'!r}, "
                                  f"expected {self.worker!r} (pass --worker-name)")
             note = "" if '"previews"' in wrangler else ' (add "previews": {} to wrangler.jsonc for branch previews)'
+            if self.file_text(".agents/skills/website-dev/SKILL.md") is None:
+                note += " (no coding-agent skill: install website-dev, see docs/website-context.md)"
             detail = f"adopted {self.full_name}{note}"
         elif "__WORKER_NAME__" in wrangler or "__TENANT__" in (self.file_text("_data/site.yml") or ""):
             if self.a.dry_run:

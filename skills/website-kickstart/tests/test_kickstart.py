@@ -442,6 +442,7 @@ class KickstartTest(unittest.TestCase):
         self.assertIn("--adopt", out)
         code, out, _ = self.kick("--adopt")
         self.assertEqual(code, 0, out)
+        self.assertIn("install website-dev", out)  # fake repo has no .agents/skills/website-dev
 
     def test_subprocess_env_carries_no_operator_secrets(self):
         import os
