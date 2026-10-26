@@ -7,10 +7,10 @@
 # Because both install identical versioned bytes, "tested locally" provably equals "runs in prod".
 #
 # Pin by tag, never float `main` — a push would silently break clients' green local tests.
-#   uv add "replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.14.11#subdirectory=runtime"
+#   uv add "replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.14.12#subdirectory=runtime"
 [project]
 name = "replypen-runtime"
-version = "0.14.11"
+version = "0.14.12"
 description = "Read-only grounding helpers (db, stripe, cloudwatch, fs, http, html, livecheck) that a ReplyPen brain's scripts import."
 requires-python = ">=3.11"
 
