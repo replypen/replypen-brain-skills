@@ -32,6 +32,7 @@ INVALID = {
     "bad-bool": "bool",
     "headers-list": "map[string]string",
     "impossible-date": "RFC 3339",
+    "archive-with-process": "expect.archive",
 }
 
 

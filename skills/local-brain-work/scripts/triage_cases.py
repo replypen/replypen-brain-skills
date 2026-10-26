@@ -45,6 +45,7 @@ RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{
 
 TOP_KEYS = {"id", "subject", "status", "expect", "why", "tags", "channel", "follow_up_from", "messages"}
 EXPECT_KEYS = {"process", "needs_action", "needs_patient_text"}
+EXPECT_OPTIONAL = {"archive"}  # inbox-cleaning verdict, scored where channel.archive_auto_acks is on
 MESSAGE_KEYS = {"id", "direction", "from", "to", "date", "html", "spam", "headers", "attachments"}
 
 
@@ -182,12 +183,14 @@ def parse_case(rel: str, raw: bytes) -> dict:
     if exp is not None and not isinstance(exp, dict):
         raise CaseError("expect: must be a mapping")
     exp = exp or {}
-    _unknown("expect", exp, EXPECT_KEYS)
+    _unknown("expect", exp, EXPECT_KEYS | EXPECT_OPTIONAL)
     vals = {k: _bool(f"expect.{k}", exp.get(k)) for k in EXPECT_KEYS}
     if any(v is None for v in vals.values()):
         raise CaseError("expect needs process, needs_action and needs_patient_text (true|false)")
     if vals["process"] != (vals["needs_action"] or vals["needs_patient_text"]):
         raise CaseError("expect.process must be true exactly when needs_action or needs_patient_text is true")
+    if exp.get("archive") is not None and _bool("expect.archive", exp.get("archive")) and vals["process"]:
+        raise CaseError("expect.archive can only be true when process is false")
     if not _str("why", data.get("why")).strip():
         raise CaseError("why is required: the human rationale behind the expected outcome")
     channel = _str("channel", data.get("channel"))
