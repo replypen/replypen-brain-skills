@@ -13,6 +13,7 @@ to prepare a support request.
 rp ask "<customer-style question>"
 rp ask "<direct investigation>" --scenario raw
 rp ask "<q>" --brain-ref dev/<branch>
+rp ask "<q>" --tenant <slug> --tenant-brain-ref dev/<branch>
 rp ask "<q>" --effort pro
 rp run show <id>
 rp run events <id>
@@ -189,6 +190,11 @@ request. Practices that keep proposed rules readable and safe:
 - `--brain-ref dev/<branch>` tests a pushed dev branch on production infrastructure without moving
   live refs. It creates a test run: no callback, no durable journal push, and proposals are test
   artifacts.
+- `--brain-ref` is always the PROJECT brain (`/brain`), even from a tenant checkout. A tenant brain
+  branch (`/tenant`, pushed to the tenant brain repo) needs `--tenant-brain-ref dev/<branch>`: same
+  test-run semantics, tenant-scoped runs only (`--tenant`, a tenant checkout, or a replayed tenant chat
+  turn). Combinable with `--brain-ref`, `--mirror-ref`, `--replay-chat-run`, `--simulation`. The trace
+  header shows `tenant_brain_ref` and `tenant_brain_resolved` (`<ref> @ <sha>`, what `/tenant` mounted).
 - `--effort pro|max` is an explicit stronger-tier retry.
 
 Use [docs/side-effects.md](side-effects.md) when reporting what a run did.

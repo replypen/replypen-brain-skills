@@ -558,7 +558,8 @@ alias cache) and `internal/brain/status.go` (`SourceStatus`).
 - Tenant-enabled shared project brains usually read a channel ref such as `stable` or `edge`, recorded
   in run trace as `brain_resolved`.
 - `rp ask --brain-ref dev/<branch>` tests a pushed dev ref on production infrastructure without moving
-  `main` or promoting a channel.
+  `main` or promoting a channel. It always targets the project brain; the tenant brain twin is
+  `--tenant-brain-ref dev/<branch>` (tenant-scoped runs; trace `tenant_brain_resolved`).
 - `rp dev brain publish --channel stable|edge --sha <exact-full-40-character-sha>` is the one-shot
   path (sync + promote + verify); `rp dev brain sync` / `promote` are the same steps taken separately.
   Only a project-level maintainer may move a shared project channel. `rp dev brain preflight` dry-runs

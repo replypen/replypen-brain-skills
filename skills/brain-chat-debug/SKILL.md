@@ -63,8 +63,9 @@ its proposed name in its absolute target directory. The user opens it to see whe
 
 ## 4. Edit on a dev ref
 
-Brain: `git push origin HEAD:refs/heads/dev/<branch>`. Mirror: the same in the mirror repo (a
-worktree on a shared checkout). Nothing moves `main`/`stable`.
+Brain: `git push origin HEAD:refs/heads/dev/<branch>`. Tenant brain (the fix belongs in `/tenant`):
+the same in the tenant brain repo. Mirror: the same in the mirror repo (a worktree on a shared
+checkout). Nothing moves `main`/`stable`.
 
 ## 5. Replay
 
@@ -82,6 +83,10 @@ uv run --no-project python "$CC" replay <session8> --turn N --brain-ref dev/<bra
   chat-equivalent (no persona, confidentiality floor, chat output contract, record links): judge
   facts, grounding and helper pickup, not prose; it can never close a privacy/rendering regression.
   `--mode raw --dry-scope` previews the principal scope without LLM spend.
+- **Tenant brain fix:** `rp ask --replay-chat-run <run> --tenant-brain-ref dev/<branch>` mounts the
+  candidate at `/tenant` (`--brain-ref` is always the project brain). Check the trace's
+  `tenant_brain_resolved` names your ref + SHA. Never copy tenant text into a project-brain branch to
+  test it: different mount, different precedence.
 - Baseline first when unsure whether the bad answer is flaky. Each replay costs a real LLM run.
 
 `replays/<ts>-<label>.md`: refs actually mounted (`override` = your mirror ref), **Expected check**
