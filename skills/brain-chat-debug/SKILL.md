@@ -53,7 +53,7 @@ Fix at the highest layer that generalizes; nothing lower papers over a higher-la
 | Wrong fact/query shared by all of the product's projects, helper missing or misleading | shared source mirror | its `skills/**` helper or doc ([brain-helper-devloop](../brain-helper-devloop/SKILL.md)) |
 | Audience-specific routing, case runbook, missing pointer for this brain | project brain | `AGENTS.md` routing line / `skills/cases/*` |
 | One tenant's genuinely local policy | tenant overlay / tenant settings | overlay repo or settings, not shared prose |
-| Tone, language, signature; process vs skip | persona / triage settings | `rp` settings, not brain prose |
+| Tone, language, signature; process vs skip | persona / triage settings | `rp` settings, not brain prose. Settings have no dev ref: when a persona line is read too broadly, scope it with a brain rule you can replay and propose the settings edit separately |
 | The customer's app computes or shows the wrong thing | the customer's app | report to its developers; the brain explains, never hides it |
 
 When the brain keeps a repository/settings map (e.g. under `_internal/`), route through it. Propose the smallest change, then stop unless the user asked to fix it. Name every
@@ -67,6 +67,10 @@ its proposed name in its absolute target directory, followed by the added text q
 Brain: `git push origin HEAD:refs/heads/dev/<branch>`. Tenant brain (the fix belongs in `/tenant`):
 the same in the tenant brain repo. Mirror: the same in the mirror repo (a worktree on a shared
 checkout). Nothing moves `main`/`stable`.
+
+A rule that states a count or carries a query: run that exact SQL on production first
+([prod-console](../prod-console/SKILL.md): `database schema` before `query`, tenant-scoped) and keep
+the numbers; the candidate replay must reproduce them.
 
 ## 5. Replay
 
@@ -91,6 +95,8 @@ Replays may run in parallel (each claims its own file); a failed run exits 1 wit
   `/tenant` (`--brain-ref` is always the project brain). The replay md's Refs show
   `tenant brain: <ref> @ <sha>`; check it names your ref. Never copy tenant text into a project-brain branch to
   test it: different mount, different precedence.
+- **Prior turns are text only**: a turn that builds on an earlier file asks for it again. Prove file
+  output (columns, rows) with a fresh `--prompt-override` question and read the code that wrote it.
 - Baseline first when unsure whether the bad answer is flaky. Each replay costs a real LLM run.
 
 `replays/<ts>-<label>.md`: refs actually mounted (`override` = your mirror ref), **Expected check**
@@ -114,3 +120,5 @@ It writes `questions-<tag>.tsv` and prints the [devloop](../brain-helper-devloop
 [brain-publish](../brain-publish/SKILL.md) for the brain; the mirror via `git_land.py … --also stable
 --refresh-mirror <mirror> --project <each consuming project>`. Then one replay without refs (or one
 live question) and confirm the published SHAs in its trace. Done means live.
+No second ask: once the user agreed with the change you showed (path + quoted text/diff) and the
+candidate replays pass, publish. Ask first only for scope beyond what they agreed on.
