@@ -83,6 +83,21 @@ def now_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def reserve_replay(replays: Path, stamp: str, label: str) -> tuple[str, Path]:
+    """Claim `<stamp>[-N]-<label>.json` atomically before the minutes-long run: parallel replays
+    started in the same second must never write the same file."""
+    replays.mkdir(parents=True, exist_ok=True)
+    for n in range(1, 1000):
+        unique = stamp if n == 1 else f"{stamp}-{n}"
+        path = replays / f"{unique}-{label}.json"
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return unique, path
+        except FileExistsError:
+            continue
+    raise ChatCaseError(f"no free replay file name for {stamp}-{label} in {replays}")
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -884,7 +899,8 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
         cmd += ["--effort", args.effort]
     cmd += ["--timeout", args.timeout]
     label = "dryscope" if args.dry_scope else ("candidate" if args.brain_ref or mirror_refs else "baseline")
-    stamp = now_stamp()
+    replays = case_dir / "replays"
+    stamp, path = reserve_replay(replays, now_stamp(), label)
     base = {"stamp": stamp, "label": label, "mode": mode, "note": args.note,
             "source": {"session_id": case["session_id"], "turn": turn["n"], "run_id": turn["run_id"]},
             "turn": turn["n"], "tenant": tenant if mode != "chat" else case.get("tenant"),
@@ -895,14 +911,14 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
             "brain_ref": args.brain_ref, "mirror_refs": mirror_refs,
             "limitations": limitations(mode, simulation), "composed_question": question,
             "command": [c if c != question else "<question>" for c in cmd]}
-    replays = case_dir / "replays"
+    write_json(path, base)  # claimed: a parallel replay picks the next free name
     payload = ctx.json(cmd, duration_seconds(args.timeout) + 120, tolerate_exit=not args.dry_scope)
     if args.dry_scope:
-        write_json(replays / f"{stamp}-dryscope.json", {**base, "rc": payload})
+        write_json(path, {**base, "rc": payload})
         scope_doc = payload.get("scope") or {}
         grants = scope_doc.get("table_grants") or {}
         print("\n".join([
-            f"dry-scope: {rel(ctx, replays / f'{stamp}-dryscope.json')}",
+            f"dry-scope: {rel(ctx, path)}",
             f"resolved {payload.get('resolved')} · kind {scope_doc.get('kind')} · resolution {scope_doc.get('resolution')}",
             f"assurance {scope_doc.get('assurance')} · table grants {'all' if grants.get('all') else len(grants)}",
             f"error: {payload.get('error') or '-'}"]))
@@ -913,12 +929,12 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
            "run_url": payload.get("run_url") or meta.get("run_url"),
            "answer": payload.get("answer_markdown") or payload.get("draft_markdown") or payload.get("answer") or "",
            "rc": payload, "evidence": None, "trace_md": None}
-    path = replays / f"{stamp}-{label}.json"
     write_json(path, rec)  # persist the run id before the trace fetch
     if run_id:
         try:
             md, jl = fetch_trace(ctx, run_id, run_id, case.get("project"), False)
             header, events = load_trace(jl)
+            rec["run_error"] = header.get("error")
             rec["evidence"] = summarise_trace(header, events, md.read_text(encoding="utf-8") if md.exists() else None)
             rec["trace_md"] = rel(ctx, md)
             rec["answer"] = rec["answer"] or rec["evidence"]["answer"]
@@ -938,9 +954,13 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
         f"commands {len(hist_ev.get('commands') or [])} → {len(new_ev.get('commands') or [])} · "
         f"files read {len(hist_ev.get('files_read') or [])} → {len(new_ev.get('files_read') or [])}",
         f"answer chars {len(turn.get('answer') or '')} → {len(rec['answer'])}",
-        f"baseline in md: {baseline['stamp'] if baseline else 'none'}",
-        "next: read the md, fill `verdict:` (pass / still wrong / partial)"]))
-    return 0 if run_id else 1
+        f"baseline in md: {baseline['stamp'] if baseline else 'none'}"]))
+    if rec["status"] in ("error", "failed") or not run_id:
+        error = rec.get("run_error") or payload.get("error") or "no run id"
+        print(f"run failed, nothing to judge: {flat(error if isinstance(error, str) else json.dumps(error), 400)}")
+        return 1
+    print("next: read the md, fill `verdict:` (pass / still wrong / partial)")
+    return 0
 
 
 # --- compare / widen --------------------------------------------------------------------------

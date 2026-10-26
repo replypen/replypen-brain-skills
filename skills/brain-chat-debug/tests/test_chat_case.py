@@ -171,7 +171,7 @@ if argv[:2] == ["ask", "--help"]:
     print("--mirror-ref" + (" --replay-chat-run" if data["chat"] else "")); sys.exit(0)
 if "ask" in argv:
     if "--dry-scope" in argv: out({"dry_scope": True, "resolved": True, "scope": {"kind": "acme_admin", "resolution": "tenant_wide", "table_grants": {"all": True}}})
-    out({"run_id": data["new_run"], "status": "done", "answer_markdown": "New answer.", "run_url": "https://app.example.test/runs/x?t=y"})
+    out({"run_id": data["new_run"], "status": data.get("ask_status", "done"), "answer_markdown": "New answer.", "run_url": "https://app.example.test/runs/x?t=y"})
 if "session" in argv and "run" in argv and "sessions" not in argv: out(data["session"])
 if "search" in argv:  # dates filter SESSION creation, date-only bounds inclusive (like rc)
     opt = lambda name: argv[argv.index(name) + 1][:10] if name in argv else None
@@ -368,3 +368,32 @@ def test_inherited_context_provenance():
            "evidence": cc.summarise_trace(header(NEW, on=("persona",)), events(), MD), "limitations": []}
     md = cc.render_replay_md(case, turn, rec, None)
     assert "not comparable (prompt decomposition unavailable)" in md and "off in this replay: chat_" not in md
+
+
+def test_replays_started_in_the_same_second_never_share_a_file(tmp_path, monkeypatch, capsys):
+    brain, _ = fake_env(tmp_path, monkeypatch, chat=True)
+    assert run(brain, "open", SESSION) == 0
+    monkeypatch.setattr(cc, "now_stamp", lambda: "20260101T100000Z")
+    assert run(brain, "replay", "11111111") == 0
+    assert run(brain, "replay", "11111111", "--brain-ref", "dev/fix") == 0
+    assert run(brain, "replay", "11111111", "--brain-ref", "dev/other") == 0
+    replays = brain / ".replypen/chatdebug/11111111/replays"
+    stems = sorted(p.stem for p in replays.glob("*.json"))
+    assert stems == ["20260101T100000Z-2-candidate", "20260101T100000Z-baseline", "20260101T100000Z-candidate"]
+    refs = {json.loads((replays / f"{s}.json").read_text())["brain_ref"] for s in stems}
+    assert refs == {None, "dev/fix", "dev/other"}
+
+
+def test_replay_run_error_exits_1_without_verdict_prompt(tmp_path, monkeypatch, capsys):
+    brain, _ = fake_env(tmp_path, monkeypatch, chat=True)
+    data_path = tmp_path / "data.json"
+    data = json.loads(data_path.read_text())
+    data["ask_status"] = "error"
+    data["traces"][NEW][0]["error"] = 'run: brain ref "dev/x" not found on origin'
+    data_path.write_text(json.dumps(data))
+    assert run(brain, "open", SESSION) == 0
+    capsys.readouterr()
+    assert run(brain, "replay", "11111111", "--brain-ref", "dev/x") == 1
+    out = capsys.readouterr().out
+    assert 'run failed, nothing to judge: run: brain ref "dev/x" not found on origin' in out
+    assert "fill `verdict:`" not in out
