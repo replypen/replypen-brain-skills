@@ -397,3 +397,15 @@ def test_replay_run_error_exits_1_without_verdict_prompt(tmp_path, monkeypatch, 
     out = capsys.readouterr().out
     assert 'run failed, nothing to judge: run: brain ref "dev/x" not found on origin' in out
     assert "fill `verdict:`" not in out
+
+
+def test_replay_tenant_brain_ref_is_a_candidate_and_forwarded(tmp_path, monkeypatch, capsys):
+    brain, log = fake_env(tmp_path, monkeypatch, chat=True)
+    assert run(brain, "open", SESSION) == 0
+    assert run(brain, "replay", "11111111", "--tenant-brain-ref", "dev/tenant-fix") == 0
+    ask = [c for c in calls(log, "ask") if "--help" not in c][-1]
+    assert ask[ask.index("--tenant-brain-ref") + 1] == "dev/tenant-fix" and "--brain-ref" not in ask
+    replays = brain / ".replypen/chatdebug/11111111/replays"
+    rec = json.loads(next(replays.glob("*-candidate.json")).read_text())
+    assert rec["tenant_brain_ref"] == "dev/tenant-fix" and rec["brain_ref"] is None
+    assert "tenant brain dev/tenant-fix" in next(replays.glob("*-candidate.md")).read_text()

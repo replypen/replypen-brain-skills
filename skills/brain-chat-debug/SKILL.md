@@ -59,7 +59,8 @@ Fix at the highest layer that generalizes; nothing lower papers over a higher-la
 When the brain keeps a repository/settings map (e.g. under `_internal/`), route through it. Propose the smallest change, then stop unless the user asked to fix it. Name every
 file the change touches as a clickable absolute-path link: an existing file as
 `[skills/cases/x.md](/abs/path/skills/cases/x.md:42)` (line of the anchor when known), a new file as
-its proposed name in its absolute target directory. The user opens it to see where the change lands.
+its proposed name in its absolute target directory, followed by the added text quoted (or a small
+`diff` block for a replaced line). The user sees the delta without opening git.
 
 ## 4. Edit on a dev ref
 
@@ -73,7 +74,10 @@ checkout). Nothing moves `main`/`stable`.
 uv run --no-project python "$CC" replay <session8> --turn N                    # baseline: today's live brain
 uv run --no-project python "$CC" replay <session8> --turn N --brain-ref dev/<branch> \
   --mirror-ref <repo>=dev/<branch>                                              # candidate
+uv run --no-project python "$CC" replay <session8> --turn N --tenant-brain-ref dev/<branch>  # tenant brain fix
 ```
+
+Replays may run in parallel (each claims its own file); a failed run exits 1 with its error.
 
 - **Chat-faithful first.** When `rp ask --help` lists `--replay-chat-run`, `replay` uses it: the
   stored chat turn with chat framing, prior turns (text only, no attachments) and the session's own
@@ -83,9 +87,9 @@ uv run --no-project python "$CC" replay <session8> --turn N --brain-ref dev/<bra
   chat-equivalent (no persona, confidentiality floor, chat output contract, record links): judge
   facts, grounding and helper pickup, not prose; it can never close a privacy/rendering regression.
   `--mode raw --dry-scope` previews the principal scope without LLM spend.
-- **Tenant brain fix:** `rp ask --replay-chat-run <run> --tenant-brain-ref dev/<branch>` mounts the
-  candidate at `/tenant` (`--brain-ref` is always the project brain). Check the trace's
-  `tenant_brain_resolved` names your ref + SHA. Never copy tenant text into a project-brain branch to
+- **Tenant brain fix:** `--tenant-brain-ref dev/<branch>` (rp ≥ 1.70) mounts the candidate at
+  `/tenant` (`--brain-ref` is always the project brain). The replay md's Refs show
+  `tenant brain: <ref> @ <sha>`; check it names your ref. Never copy tenant text into a project-brain branch to
   test it: different mount, different precedence.
 - Baseline first when unsure whether the bad answer is flaky. Each replay costs a real LLM run.
 

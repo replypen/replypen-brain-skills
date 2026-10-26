@@ -6,7 +6,7 @@
 
     chat_case.py open <share-url|run-url|viewer-url|session-id|run-id> [--expected TEXT | --expected-file F]
                       [--project P] [--tenant T] [--force]
-    chat_case.py replay <case-dir|session8> [--turn N] [--brain-ref dev/x] [--mirror-ref repo=ref]…
+    chat_case.py replay <case-dir|session8> [--turn N] [--brain-ref dev/x] [--tenant-brain-ref dev/x] [--mirror-ref repo=ref]…
                         [--mode auto|chat|raw|email] [--prompt-override TEXT] [--effort pro|max]
                         [--principal-kind K --principal-id ID] [--tenant T] [--timeout 10m]
                         [--no-simulation] [--dry-scope] [--note TEXT]
@@ -261,6 +261,7 @@ def summarise_trace(header: dict[str, Any], events: list[dict[str, Any]],
         "kind": header.get("kind"), "trigger": header.get("trigger"), "status": header.get("status"),
         "outcome": meta.get("outcome"), "iterations": meta.get("iterations"),
         "brain_ref": header.get("brain_ref"), "brain_resolved": header.get("brain_resolved"),
+        "tenant_brain_resolved": header.get("tenant_brain_resolved"),
         "mirrors": mirrors, "sources_captured": sources.get("captured", True) is not False,
         "sources_reason": sources.get("reason"), "sections_on": on, "sections_off": off,
         # Warm chat turns may reuse an earlier run's assembled context; the host resolves it into the
@@ -629,6 +630,8 @@ def refs_line(ev: dict[str, Any] | None) -> list[str]:
     if not ev:
         return ["- (no trace)"]
     out = [f"- brain: `{ev.get('brain_resolved') or ev.get('brain_ref') or '?'}`"]
+    if ev.get("tenant_brain_resolved"):
+        out.append(f"- tenant brain: `{ev['tenant_brain_resolved']}`")
     for m in ev.get("mirrors") or []:
         out.append(f"- mirror {m['name']}: {m.get('ref')} @ {m.get('sha')}" + (" · override" if m.get("override") else ""))
     if ev.get("context_origin") == "inherited":
@@ -764,7 +767,8 @@ def render_replay_md(case: dict[str, Any], turn: dict[str, Any], rec: dict[str, 
            " Privacy/rendering regressions (PII token rendering, record links) cannot be closed by it."), "",
            f"- case `{case['session_id'][:8]}` · source run `{turn.get('run_id')}` · mode {rec.get('mode')} · "
            f"tenant {rec.get('tenant') or '-'} · principal {rec.get('principal_label') or 'session own'}",
-           f"- candidate refs: brain {rec.get('brain_ref') or '(live channel)'}; mirrors "
+           f"- candidate refs: brain {rec.get('brain_ref') or '(live channel)'}; tenant brain "
+           f"{rec.get('tenant_brain_ref') or '(live main)'}; mirrors "
            f"{', '.join(rec.get('mirror_refs') or []) or '(live)'}",
            f"- trace: {rec.get('run_url') or '-'} · local `{rec.get('trace_md') or '-'}`"]
     if rec.get("note"):
@@ -893,12 +897,14 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
             cmd.append("--dry-scope")
     if args.brain_ref:
         cmd += ["--brain-ref", args.brain_ref]
+    if args.tenant_brain_ref:
+        cmd += ["--tenant-brain-ref", args.tenant_brain_ref]
     for ref in mirror_refs:
         cmd += ["--mirror-ref", ref]
     if args.effort:
         cmd += ["--effort", args.effort]
     cmd += ["--timeout", args.timeout]
-    label = "dryscope" if args.dry_scope else ("candidate" if args.brain_ref or mirror_refs else "baseline")
+    label = "dryscope" if args.dry_scope else ("candidate" if args.brain_ref or args.tenant_brain_ref or mirror_refs else "baseline")
     replays = case_dir / "replays"
     stamp, path = reserve_replay(replays, now_stamp(), label)
     base = {"stamp": stamp, "label": label, "mode": mode, "note": args.note,
@@ -908,7 +914,7 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
             "principal_label": f"{principal[0]}:{principal[1][:8]}" if principal else None,
             "deployed_refs": {"brain": (turn.get("evidence") or {}).get("brain_resolved"),
                               "mirrors": (turn.get("evidence") or {}).get("mirrors") or []},
-            "brain_ref": args.brain_ref, "mirror_refs": mirror_refs,
+            "brain_ref": args.brain_ref, "tenant_brain_ref": args.tenant_brain_ref, "mirror_refs": mirror_refs,
             "limitations": limitations(mode, simulation), "composed_question": question,
             "command": [c if c != question else "<question>" for c in cmd]}
     write_json(path, base)  # claimed: a parallel replay picks the next free name
@@ -949,7 +955,9 @@ def cmd_replay(args: argparse.Namespace, ctx: Ctx) -> int:
         f"replay: {rel(ctx, md_path)}",
         f"{label} · mode {mode} ({'chat-faithful' if mode == 'chat' else 'not chat-equivalent'}) · turn {turn['n']}",
         f"run {run_id or '-'} · status {rec['status']}" + (f" · trace error: {flat(rec.get('trace_error'), 120)}" if rec.get("trace_error") else ""),
-        f"brain {new_ev.get('brain_resolved') or '-'} · mirrors "
+        f"brain {new_ev.get('brain_resolved') or '-'}"
+        + (f" · tenant brain {new_ev['tenant_brain_resolved']}" if new_ev.get("tenant_brain_resolved") else "")
+        + " · mirrors "
         + (", ".join(f"{m['name']}@{m['sha']}{'*' if m.get('override') else ''}" for m in new_ev.get("mirrors") or []) or "-"),
         f"commands {len(hist_ev.get('commands') or [])} → {len(new_ev.get('commands') or [])} · "
         f"files read {len(hist_ev.get('files_read') or [])} → {len(new_ev.get('files_read') or [])}",
@@ -1027,7 +1035,8 @@ def build_parser() -> argparse.ArgumentParser:
     rp = sub.add_parser("replay", help="rerun one turn (chat-faithful when rc supports it) and write replay md")
     rp.add_argument("case", help="case dir or session8")
     rp.add_argument("--turn", type=int, help="turn number (default: last)")
-    rp.add_argument("--brain-ref", help="dev/<branch> of the brain (absent + no --mirror-ref = baseline)")
+    rp.add_argument("--brain-ref", help="dev/<branch> of the project brain (absent + no other ref = baseline)")
+    rp.add_argument("--tenant-brain-ref", help="dev/<branch> of the case tenant's own brain, mounted at /tenant (rp >= 1.70)")
     rp.add_argument("--mirror-ref", action="append", metavar="REPO=REF", help="mirror override, repeatable")
     rp.add_argument("--mode", choices=("auto", "chat", "raw", "email"), default="auto",
                     help="auto: chat (rp ask --replay-chat-run) when available, else raw")
