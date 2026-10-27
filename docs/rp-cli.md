@@ -196,9 +196,14 @@ request. Practices that keep proposed rules readable and safe:
 - `--brain-ref` is always the PROJECT brain (`/brain`), even from a tenant checkout. A tenant brain
   branch (`/tenant`, pushed to the tenant brain repo) needs `--tenant-brain-ref dev/<branch>`: same
   test-run semantics, tenant-scoped runs only (`--tenant`, a tenant checkout, or a replayed tenant chat
-  turn). Combinable with `--brain-ref`, `--mirror-ref`, `--replay-chat-run`, `--simulation`. The trace
+  turn). Combinable with `--brain-ref`, `--mirror-ref`, `--replay-run`, `--simulation`. The trace
   header shows `tenant_brain_ref` and `tenant_brain_resolved` (`<ref> @ <sha>`, what `/tenant` mounted).
 - `--effort pro|max` is an explicit stronger-tier retry.
+- `--replay-run <run id|link>` reruns a stored inbound email (or chat turn) exactly as it came in, as a
+  simulation: same tenant, mailbox contract (notes on/off), thread, triage, principal and PII seed, then
+  diffs draft and actions with the original. The proof for a brain fix on a real case:
+  `rp ask --replay-run <run> --brain-ref dev/<branch>`. Live data; no actions, no placement. Versus
+  `--simulation` (hand-written question) and `rp run retry` (real production rerun, places a draft).
 
 Use [docs/side-effects.md](side-effects.md) when reporting what a run did.
 

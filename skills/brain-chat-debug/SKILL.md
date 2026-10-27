@@ -83,6 +83,8 @@ uv run --no-project python "$CC" replay <session8> --turn N --tenant-brain-ref d
 
 Replays may run in parallel (each claims its own file); a failed run exits 1 with its error.
 
+- **Email sibling:** a bad inbound-email draft replays with `rp ask --replay-run <run id>` (same
+  simulation, real thread + PII seed, diffed against the original); not this skill.
 - **Chat-faithful first.** When `rp ask --help` lists `--replay-chat-run`, `replay` uses it: the
   stored chat turn with chat framing, prior turns (text only, no attachments) and the session's own
   principal, as a simulation test run. `--prompt-override` swaps the question text.

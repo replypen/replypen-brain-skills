@@ -26,6 +26,10 @@ score — not a failure. The report separates those from brain/persona gaps so t
 brain edit fixes and what needs a grounding request.
 
 > [!TIP]
+> **Proving a fix on ONE real failing run?** `rp ask --replay-run <run id> --brain-ref dev/<branch>`
+> reruns that exact stored email (thread, mailbox contract, PII seed) as a simulation and diffs it with the
+> original. This skill is for a *set* of cases.
+>
 > **Can't prove a fix on the real case?** Original thread scrubbed by retention, booking already
 > cancelled, nothing to act on: don't wait for the next real mail. Replay a [fixture case](#fixture-cases)
 > against a seeded dossier and get a verdict today.

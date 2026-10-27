@@ -59,6 +59,10 @@ validated a local brain change, finish through [`brain-publish`](../brain-publis
 
 ## Simulating a customer's follow-up reply
 
+**Mail already in? Replay it:** `rp ask --replay-run <run id> --brain-ref dev/<branch>` reruns it as a
+simulation (real thread, mailbox contract, PII seed; live data) and diffs it with the original. Hand-quote
+only a reply that never arrived.
+
 **`rp ask --session <id>` does not replay the earlier email or draft.** A reused session only warm-starts
 the new run with a digest of the prior turns' *command labels* ("ran: search_patient …; outcome:
 Draft+Note") — never the sender's words, the offered options, or the previous draft. Prompt-mode runs

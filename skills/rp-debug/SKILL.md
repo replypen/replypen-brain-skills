@@ -115,8 +115,9 @@ jq -r 'select(.seq>=4000000).args | .before, .after, .rejected_diff' "$F"  # dra
 
 Root cause or best hypothesis · trace/file evidence · the smallest proposed brain change, naming each
 file it creates or edits as a clickable absolute-path link (new file: its absolute target directory) ·
-a verification plan (usually `brain-ask --brain-ref dev/<branch>`) · the publish path
-(`brain-publish`).
+a verification plan: prove the fix on the failing run itself with `rp ask --replay-run <run id>
+--brain-ref dev/<branch>` (same thread, mailbox contract and PII seed as a simulation, diffed against
+the original; live data, so state changed since shows as changed) · the publish path (`brain-publish`).
 
 Edit files only when the user explicitly asks to implement. Then verify with `local-brain-work` /
 `brain-ask` and finish through `brain-publish`.
