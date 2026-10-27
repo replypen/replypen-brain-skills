@@ -122,6 +122,9 @@ rp project tenant profile get <slug>
 rp project tenant profile set <slug> key=value
 ```
 
+zsh does not word-split `P="--project acme"; rp $P …` (the flag arrives as one argument): write the
+flags literally, use an array (`P=(--project acme); rp $P …`) or set `RC_PROJECT=acme`.
+
 Unsupported project/tenant selectors fail locally instead of being silently ignored. Per-key
 `rp project env set/rm/reveal` only reaches a tenant env when the OAuth token itself is tenant-bound;
 `--tenant` does not retarget those writes.
@@ -408,6 +411,23 @@ result exits 3 unless explicitly allowed. For a deterministic
 script, use [`rp-script-wrapper`](../skills/rp-script-wrapper/SKILL.md): its `lib.rc_client` wrapper
 keeps column order/duplicates and turns CLI exit codes into typed exceptions. Fetch a previewed remote
 workspace artifact with `rp dev console file get <remote-path> --out <local-path>`.
+
+### Complete output
+
+An inline result can look complete when it is not, and a caller diffing against it reads the missing
+rows as deleted:
+
+- **Truncated:** inline queries cap at 500 rows (`--limit`, max 5000), set `"truncated": true` and
+  exit 3 unless `--allow-truncated`. Treat it as fatal; use `--all` for a complete result.
+- **Spilled:** a large payload (`database query` or `bash run`) is replaced on stdout by
+  `{"spilled": true, "path": ".replypen/output/<cmd>-<id>/response.json", "preview": …}` with **no
+  `rows` key** (verified 2026-10-27). Read `path`, or pass `--raw-output` to get the full payload on
+  stdout. Never parse the preview.
+- Cross-check any parsed row count against a separate `count(*)` before acting on "what still exists".
+
+Exit codes: 0 ok, 1 usage/input, 2 OAuth/authz, 3 truncated inline query, 4 remote bash non-zero or
+timeout, 5 server/network or incomplete stream. A script treats every non-zero as failure and rejects
+partial stdout. In-container `lib.db.query` uses `%s` placeholders, not `--param`'s `@name`.
 
 Use `rp dev console bash run` for workspace files and mounted context:
 

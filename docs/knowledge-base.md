@@ -137,6 +137,7 @@ set for in-app "where to click" guidance ([`brain-ui-targets`](../skills/brain-u
 
 ## Quoting Notes
 
-`rp dev console bash run` takes one command string. For complex Python snippets, use a quoted heredoc as shown. If
+`rp dev console bash run` takes one command string. For complex Python snippets, use a quoted heredoc as shown
+(stdin reaches the remote interpreter; re-verified 2026-10-27). If
 the local shell says `unmatched "` or similar, the command did not reach ReplyPen; reduce quoting or
 turn repeated logic into a committed brain script.

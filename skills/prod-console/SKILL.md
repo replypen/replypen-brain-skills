@@ -39,10 +39,20 @@ investigations, and customer-style simulations.
    Query failing on a column name → stop and read `schema --table`, do not keep guessing.
    Bind values with repeated `--param`, never string interpolation. Analysis over more than a
    preview belongs in a local script over a complete `--all` export —
-   [`rp-script-wrapper`](../rp-script-wrapper/SKILL.md).
+   [`rp-script-wrapper`](../rp-script-wrapper/SKILL.md). An inline result can be truncated or
+   spilled without failing: read [complete output](../../docs/rp-cli.md#complete-output) before
+   treating a result as "what exists". Reads run under a statement timeout: a full scan of a huge
+   table dies instead of returning, so stay on an indexed prefix or sample a few ids (no
+   `count(*)` previews over the biggest prod tables).
 4. **Workspace files.** `rp dev console bash run` is the exec plane; prefer a cataloged script
    (`bash list`) over raw bash. Logs are reached through the same plane
-   (`python -m lib.cloudwatch …`), not a separate verb. `/kb` holds synced knowledge-base articles,
+   (`python -m lib.cloudwatch …`), not a separate verb. Ad-hoc Python goes in a quoted heredoc,
+   `bash run "python - <<'PY' … PY"`; `from lib import …` works from any cwd (verified 2026-10-27,
+   older notes claiming stdin is dropped are stale). A command gets ~120 s by default
+   (`--timeout N`): start slow remote jobs (Logs Insights queries) together, then poll, and chunk long
+   ranges. Large stdout spills to `.replypen/output/…/response.json` (`"spilled": true`): check
+   that before concluding a run printed nothing. A diagnostic that recurs becomes a cataloged script
+   ([`brain-helper-devloop`](../brain-helper-devloop/SKILL.md)). `/kb` holds synced knowledge-base articles,
    `/brain/knowledge` the brain's own — filters in
    [docs/knowledge-base.md](../../docs/knowledge-base.md).
    Bash stdout is capped at ~64 KiB; a truncated result ends with the exact
@@ -63,15 +73,26 @@ investigations, and customer-style simulations.
 
 ## Side effects — the two that are not read-only
 
-**SQL writes.** `--write` uses the project's sealed write-plane DSN and COMMITs (scope
-`console:db:write`; project-level only — a tenant-bound request is refused). Discipline, because
+**SQL writes.** `--write` uses the project's sealed write-plane DSN (`<X>_WRITE_DSN` in
+`.env.action`; its Postgres grants are the ceiling) and COMMITs (scope `console:db:write`, which an
+empty-scope admin login inherits; project-level only — a read-only `console:db` token or a
+tenant-bound request is refused). Only some databases have a write DSN: `capabilities` /
+`database list` report `writable`; check rather than trust a list. Elsewhere `--write` fails
+`NO_WRITE_PLANE` and there is no `rp` workaround: get the statement reviewed, rehearse it on staging,
+and hand it to whoever holds a direct path. Raw SQL bypasses the app (validations, callbacks,
+soft-delete): anything business-shaped or recurring belongs in an action. Discipline, because
 there is no undo:
 
-1. rehearse with `--write --dry-run` and a `RETURNING` list covering the key and every changed
-   column (`RETURNING *` for deletes, so the removed row can be archived);
-2. stop on any unexpected affected-row count;
-3. rerun the identical statement without `--dry-run` — the two runs are separate executions, so
+1. read the row first and know the revert statement; one statement per call, `where` on a verified id;
+2. rehearse with `--write --dry-run` and a `RETURNING` list covering the key and every changed
+   column (`RETURNING *` for deletes, so the removed row can be archived). Dry-run fires real
+   constraints and triggers on the same DSN, then rolls back; it does not undo sequence bumps or
+   anything outside the database;
+3. stop on any unexpected affected-row count;
+4. rerun the identical statement without `--dry-run` — the two runs are separate executions, so
    confirm the count still matches.
+
+Every write is audited server-side as `db.write` with the raw SQL; rehearsals carry `dry_run:true`.
 
 **`action run`.** See step 5 and [docs/actions.md](../../docs/actions.md).
 

@@ -64,9 +64,12 @@ Those are two different steps — `ls` lists the DSNs the project has *configure
 manifest, or PII columns), not the sealed env keys. `rp project database --help` (rp >= 1.18.1) states
 the same convention.
 
-Naming is load-bearing: `<PROJECT>_<DBKEY>_DSN`. `<DBKEY>` lowercased is the short name brain scripts
-pass to `lib.db` (`ACME_BILLING_DSN` -> `lib.db.query(..., db="billing")`) and the `name` column of
-`rp dev console database list`.
+Naming is load-bearing: `<PROJECT>_<DBKEY>_DSN`. The short name brain scripts pass to `lib.db`
+(`ACME_BILLING_DSN` -> `lib.db.query(..., db="billing")`) and the `name` column of
+`rp dev console database list` is the **last underscore segment** before `_DSN`, lowercased
+(`ShortDBName` in the host). So `ACME_SCHEDULER_ALL_DSN` is `all`, and two keys sharing a short name
+make every run and console query refuse with `DB_AMBIGUOUS` until one is removed. Keep `<DBKEY>`
+one segment: `ACME_SCHEDULERALL_DSN`, not `ACME_SCHEDULER_ALL_DSN`.
 
 Prerequisites, both on the customer side:
 
@@ -119,7 +122,10 @@ rp project env reveal FOO_API_TOKEN
 ```
 
 `keys`, `pull`, `diff`, `set`, and `rm` do not print values. `reveal` intentionally prints one live
-secret value for copy/pipe use and is audited by key name.
+secret value for copy/pipe use and is audited by key name. Never reveal into an agent transcript. Piped,
+`reveal` switches to JSON (`{"secret": "…"}`): feed it only into `rp project env set` (parse
+`["secret"]`) or a hash, and print booleans or hashes, never a masked substring. A regex mask written
+for a bare `postgresql://` line missed the JSON wrapper, echoed a whole DSN and forced a rotation.
 
 ## Tenant And Action Planes
 
