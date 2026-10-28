@@ -152,8 +152,9 @@ pipeline as above, three extra fields:
 
 Decision fixtures (should the brain answer at all?) add `"outcome": "draft" | "decline"` and
 `"decline_kind": "identity_unresolved" | "identity_ambiguous" | "identity_lookup_unavailable" | "none"`
-(`none` = no identity stop; an ordinary decline still passes). The kind is read from the run's `reply`
-event. That pins "needs no existing record → draft", "courtesy close → plain decline" and "unknown
+(`none` = no identity stop; an ordinary decline still passes; `a|b` accepts either: a simulation turns an
+auto lookup action into a proposal, so a stop after a live lookup reads `identity_lookup_unavailable`).
+The kind is read from the run's `reply` event. That pins "needs no existing record → draft", "courtesy close → plain decline" and "unknown
 person, record required → identity stop" apart.
 
 Regexes are case-insensitive. `actions: []` asserts *no* proposal. Action params are hash-only on the

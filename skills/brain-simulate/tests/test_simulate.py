@@ -251,6 +251,9 @@ def test_fixture_outcome_and_identity_stop(tmp_path, monkeypatch):
 
     case["expect"] = {"outcome": "decline", "decline_kind": "identity_unresolved"}
     assert all(c["ok"] for c in sim.result_record(case, "main", stopped, 1, ["rp"])["checks"])
+    case["expect"] = {"outcome": "decline", "decline_kind": "identity_lookup_unavailable|identity_unresolved"}
+    assert all(c["ok"] for c in sim.result_record(case, "main", stopped, 1, ["rp"])["checks"])
+    assert sim.expect_problems({"decline_kind": "identity_unresolved|maybe"})
 
 
 def test_failed_decline_lookup_fails_the_check(tmp_path, monkeypatch):

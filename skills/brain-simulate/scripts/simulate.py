@@ -78,7 +78,8 @@ DURATION_RE = re.compile(r"^(\d+)\s*([smh]?)$")
 # Fixture-case `expect` keys: regex lists over the draft/note, plus expected action proposals.
 EXPECT_TEXT_KEYS = ("draft_matches", "draft_forbids", "note_matches", "note_forbids")
 # `outcome`: draft (a draft was placed) | decline (nothing placed). `decline_kind`: the identity stop's
-# category, or "none" (no identity stop: a decline, if any, is an ordinary one).
+# category, or "none" (no identity stop: a decline, if any, is an ordinary one); "a|b" accepts either
+# (a simulation turns an auto lookup action into a proposal, so a live-lookup stop reads "unavailable").
 EXPECT_OUTCOMES = ("draft", "decline")
 IDENTITY_KINDS = ("identity_unresolved", "identity_ambiguous", "identity_lookup_unavailable")
 
@@ -415,7 +416,8 @@ def expect_problems(expect: Any) -> list[str]:
                 if key not in (*EXPECT_TEXT_KEYS, "actions", "only_listed_actions", "outcome", "decline_kind")]
     if "outcome" in expect and expect["outcome"] not in EXPECT_OUTCOMES:
         problems.append(f"outcome must be one of {'/'.join(EXPECT_OUTCOMES)}")
-    if "decline_kind" in expect and expect["decline_kind"] not in (*IDENTITY_KINDS, "none"):
+    if "decline_kind" in expect and not (isinstance(expect["decline_kind"], str) and set(
+            expect["decline_kind"].split("|")) <= {*IDENTITY_KINDS, "none"}):
         problems.append(f"decline_kind must be one of {'/'.join(IDENTITY_KINDS)}/none")
     patterns: list[Any] = []
     for key in EXPECT_TEXT_KEYS:
@@ -462,8 +464,9 @@ def fixture_checks(case: dict[str, Any], record: dict[str, Any]) -> list[dict[st
                        "detail": "unavailable: `rp run events` failed, so the decline is unknown"})
     elif expect.get("decline_kind"):
         got = record.get("decline_kind") or "none"
-        checks.append({"check": f"decline_kind {expect['decline_kind']}", "ok": got == expect["decline_kind"],
-                       "detail": "" if got == expect["decline_kind"] else
+        ok = got in expect["decline_kind"].split("|")
+        checks.append({"check": f"decline_kind {expect['decline_kind']}", "ok": ok,
+                       "detail": "" if ok else
                        f"got {got}: {preview(record.get('decline_reason') or '', 160)}"})
     proposed = list(record.get("proposed_actions") or [])
     for want in expect.get("actions") or []:
