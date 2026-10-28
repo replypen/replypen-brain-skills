@@ -169,15 +169,16 @@ class Kickstart:
         print(f"    (dry-run) would {what}", flush=True)
 
     def gh_token(self):
+        return self.gh_pat or self.gh_login_token()
+
+    def gh_login_token(self):
         if self._gh_token is None:
-            token = self.gh_pat
-            if not token:
-                try:
-                    token = self.run(["gh", "auth", "token"]).strip()
-                    if len(token) >= 8:
-                        self.secrets.append(token)
-                except (StepFailed, OSError):
-                    token = ""
+            try:
+                token = self.run(["gh", "auth", "token"]).strip()
+                if len(token) >= 8:
+                    self.secrets.append(token)
+            except (StepFailed, OSError):
+                token = ""
             self._gh_token = token
         return self._gh_token
 
@@ -212,8 +213,17 @@ class Kickstart:
 
     def gh(self, method, path, body=None, *, pat=False):
         token = self.gh_pat if pat else self.gh_token()
-        return self._api(GH_API, token, "GH_SITE_PROVISIONING_PAT" if pat else "a GitHub token",
-                         method, path, body)
+        try:
+            return self._api(GH_API, token, "GH_SITE_PROVISIONING_PAT" if pat else "a GitHub token",
+                             method, path, body)
+        except StepFailed as e:
+            # An org may forbid classic PATs (pro-backup does): the gh login's OAuth token still works there.
+            if e.status != 403 or "personal access token (classic)" not in str(e):
+                raise
+            login = self.gh_login_token()
+            if not login or login == token:
+                raise
+            return self._api(GH_API, login, "the gh login", method, path, body)
 
     def checkout(self):
         """Clone the repo once per invocation (needed to personalise and for the first deploy)."""

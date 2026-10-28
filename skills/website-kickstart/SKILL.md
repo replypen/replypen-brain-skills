@@ -50,7 +50,7 @@ scalar and parsed back before the push.
 
 **Env** (`~/.config/mise-env/replypen/replypen.env`, hence `mise -C …/replypen exec`):
 `CF_SITES_USER_TOKEN` (USER-scoped; the Builds API rejects account tokens with 12006),
-`GH_SITE_PROVISIONING_PAT` (classic, `repo` + `read:org`), `CF_BROWSER_RENDERING_TOKEN`; plus a `gh`
+`GH_SITE_PROVISIONING_PAT` (classic, `repo` + `read:org`; an org that forbids classic PATs, e.g. `pro-backup`, gets the `gh` login token instead), `CF_BROWSER_RENDERING_TOKEN`; plus a `gh`
 login that owns the org, `rp` login, `pnpm`. Account default: Rootcause Sites `60c5feed78b351b48868d3a691184c4b`.
 
 **Replacing a WordPress site?** Before the domain switch run `rp … project knowledge sync get`: a `supporthero`

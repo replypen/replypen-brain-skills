@@ -50,6 +50,8 @@ class World:
         self.writes = []
         self.rp_scopes = []
         self.perms = {}  # app_slug -> installation permissions override
+        self.token = None  # bearer of the current GitHub request
+        self.no_classic_pat = False  # the org's policy refuses the classic PAT (403)
         self.n = 0
 
     def uid(self, prefix):
@@ -68,6 +70,7 @@ class World:
                 self.fail_once.discard(key)
                 return 503, b'{"success": false, "errors": [{"message": "flaky"}]}'
         if u.netloc == "api.github.com":
+            self.token = (headers or {}).get("Authorization", "").removeprefix("Bearer ")
             return self.github(method, path, query, body)
         if u.netloc == "api.cloudflare.com":
             return self.cloudflare(method, path.removeprefix(f"/client/v4/accounts/{ACC}"), body)
@@ -82,6 +85,8 @@ class World:
 
     def github(self, method, path, query, body):
         js = lambda d, s=200: (s, json.dumps(d).encode())
+        if self.token == "pat" and self.no_classic_pat:
+            return js({"message": "`dentai-org` forbids access via a personal access token (classic)."}, 403)
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)", path):
             name = self.redirects.get(m.group(1), m.group(1))
             if method == "PATCH":
@@ -315,6 +320,13 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(site["contact_form_action"], "https://app.replypen.com/forms/dentai")
         self.assertEqual({tuple(s) for s in self.world.rp_scopes}, {("--project", "dentai", "--scope", "project")})
         self.assertIn("rp --project dentai --scope project project chat send", out)
+
+    def test_org_forbidding_classic_pats_falls_back_to_the_gh_login(self):
+        self.world.no_classic_pat = True
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        repo_id = self.world.repos["dentai-org/site-test"]["id"]
+        self.assertTrue(all(repo_id in members for _, members in self.world.installs.values()))
 
     def test_replypen_app_without_check_permissions_stops_with_the_accept_url(self):
         self.world.perms["rootcause-app"] = {"contents": "write", "pull_requests": "write"}
