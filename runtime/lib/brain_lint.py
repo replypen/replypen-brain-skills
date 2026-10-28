@@ -451,6 +451,8 @@ HARD_LOAD_CAPS = {  # role -> (include_in tags, per-file cap, total cap)
     "grounding": (("grounding",), 8 << 10, 24 << 10),
     "agent": (("agent", "principal"), 16 << 10, 48 << 10),
 }
+# A tagged body past this share of its per-file cap WARNs, so the next edit is not the one that cuts it.
+HARD_LOAD_NEAR_CAP = 0.9
 # The near-cliff WARN leaves room for one more paragraph below brain_doc.ON_DEMAND_DOC_LIMIT; only for
 # paths a caller names (changed files), since a whole-tree run repeats it for docs nobody touches.
 ON_DEMAND_DOC_WARN = 5000
@@ -487,10 +489,11 @@ def _projection_renderer(root: Path, kind: str) -> Callable[[str, str], str]:
 
 
 def _check_doc_sizes(root: Path, kind: str = "brain", near_cliff: bool = True) -> list[Finding]:
-    """WARN when a markdown doc won't reach the model whole: a hard-loaded body over its per-file or
-    total cap (the host truncates it), AGENTS.md over AGENTS_MD_CAP, an on-demand doc over
-    ON_DEMAND_DOC_WARN (`near_cliff`); FAIL an on-demand doc over ON_DEMAND_DOC_LIMIT (the bash spill
-    cliff, `brain_doc.on_demand_doc_bytes`, the measure the hygiene gate's `doc-spill` uses too)."""
+    """FAIL when a markdown doc won't reach the model whole: a hard-loaded body over its per-file or
+    total cap (the host truncates it on every run), an on-demand doc over ON_DEMAND_DOC_LIMIT (the bash
+    spill cliff, `brain_doc.on_demand_doc_bytes`, the measure the hygiene gate's `doc-spill` uses too).
+    WARN a hard-loaded body past HARD_LOAD_NEAR_CAP of its cap, AGENTS.md over AGENTS_MD_CAP, an
+    on-demand doc over ON_DEMAND_DOC_WARN (`near_cliff`)."""
     findings: list[Finding] = []
     totals = dict.fromkeys(HARD_LOAD_CAPS, 0)
     rendered = _projection_renderer(root, kind)
@@ -502,6 +505,7 @@ def _check_doc_sizes(root: Path, kind: str = "brain", near_cliff: bool = True) -
         tags = _include_in(text) - unread_roles(rel, kind)
         size = len(_strip_frontmatter(text).encode("utf-8"))
         over: list[str] = []
+        near: list[str] = []
         loaded = False
         for role, (role_tags, per_file, total_cap) in HARD_LOAD_CAPS.items():
             # The brain's root AGENTS.md is pasted verbatim on its own, never via a grounding/agent tag.
@@ -511,14 +515,20 @@ def _check_doc_sizes(root: Path, kind: str = "brain", near_cliff: bool = True) -
             kept = min(size, per_file)
             if size > per_file:
                 over.append(f"the {_kb(per_file)} `{role}` cap")
+            elif size > per_file * HARD_LOAD_NEAR_CAP:
+                near.append(f"the {_kb(per_file)} `{role}` cap")
             if totals[role] >= total_cap or kept > total_cap - totals[role]:
                 over.append(f"the {_kb(total_cap)} `{role}` total (earlier tagged docs hold "
                             f"{_kb(totals[role])})")
             totals[role] += min(kept, max(total_cap - totals[role], 0))
         if over:
-            findings.append(Finding(rel, "WARN",
+            findings.append(Finding(rel, "FAIL",
                 f"hard-loaded body is {_kb(size)}, over {' and '.join(over)}: the host truncates it "
-                "and models rarely read the rest with bash", "doc-size"))
+                "on every run and models rarely read the rest with bash", "doc-size"))
+        elif near:
+            findings.append(Finding(rel, "WARN",
+                f"hard-loaded body is {_kb(size)}, near {' and '.join(near)} (FAIL past it): trim or "
+                "move detail into on-demand files before adding more", "doc-size"))
         elif rel == "AGENTS.md" and kind != "mirror":
             if size > AGENTS_MD_CAP:
                 findings.append(Finding(rel, "WARN",

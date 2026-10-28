@@ -222,7 +222,7 @@ the caps are a safety net, not a budget. Past a cap the body is cut ("read the r
 models rarely read on; on-demand docs fare no better — a bash read over 6000 chars shows only a ~3 KB
 preview. Lint `doc-size` FAILs an on-demand doc over 6000 bytes as `cat` prints it (whole file; a
 templated doc at its longest render with spec defaults) and WARNs past 5000 for the paths you name; it
-WARNs tagged docs over their cap and `AGENTS.md` over 16 KB. Exempt: mirrored `source_url:`/`video_url:`
+FAILs a tagged doc over its per-file or role-total cap (WARN past 90%) and WARNs `AGENTS.md` over 16 KB. Exempt: mirrored `source_url:`/`video_url:`
 pages, `journal/`, `tests/`, `docs/`, `_internal/`, dot-dirs. The lint gates `brain_publish.py` and the
 host promote canary; the commit/push hygiene gate (`doc-spill`, same measure: `brain_doc.on_demand_doc_bytes`)
 catches the crossing commit earlier. Fix: a lean core (most important rules first) plus grouped detail files, each linked by one

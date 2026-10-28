@@ -488,32 +488,36 @@ def test_lint_brain_judges_internal_dir_without_an_ignore_rule(tmp_path: Path) -
     assert fails == [("_internal/unsafe", "symlink-broken")]
 
 
-def test_lint_brain_warns_on_hard_loads_over_per_file_cap(tmp_path: Path) -> None:
+def test_lint_brain_fails_hard_loads_over_per_file_cap(tmp_path: Path) -> None:
+    """Over a cap the host cuts the body on every run (DentAI 2026-10: 34/36 runs re-read a cut rules
+    file, mostly into nothing), so it FAILs; past 90% it WARNs before the next edit crosses."""
     _seed_brain(tmp_path)
     _write(tmp_path / "docs/schema.md", _doc("[agent]", 17))
-    _write(tmp_path / "docs/fits.md", _doc("[agent]", 15.9))
+    _write(tmp_path / "docs/near.md", _doc("[agent]", 15.9))
+    _write(tmp_path / "docs/fits.md", _doc("[agent]", 14))
     _write(tmp_path / "docs/map.md", _doc("[grounding, agent]", 12))
     _write(tmp_path / "triage.md", "---\ndescription: T\ninclude_in:\n  - triage # gate\n---\n" + "x" * 9000)
 
     findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
 
     assert {(f.path, f.level) for f in findings} == {
-        ("docs/schema.md", "WARN"), ("docs/map.md", "WARN"), ("triage.md", "WARN")}
+        ("docs/schema.md", "FAIL"), ("docs/near.md", "WARN"), ("docs/map.md", "FAIL"), ("triage.md", "FAIL")}
     by_path = {f.path: f.message for f in findings}
     assert "16.0 KB `agent` cap" in by_path["docs/schema.md"]
+    assert "near the 16.0 KB `agent` cap" in by_path["docs/near.md"]
     assert "8.0 KB `grounding` cap" in by_path["docs/map.md"] and "`agent`" not in by_path["docs/map.md"]
     assert "`triage` cap" in by_path["triage.md"]
 
 
-def test_lint_brain_warns_when_agent_total_cap_cuts_later_docs(tmp_path: Path) -> None:
+def test_lint_brain_fails_when_agent_total_cap_cuts_later_docs(tmp_path: Path) -> None:
     _seed_brain(tmp_path)
     for name in ("a", "b", "c", "d"):
-        _write(tmp_path / f"docs/{name}.md", _doc("[agent]", 15))
+        _write(tmp_path / f"docs/{name}.md", _doc("[agent]", 14))  # under the 90% near-cap WARN
     _write(tmp_path / "skills/chat/SKILL.md", _doc("[principal]", 1))
 
     findings = [f for f in lint_brain(tmp_path) if f.rule == "doc-size"]
 
-    assert [f.path for f in findings] == ["docs/d.md", "skills/chat/SKILL.md"]
+    assert [(f.path, f.level) for f in findings] == [("docs/d.md", "FAIL"), ("skills/chat/SKILL.md", "FAIL")]
     assert "48.0 KB `agent` total" in findings[0].message
 
 
