@@ -52,6 +52,7 @@ class World:
         self.perms = {}  # app_slug -> installation permissions override
         self.token = None  # bearer of the current GitHub request
         self.no_classic_pat = False  # the org's policy refuses the classic PAT (403)
+        self.no_user_installations = False  # …and /user/installations refuses gh's OAuth token too
         self.n = 0
 
     def uid(self, prefix):
@@ -121,6 +122,9 @@ class World:
                                           "permissions": self.perms.get(slug, {"checks": "read", "statuses": "read"})}
                                          for slug, (i, _) in self.installs.items()]})
         if m := re.fullmatch(r"/user/installations/(\d+)/repositories(?:/(\d+))?", path):
+            if self.no_user_installations:
+                return js({"message": "You must authenticate with an access token authorized to a GitHub App, "
+                                      "a personal access token, or basic auth in order to list repositories"}, 403)
             members = next(r for i, r in self.installs.values() if i == int(m.group(1)))
             if method == "PUT":
                 members.add(int(m.group(2)))
@@ -327,6 +331,13 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         repo_id = self.world.repos["dentai-org/site-test"]["id"]
         self.assertTrue(all(repo_id in members for _, members in self.world.installs.values()))
+
+    def test_org_where_no_token_may_edit_app_repos_continues_with_a_hint(self):
+        self.world.no_classic_pat = self.world.no_user_installations = True
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertIn("unverifiable, add site-test by hand", out)
+        self.assertFalse([p for m, p, _ in writes if m == "PUT" and p.startswith("/user/installations/")])
 
     def test_replypen_app_without_check_permissions_stops_with_the_accept_url(self):
         self.world.perms["rootcause-app"] = {"contents": "write", "pull_requests": "write"}

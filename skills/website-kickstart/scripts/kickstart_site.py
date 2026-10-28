@@ -407,7 +407,18 @@ class Kickstart:
                 self.plan(f"PUT /user/installations/{inst['id']}/repositories/<repo id>")
                 parts.append(f"{slug} {inst['id']}: would add")
                 continue
-            if repo_id in self.install_repo_ids(inst["id"]):
+            try:
+                present = repo_id in self.install_repo_ids(inst["id"])
+            except StepFailed as e:
+                if e.status != 403:
+                    raise
+                # No token may list or edit app repos here (org forbids classic PATs; gh's OAuth token is
+                # refused by /user/installations). An owner adds the repo by hand; the first build (Cloudflare)
+                # and the mirror refresh (ReplyPen) prove it later.
+                parts.append(f"{slug} {inst['id']}: unverifiable, add {self.repo_name} by hand at "
+                             f"https://github.com/organizations/{self.a.org}/settings/installations/{inst['id']}")
+                continue
+            if present:
                 parts.append(f"{slug} {inst['id']}: already")
                 continue
             self.gh("PUT", f"/user/installations/{inst['id']}/repositories/{repo_id}", pat=True)
