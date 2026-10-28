@@ -47,7 +47,8 @@ GH_API = "https://api.github.com"
 DEFAULT_ACCOUNT = "60c5feed78b351b48868d3a691184c4b"  # Cloudflare "Rootcause Sites"
 WORKERS_SUBDOMAIN = "rootcause-sites"  # <worker>.rootcause-sites.workers.dev
 TEMPLATE = "replypen/site-template"
-APP_SLUGS = ("rootcause-app", "cloudflare-workers-and-pages")
+APP_SLUGS = ("replypen", "cloudflare-workers-and-pages")
+REPLYPEN_APP_ID = 4006321  # matched by id: a GitHub App rename changes its slug (was rootcause-app)
 MIRROR_NAME = "site"
 DEPLOY_CHECK = "Workers Builds"
 POLL_SECONDS = 10
@@ -374,7 +375,9 @@ class Kickstart:
         data = self.gh("GET", f"/orgs/{self.a.org}/installations?per_page=100")
         if data is None:
             return None
-        return {i["app_slug"]: i for i in data.get("installations", []) if i["app_slug"] in APP_SLUGS}
+        return {(APP_SLUGS[0] if i.get("app_id") == REPLYPEN_APP_ID else i["app_slug"]): i
+                for i in data.get("installations", [])
+                if i.get("app_id") == REPLYPEN_APP_ID or i["app_slug"] in APP_SLUGS[1:]}
 
     def step_github_apps(self):
         installs = self.installations()

@@ -38,7 +38,7 @@ class World:
 
     def __init__(self):
         self.repos = {}  # full_name -> {"id", "files", "sha", "archived"}
-        self.installs = {"rootcause-app": (168123503, set()), "cloudflare-workers-and-pages": (169196228, set())}
+        self.installs = {"replypen": (168123503, set()), "cloudflare-workers-and-pages": (169196228, set())}
         self.scripts = {}  # name -> tag
         self.triggers = {}  # uuid -> trigger
         self.builds = []
@@ -119,6 +119,7 @@ class World:
             return js({"check_runs": runs})
         if re.fullmatch(r"/orgs/[^/]+/installations", path):
             return js({"installations": [{"id": i, "app_slug": slug, "repository_selection": "selected",
+                                          "app_id": 4006321 if slug == "replypen" else 1,
                                           "permissions": self.perms.get(slug, {"checks": "read", "statuses": "read"})}
                                          for slug, (i, _) in self.installs.items()]})
         if m := re.fullmatch(r"/user/installations/(\d+)/repositories(?:/(\d+))?", path):
@@ -340,7 +341,7 @@ class KickstartTest(unittest.TestCase):
         self.assertFalse([p for m, p, _ in writes if m == "PUT" and p.startswith("/user/installations/")])
 
     def test_replypen_app_without_check_permissions_stops_with_the_accept_url(self):
-        self.world.perms["rootcause-app"] = {"contents": "write", "pull_requests": "write"}
+        self.world.perms["replypen"] = {"contents": "write", "pull_requests": "write"}
         code, out, writes = self.kick()
         self.assertEqual(code, 1)
         self.assertIn("lacks checks, statuses: read", out)
