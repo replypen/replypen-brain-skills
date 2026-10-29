@@ -115,6 +115,39 @@ class SmokeCli(unittest.TestCase):
         self.assertNotIn("super-secret-token", printed.call_args.args[0])
         self.assertIn("[redacted]", printed.call_args.args[0])
 
+    @responses.activate
+    def test_negative_check_passes_only_on_loud_client_error(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/things/nope", json={"error": "not found"}, status=404)
+        responses.add(responses.GET, "https://api.demo.test/v1/things", json=[])
+        responses.add(responses.GET, "https://api.demo.test/v1/expired", json={"error": "expired"}, status=401)
+        cases = [("/things/nope", 0, 404), ("/things?status=bogus", 1, "2xx"), ("/expired", 1, 401)]
+        for path, want_rc, want_status in cases:
+            with self.subTest(path=path):
+                with mock.patch.dict(os.environ, {"RC_INTEGRATION_SMOKE_DEMO": "tok"}, clear=True):
+                    with mock.patch("builtins.print") as printed:
+                        rc = integration_smoke._main(["demo", "--negative-path", path])
+                self.assertEqual(rc, want_rc)
+                check = json.loads(printed.call_args.args[0])["checks"][0]
+                self.assertEqual(check["name"], "negative")
+                self.assertEqual(check["detail"]["status"], want_status)
+
+    def test_partial_list_fails_unless_our_own_cap_stopped_it(self):
+        client = mock.Mock()
+        cases = [
+            ({"items": [1], "incomplete": True, "reason": "reached max_items=1"}, True),
+            ({"items": [1], "incomplete": True, "reason": "page 2: ApiError 500"}, False),
+            ({"items": [1, 2], "incomplete": False, "reason": ""}, True),
+            ({"items": [1], "incomplete": True,
+              "reason": "page fetch failed after 1 item(s): ApiError 0: pagination reached max_pages=1"}, True),
+        ]
+        for body, want_ok in cases:
+            with self.subTest(reason=body["reason"]):
+                client.collect.return_value = body
+                result = integration_smoke.run_api_check(
+                    client, name="list", method="GET", path="/things", query={}, paginate=True, max_items=1
+                )
+                self.assertEqual(result.ok, want_ok)
+
     def test_list_max_items_requires_paginated_list(self):
         with mock.patch.dict(os.environ, {"RC_INTEGRATION_SMOKE_DEMO": "tok"}, clear=True):
             with self.assertRaises(SystemExit) as cm:

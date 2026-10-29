@@ -91,9 +91,36 @@ def run_api_check(
     verb = method.upper()
     if paginate:
         body = client.collect(path, method=verb, query=query, max_items=max_items)
+        # A deliberate item/page cap is fine; a page that failed mid-way is not. The client-level page
+        # cap surfaces as a status-0 ApiError inside the failure reason, hence the second match.
+        reason = str(body.get("reason", ""))
+        capped = reason.startswith("reached max_") or "pagination reached max_pages=" in reason
+        ok = not body.get("incomplete") or capped
     else:
         body = client.request(verb, path, query=query)
-    return CheckResult(name=name, ok=True, detail=summarize_body(body, pick=pick, paginated=paginate))
+        ok = True
+    return CheckResult(name=name, ok=ok, detail=summarize_body(body, pick=pick, paginated=paginate))
+
+
+def run_negative_check(client: api.Client, *, path: str, query: dict[str, str]) -> CheckResult:
+    """GET a deliberately wrong id/enum; pass only on a loud 4xx, never a silent 2xx.
+
+    401 and 429 fail too: a broken credential or a rate limit proves nothing about bad-input handling.
+    """
+    try:
+        body = client.request("GET", path, query=query)
+    except api.ApiError as exc:
+        ok = 400 <= exc.status < 500 and exc.status not in (401, 429)
+        return CheckResult(
+            name="negative",
+            ok=ok,
+            detail={"status": exc.status, "error_preview": str(exc)[:240]},
+        )
+    return CheckResult(
+        name="negative",
+        ok=False,
+        detail={"status": "2xx", "unexpected_success": summarize_body(body)},
+    )
 
 
 def summarize_body(body: Any, *, pick: str = "", paginated: bool = False) -> dict[str, Any]:
@@ -193,6 +220,11 @@ def _main(argv: list[str] | None = None) -> int:
     parser.add_argument("--detail-id", default="", help="id used with --detail-path-template")
     parser.add_argument("--detail-pick", default="", help="picked fields for detail output")
     parser.add_argument(
+        "--negative-path",
+        default="",
+        help="GET path with a deliberately bad id/enum; must fail with a 4xx, not an empty success",
+    )
+    parser.add_argument(
         "--connector-command",
         action="append",
         default=[],
@@ -208,7 +240,7 @@ def _main(argv: list[str] | None = None) -> int:
     if args.list_max_items is not None and not args.paginate_list:
         raise SystemExit("--list-max-items requires --paginate-list; otherwise pass a provider-specific --query limit=...")
 
-    if args.identity_path or args.list_path or args.detail_path or args.detail_path_template:
+    if args.identity_path or args.list_path or args.detail_path or args.detail_path_template or args.negative_path:
         try:
             client = api.client(manifest)
         except Exception as exc:  # noqa: BLE001 - keep helper failures in sanitized JSON.
@@ -261,12 +293,20 @@ def _main(argv: list[str] | None = None) -> int:
                         pick=args.detail_pick,
                     )
                 ))
+            if args.negative_path:
+                results.append(_guarded_check(
+                    "negative",
+                    redact_envs,
+                    lambda: run_negative_check(client, path=args.negative_path, query=query),
+                ))
 
     for command in args.connector_command:
         results.append(run_connector_cli(args.key, command, timeout=args.timeout, redact_envs=redact_envs))
 
     if not results:
-        raise SystemExit("provide at least one of --identity-path, --list-path, --detail-path, or --connector-command")
+        raise SystemExit(
+            "provide at least one of --identity-path, --list-path, --detail-path, --negative-path, or --connector-command"
+        )
 
     payload = {
         "key": args.key,
