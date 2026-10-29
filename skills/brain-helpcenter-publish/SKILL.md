@@ -1,6 +1,6 @@
 ---
 name: brain-helpcenter-publish
-description: "Apply one approved help-centre suggestion to the live provider (Help Scout Docs / Intercom) from a brain checkout: save the suggestion's `replypen: helpcenter/v1` block to a file, dry-run it, then `rp project knowledge article apply` writes the article as a draft and re-syncs /kb. Use for 'publiceer dit artikel in het helpcenter', 'apply this help-centre suggestion', 'update the Help Scout / Intercom article', 'create the KB article we agreed on'."
+description: "Apply one approved help-centre suggestion to the live provider (Help Scout Docs / Intercom / KnowledgeOwl) from a brain checkout: save the suggestion's `replypen: helpcenter/v1` block to a file, dry-run it, then `rp project knowledge article apply` writes the article as a draft and re-syncs /kb. Use for 'publiceer dit artikel in het helpcenter', 'apply this help-centre suggestion', 'update the Help Scout / Intercom / KnowledgeOwl article', 'create the KB article we agreed on'."
 ---
 
 # brain-helpcenter-publish — the help-centre write path
@@ -61,8 +61,8 @@ rp project knowledge article apply --from .replypen/helpcenter/apply/reminder-ma
 # 3. apply for real (still a draft on create / Help Scout update)
 rp project knowledge article apply --from .replypen/helpcenter/apply/reminder-mail.md
 
-# 4. read it back — prints the article as a fresh `op: update` block
-rp project knowledge article get --provider helpscout --id 5f1a… > .replypen/helpcenter/apply/reminder-mail.md
+# 4. read it back — writes the article as a fresh `op: update` block (rp ≥ 1.72.1 honours --out in JSON mode)
+rp project knowledge article get --provider helpscout --id 5f1a… --out .replypen/helpcenter/apply/reminder-mail.md
 
 # 5. go live only when the owner said so
 rp project knowledge article apply --from .replypen/helpcenter/apply/reminder-mail.md --publish
@@ -80,12 +80,15 @@ content — never commit these files into the brain.
 
 ## What an op does per provider
 
-| | Help Scout Docs | Intercom |
-|---|---|---|
-| `op: create` | new article, status `notpublished` (draft) | new article, state `draft` |
-| `op: update`, article is a draft | updates the draft | updates the draft |
-| `op: update`, article is **published** | writes the **draft lane** — the live article is untouched, `draft_saved: true`; `--publish` publishes | refused with `PUBLISHED_ARTICLE` until you pass `--publish` |
-| no effective change | `changed: false` — nothing sent, no resync, no audit row | same |
+| | Help Scout Docs | Intercom | KnowledgeOwl |
+|---|---|---|---|
+| `op: create` | new article, status `notpublished` (draft) | new article, state `draft` | new article, status `draft`, body under the version key its published siblings in that category use (a KB keeping Dutch under `en` stays readable) |
+| `op: update`, article is a draft | updates the draft | updates the draft | updates the draft |
+| `op: update`, article is **published** (KO: or `review`) | writes the **draft lane** — the live article is untouched, `draft_saved: true`; `--publish` publishes | refused with `PUBLISHED_ARTICLE` until you pass `--publish` | same as Intercom: no draft lane, editing it IS the live change |
+| no effective change | `changed: false` — nothing sent, no resync, no audit row | same | same |
+
+No draft lane (Intercom, KnowledgeOwl): `--dry-run` without `--publish` still prints the calls `--publish`
+would send, with the warning "article is live"; that diff is the preview the owner approves.
 
 Anchors (update only, exactly one): `old:` replaces that verbatim block in the current body, `after:` /
 `before:` splice the body around that verbatim line. An anchored edit is surgical: the host splices the
@@ -93,7 +96,8 @@ provider's stored HTML at byte level, so call-outs, image sizing and every untou
 `old:` with an empty body removes the block (insert → revert leaves the article byte-identical). Only a
 whole-body block (no anchor) re-renders the article through markdown — dry-run warns when that would
 drop provider-specific formatting. Matching is against the current body rendered the
-way `/kb` renders it, verbatim after trimming per-line trailing whitespace — **no fuzzy apply**: not
+way `/kb` renders it, verbatim after trimming per-line trailing whitespace and reading a non-breaking
+space as a space (editors insert them invisibly) — **no fuzzy apply**: not
 found, or found twice, is an error naming the anchor. No anchor + empty body = title/keywords-only
 edit; no anchor + body = whole body replaced. `create` with an anchor is an error.
 
@@ -128,7 +132,7 @@ telling the owner grounding is current.
 
 `INVALID_BLOCK` (parse/validate — the message is the one-line reason; an unknown front-matter key is a
 typo, not a feature) · `ARTICLE_NOT_FOUND` (wrong `id`/provider, or the article was deleted) ·
-`PUBLISHED_ARTICLE` (re-run with `--publish`) · `NO_WRITE_GRANT` (add the connection above) ·
+`PUBLISHED_ARTICLE` (a real run on a live article: re-run with `--publish`; a dry run previews instead) · `NO_WRITE_GRANT` (add the connection above) ·
 `PROVIDER_ERROR` (upstream — retry once, then report; do not
 loop). Needs `rp` ≥ 1.26.0.
 
