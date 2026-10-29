@@ -9,7 +9,8 @@ Run from a project or tenant brain checkout: gather evidence, drill only where i
 put the lesson in its one durable home, verify, publish.
 
 Two dream cycles exist and share evidence, not machinery. ReplyPen's own hosted consolidation cron
-sweeps the journal and commits durably on its own — you never drive it. This skill is the
+groups recurring human signal (sent-vs-drafted edits, feedback, clarify answers) and commits durably on its
+own when enabled — you never drive it. This skill is the
 **operator-driven** pass: a human decides between brain files, persona, triage policy and triage rules.
 
 Public-CLI only: no ReplyPen source, host shell, SSM, raw registry SQL, or operator scripts. If the
@@ -177,7 +178,7 @@ read/write you need is not exposed through `rp`, finish with a support request t
 
 ## Discipline
 
-- Never hand-edit `journal/` — the host writes it.
+- `journal/` is legacy run residue (one run's self-report, being removed): never evidence, never edit it.
 - Never promote a single anecdote unless it is high-impact explicit human feedback.
 - Never hide write policy in persona: draft/no-draft is triage, confirmed mutations are actions.
 - `rp dev console database` is for verifying a brain script or project fact, never for ReplyPen
