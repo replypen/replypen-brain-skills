@@ -271,6 +271,12 @@ if [ -n "$RELEASE" ]; then
       run docker tag "$IMAGE:v$CUR" "$IMAGE:v$NEW"
     fi
     [ "$NO_PUSH" = 1 ] || run docker push "$IMAGE:v$NEW"
+    # Every runtime change leaves a ~1.3G local image; keep this and the previous tag, older ones
+    # re-pull from ghcr on demand. Plain rmi: a tag a container still uses refuses and stays.
+    if [ "$NO_PUSH" != 1 ] && [ "$DRY" != 1 ]; then
+      docker image ls "$IMAGE" --format '{{.Tag}}' | grep -E '^v[0-9]' | grep -vxF -e "v$NEW" -e "v$CUR" |
+        sed "s|^|$IMAGE:|" | xargs -r docker rmi >/dev/null 2>&1 || true
+    fi
   fi
 
   TARGET="v$NEW"
