@@ -70,7 +70,7 @@ Keep these planes explicit in every skill, template, and brain edit:
 - **Production main loop:** the model has `bash` plus its scenario terminal tool (`reply` for email),
   not an `rp` binary. The committed brain is mounted read-only at `/brain`. Ground through `/brain`
   scripts and the injected `lib.db`, `lib.cloudwatch`, `lib.http`, `lib.fs`, `lib.connectors`,
-  `lib.api`, `lib.mcp`, `lib.gsheets`, `lib.gdocs`, `lib.tenant`, `lib.runctx`, `lib.image`, `lib.transcribe`, and `lib.docs` capabilities available for that project/run.
+  `lib.api`, `lib.mcp`, `lib.gsheets`, `lib.gdocs`, `lib.tenant`, `lib.runctx`, `lib.image`, `lib.transcribe`, `lib.docs`, and `lib.site_logs` capabilities available for that project/run.
   (`lib.tenant` — a script that needs a practice/tenant setting reads it itself; never let the
   playbook ask the model to copy a `{{ }}` value into an argument. Recipe, and the action-container
   env fallback: [docs/tenant-settings.md](docs/tenant-settings.md).)
@@ -88,6 +88,9 @@ Keep these planes explicit in every skill, template, and brain edit:
   ActiveStorage blob on a project with a document store) and keeps a receipt of its bytes; attached
   unchanged, the file skips the code-shape delivery check. Use it instead of downloading such a document
   yourself; the host owns the source list and the store keys: [docs/host-documents.md](docs/host-documents.md).)
+  (`lib.site_logs` — the run's OWN website 404s aggregated by path, over the broker's `site_logs` mount: only in
+  trusted website-editing runs whose project/tenant id has a site binding on the host (`internal/sitelogs`); no site,
+  account or query parameter exists, so a run can never read another site's logs. Recipe: [docs/website-logs.md](docs/website-logs.md).)
   (`lib.gsheets` — Google Sheets read/edit wrapper over `lib.api`; edits only on an Editor-shared file, host-verified.)
   (`lib.gdocs` — Google Docs read/edit wrapper over `lib.api`; same delegated-write rule.)
 
