@@ -176,10 +176,11 @@ class World:
                 return 204, b""
             self.advance_runs()
             ev, sha = query.get("event", [None])[0], query.get("head_sha", [None])[0]
+            status, per_page = query.get("status", [None])[0], int(query.get("per_page", ["30"])[0])
             runs = [r for r in self.runs if self.redirects.get(r["repo"], r["repo"]) == name
-                    and ev in (None, r["event"]) and sha in (None, r["sha"])]
-            return js({"total_count": len(runs), "workflow_runs": [
-                {"head_sha": r["sha"], "event": r["event"]} | check(r) for r in reversed(runs)]})
+                    and ev in (None, r["event"]) and sha in (None, r["sha"]) and status in (None, r["status"])]
+            return js({"total_count": len(runs), "workflow_runs": [  # newest first, first page only, like GitHub
+                {"head_sha": r["sha"], "event": r["event"]} | check(r) for r in list(reversed(runs))[:per_page]]})
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/actions/runs/(\d+)(/cancel)?", path):
             run = next(r for r in self.runs if r["id"] == int(m.group(2)))
             if m.group(3):
@@ -597,6 +598,39 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(queued["conclusion"], "cancelled")
         self.world.advance_runs()
         self.assertEqual(self.world.scripts, {})  # nothing came back
+
+    def test_teardown_finds_an_active_run_behind_a_page_of_finished_ones(self):
+        self.kick()
+        old = self.world.start_run("dentai-org/site-test", delay=99)
+        for _ in range(120):  # newer, finished history pushes the active run off the first page
+            done = self.world.start_run("dentai-org/site-test")
+            done |= {"status": "completed", "conclusion": "success"}
+        code, out, writes = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"POST /repos/dentai-org/site-test/actions/runs/{old['id']}/cancel", self.names(writes))
+        self.assertEqual(old["conclusion"], "cancelled")
+
+    def test_refused_provisioning_leaves_no_record_a_teardown_would_trust(self):
+        self.kick()
+        self.forget_record()
+        self.world.scripts.pop("site-test")  # Worker free, repo exists but is not ours on this machine
+        code, out, _ = self.kick()
+        self.assertEqual(code, 1)
+        self.assertIn("is not a kickstart from this machine; pass --adopt", out)
+        self.assertFalse(Path(self.tmp.name, "state", f"{ACC}-site-test.json").exists())
+        code, out, writes = self.kick("--teardown", "site-test")
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("pass --force-orphan", out)
+
+    def test_record_for_another_repo_refuses_even_when_the_worker_is_gone(self):
+        self.kick()
+        self.world.scripts.pop("site-test")
+        record = Path(self.tmp.name, "state", f"{ACC}-site-test.json")
+        before = record.read_text()
+        code, out, writes = self.kick("another-org")
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("for dentai-org/site-test, not another-org/site-test", out)
+        self.assertEqual(record.read_text(), before)
 
     def test_teardown_aborts_while_a_run_will_not_stop(self):
         self.kick()

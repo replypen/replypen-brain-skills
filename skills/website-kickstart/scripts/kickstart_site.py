@@ -46,6 +46,8 @@ def _cli() -> str:
 
 CF_API = "https://api.cloudflare.com/client/v4"
 GH_API = "https://api.github.com"
+# GitHub's non-terminal workflow-run statuses (the list endpoint's `status` filter takes one at a time).
+ACTIVE_RUN_STATUSES = ("queued", "in_progress", "waiting", "pending", "requested")
 DEFAULT_ACCOUNT = "60c5feed78b351b48868d3a691184c4b"  # Cloudflare "Rootcause Sites"
 WORKERS_SUBDOMAIN = "rootcause-sites"  # <worker>.rootcause-sites.workers.dev
 TEMPLATE = "replypen/site-template"
@@ -303,15 +305,19 @@ class Kickstart:
 
     def step_preflight(self):
         """Before any write: a same-named Worker in the shared account must already be ours, since the
-        first deploy would overwrite it. A free one is claimed in the record before the deploy creates it."""
+        first deploy would overwrite it, and this machine's record must not name another repo. The record
+        is written only once step_repo has proven the repo is ours (created, adopted or our own kickstart),
+        so a refused run never leaves a record a later teardown would trust."""
+        if other := self.record_conflict():
+            raise StepFailed(f"this machine created Worker {self.worker} for {other}, not {self.full_name} "
+                             f"({self.state_path}); pick another slug/--worker-name, tear {other} down first, "
+                             "or delete that record if it is wrong")
         exists = self.worker_exists()
         if exists is None:
             return f"would check Worker {self.worker} is free or ours"
         if exists:
             return f"Worker {self.worker} exists, " + self.check_owner(
                 self.a.adopt, "--adopt", f"Worker {self.worker} already exists in account {self.a.account}")
-        if not self.record_conflict():
-            self.save_state()
         return f"Worker {self.worker} is free"
 
     # ---- 1. repository --------------------------------------------------------------------------
@@ -340,8 +346,6 @@ class Kickstart:
             else:
                 raise StepFailed(f"{self.full_name} not visible after creation")
         self.s |= {"repo_id": repo["id"], "repo_url": repo["html_url"]}
-        if created:
-            self.save_state(repo_id=repo["id"])
         for _ in range(12):  # a repo generated from a template is empty for a few seconds
             wrangler = self.file_text("wrangler.jsonc")
             if wrangler is not None:
@@ -372,6 +376,7 @@ class Kickstart:
         else:
             raise StepFailed(f"{self.full_name} exists and is not a kickstart from this machine; "
                              "pass --adopt to take it over")
+        self.save_state(repo_id=repo["id"])  # the repo is proven ours: claim the Worker before the deploy
         head = self.gh("GET", f"/repos/{self.full_name}/commits/main")
         self.s["head_sha"] = head["sha"] if head else None
         return detail + (f" @ {self.s['head_sha'][:8]}" if self.s["head_sha"] else "")
@@ -735,8 +740,11 @@ class Kickstart:
             return f"no {WORKFLOW}"
         cancelled = set()
         for attempt in range(STOP_POLLS):
-            data = self.gh("GET", f"{base}/workflows/{Path(WORKFLOW).name}/runs?per_page=100") or {}
-            active = [r for r in data.get("workflow_runs") or [] if r.get("status") != "completed"]
+            # Filter server-side per non-terminal status: an unfiltered list pages old active runs out of view.
+            active = []
+            for status in ACTIVE_RUN_STATUSES:
+                data = self.gh("GET", f"{base}/workflows/{Path(WORKFLOW).name}/runs?status={status}&per_page=100") or {}
+                active += [r for r in data.get("workflow_runs") or [] if r.get("status") != "completed"]
             if not active:
                 verb = "disable" if self.a.dry_run else "disabled"
                 return f"{verb} {Path(WORKFLOW).name}, " + (f"cancelled {len(cancelled)} run(s)" if cancelled
