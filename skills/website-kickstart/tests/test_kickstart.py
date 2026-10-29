@@ -39,17 +39,21 @@ TOKENS = {"CF_SITES_USER_TOKEN": "cf", "CF_SITES_DEPLOY_TOKEN": "deploy-token-xy
 class World:
     """GitHub + Actions + Cloudflare + rp state; every write is appended to `writes`.
 
-    A deploy run (push or dispatch) completes on the next check-runs poll: success when the repo has the
-    deploy secret + account variable and `deploy_outcomes` (consumed per run) does not say otherwise.
-    Success creates/updates the Worker named in wrangler.jsonc and makes it serve that sha's site."""
+    A workflow run (push or dispatch) of deploy.yml advances one tick per Actions read (check-runs, runs):
+    it builds for `push_delay`/`dispatch_delay` ticks with no `Website deploy` check-run yet, then shows
+    that check in progress, then completes: success when the repo has the deploy secret + account variable
+    and `deploy_outcomes` (consumed in completion order) does not say otherwise. Success creates/updates the
+    Worker named in wrangler.jsonc and makes it serve that sha's site. A cancelled run stops on the next
+    tick unless `stuck`; a disabled workflow starts no runs."""
 
     def __init__(self):
         self.repos = {}  # full_name -> {"id", "files", "sha", "history", "archived", "secrets", "vars"}
         self.install = (168123503, set())
         self.scripts = {}  # worker name -> tag
         self.live = {}  # worker name -> (repo full_name, sha) it serves
-        self.runs = []  # check-runs: {"id", "repo", "sha", "status", "conclusion", "html_url"}
+        self.runs = []  # workflow runs; each one's deploy job is check-run id == run id
         self.deploy_outcomes = []
+        self.push_delay = self.dispatch_delay = 0
         self.rc_repos = []
         self.redirects = {}  # old full_name -> new (GitHub keeps answering renamed repos)
         self.fail_once = set()  # (method, path prefix) answered 503 once
@@ -63,16 +67,30 @@ class World:
         self.n = 0
 
     # ---- Actions ----
-    def start_run(self, repo):
+    def start_run(self, repo, event="push", delay=None):
+        if self.repos[repo].get("workflow_disabled"):
+            if event == "workflow_dispatch":
+                raise ks.StepFailed("could not create workflow dispatch event: HTTP 422: Workflow is disabled")
+            return None
         self.n += 1
-        self.runs.append({"id": self.n, "repo": repo, "sha": self.repos[repo]["sha"], "status": "queued",
-                          "conclusion": None, "html_url": f"https://github.com/{repo}/actions/runs/{self.n}"})
+        delay = (self.push_delay if event == "push" else self.dispatch_delay) if delay is None else delay
+        run = {"id": self.n, "repo": repo, "sha": self.repos[repo]["sha"], "event": event, "status": "queued",
+               "conclusion": None, "ticks": delay, "cancel": False, "stuck": False,
+               "html_url": f"https://github.com/{repo}/actions/runs/{self.n}"}
+        self.runs.append(run)
+        return run
 
     def advance_runs(self):
         for run in self.runs:
             if run["status"] == "completed":
                 continue
-            repo = self.repos[run["repo"]]
+            if run["cancel"] and not run["stuck"]:
+                run |= {"status": "completed", "conclusion": "cancelled"}
+                continue
+            if run["ticks"] > 0:
+                run |= {"ticks": run["ticks"] - 1, "status": "in_progress"}
+                continue
+            repo = self.repos[self.redirects.get(run["repo"], run["repo"])]
             armed = ks.DEPLOY_SECRET in repo["secrets"] and repo["vars"].get(ks.ACCOUNT_VAR) == ACC
             outcome = self.deploy_outcomes.pop(0) if self.deploy_outcomes else "success"
             run |= {"status": "completed", "conclusion": outcome if armed else "failure"}
@@ -133,7 +151,7 @@ class World:
             self.redirects.pop(f"{body['owner']}/{body['name']}", None)
             sha = f"{len(self.repos) + 1:x}" * 40  # every generated repo starts its own history
             self.repos[f"{body['owner']}/{body['name']}"] = {
-                "id": 1000 + self.n, "files": dict(TEMPLATE_FILES), "sha": sha[:40], "history": {sha[:40]},
+                "id": 1000 + self.n, "files": dict(TEMPLATE_FILES), "sha": sha[:40],
                 "secrets": {}, "vars": {}}
             return js({}, 201)
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/contents/(.+)", path):
@@ -141,13 +159,36 @@ class World:
             return js({"content": base64.b64encode(text.encode()).decode()}) if text else js({}, 404)
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/commits/main", path):
             return js({"sha": self.repos[m.group(1)]["sha"]})
-        if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/commits/([0-9a-f]{40})", path):
-            repo = self.repos.get(m.group(1))
-            return js({"sha": m.group(2)}) if repo and m.group(2) in repo["history"] else js({"message": "No commit"}, 404)
+        check = lambda r: {k: r[k] for k in ("id", "status", "conclusion", "html_url")}
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/commits/(\w+)/check-runs", path):
             self.advance_runs()
             assert query.get("check_name") == [ks.DEPLOY_CHECK], query
-            return js({"check_runs": [r for r in self.runs if (r["repo"], r["sha"]) == m.groups()]})
+            return js({"check_runs": [check(r) for r in self.runs
+                                      if (r["repo"], r["sha"]) == m.groups() and r["ticks"] == 0]})
+        if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/check-runs/(\d+)", path):
+            self.advance_runs()
+            return js(check(next(r for r in self.runs if r["id"] == int(m.group(2)))))
+        if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/actions/workflows/deploy\.yml/(runs|disable)", path):
+            name = self.redirects.get(m.group(1), m.group(1))
+            if m.group(2) == "disable":
+                assert method == "PUT"
+                self.repos[name]["workflow_disabled"] = True
+                return 204, b""
+            self.advance_runs()
+            ev, sha = query.get("event", [None])[0], query.get("head_sha", [None])[0]
+            runs = [r for r in self.runs if self.redirects.get(r["repo"], r["repo"]) == name
+                    and ev in (None, r["event"]) and sha in (None, r["sha"])]
+            return js({"total_count": len(runs), "workflow_runs": [
+                {"head_sha": r["sha"], "event": r["event"]} | check(r) for r in reversed(runs)]})
+        if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/actions/runs/(\d+)(/cancel)?", path):
+            run = next(r for r in self.runs if r["id"] == int(m.group(2)))
+            if m.group(3):
+                if run["status"] == "completed":
+                    return js({"message": "Cannot cancel a workflow run that is completed."}, 409)
+                run["cancel"] = True
+                return js({}, 202)
+            self.advance_runs()
+            return js({"head_sha": run["sha"], "event": run["event"]} | check(run))
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/actions/secrets/(\w+)", path):
             secrets = self.repos[m.group(1)]["secrets"]
             return (204, b"") if secrets.pop(m.group(2), None) else js({"message": "Not Found"}, 404)
@@ -201,7 +242,6 @@ class World:
                 repo = self.repos[name]
                 repo["files"] |= {rel: (root / rel).read_text() for rel in PERSONALISED}
                 repo["sha"] = "b" + repo["sha"][1:]
-                repo["history"].add(repo["sha"])
                 self.writes.append(("cmd", "git push", None))
                 self.start_run(name)  # the push itself starts the deploy workflow
             return ""
@@ -214,7 +254,7 @@ class World:
                 repo["vars"][cmd[3]] = cmd[cmd.index("--body") + 1]
             else:
                 assert cmd[3:6] == ["deploy.yml", "--ref", "main"], cmd
-                self.start_run(cmd[cmd.index("--repo") + 1])
+                self.start_run(cmd[cmd.index("--repo") + 1], "workflow_dispatch")
             return ""
         if cmd[0] == "rp":
             n = 5  # rp --project P (--tenant T | --scope project) …
@@ -302,6 +342,35 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("cmd gh workflow run", self.names(writes))
         self.assertEqual([r["conclusion"] for r in self.world.runs], ["failure", "success"])
+
+    def test_stale_push_failure_landing_after_the_dispatch_does_not_abort_the_wait(self):
+        """No check yet → dispatch; the push run's failed check lands while the dispatched run still builds.
+        The waiter follows the dispatched run, so it ends green instead of reporting the stale failure."""
+        self.world.push_delay, self.world.dispatch_delay = 2, 3
+        self.world.deploy_outcomes = ["failure"]  # the push run completes first, and fails
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.names(writes).count("cmd gh workflow run"), 1)
+        push, dispatched = self.world.runs
+        self.assertEqual((push["event"], push["conclusion"]), ("push", "failure"))
+        self.assertEqual((dispatched["event"], dispatched["conclusion"]), ("workflow_dispatch", "success"))
+        self.assertIn(f"deploy run  {dispatched['html_url']}", out)
+
+    def test_in_progress_push_check_is_awaited_not_redispatched(self):
+        self.world.push_delay = 1  # first look: no check; ReplyPen polls it via check-runs/<id> once visible
+        self.world.deploy_outcomes = []
+        orig = self.world.github
+        def first_look_sees_it_running(method, path, query, body):
+            if path.endswith("/check-runs") and self.world.runs and self.world.runs[0]["ticks"]:
+                self.world.runs[0]["ticks"] = 0  # build done, deploy job running
+                return 200, json.dumps({"check_runs": [{"id": 1, "status": "in_progress", "conclusion": None,
+                                                        "html_url": "x"}]}).encode()
+            return orig(method, path, query, body)
+        self.world.github = first_look_sees_it_running
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("cmd gh workflow run", self.names(writes))
+        self.assertIn("already succeeded", out)
 
     def test_failed_deploy_stops_then_rerun_redispatches(self):
         self.world.deploy_outcomes = ["failure", "failure"]
@@ -402,7 +471,7 @@ class KickstartTest(unittest.TestCase):
             "cmd gh secret set", "cmd gh variable set", "cmd rp dev mirror",
             "POST /browser-rendering/screenshot", "POST /browser-rendering/screenshot"])
         self.assertIn("already succeeded", out)
-        self.assertIn("Worker site-test exists, deployed from dentai-org/site-test", out)
+        self.assertIn("Worker site-test exists, created by this machine for dentai-org/site-test", out)
 
     def test_dry_run_without_credentials_writes_nothing(self):
         world_run = self.world.run
@@ -453,58 +522,90 @@ class KickstartTest(unittest.TestCase):
         self.kick()
         code, out, writes = self.kick("wrong-org", "--teardown", "site-test")
         self.assertEqual((code, writes), (1, []))
-        self.assertIn("not a commit of wrong-org/site-test", out)
+        self.assertIn("this machine created Worker site-test for dentai-org/site-test, not wrong-org/site-test", out)
         self.assertIn("site-test", self.world.scripts)
 
+    def test_fork_with_the_same_history_cannot_tear_down_or_adopt_the_worker(self):
+        """A fork/copy keeps every commit and the Worker serves its revision marker; neither proves anything."""
+        self.kick()
+        self.world.repos["another-org/site-test"] = dict(self.world.repos["dentai-org/site-test"], id=4242)
+        for extra in (("--teardown", "site-test"), ("--teardown", "site-test", "--force-orphan"), ("--adopt",)):
+            with self.subTest(extra=extra):
+                code, out, writes = self.kick("another-org", *extra)
+                self.assertEqual((code, writes), (1, []))
+                self.assertIn("for dentai-org/site-test, not another-org/site-test", out)
+        self.assertEqual(self.world.live["site-test"][0], "dentai-org/site-test")
+
     def test_teardown_missing_repo_is_an_error_not_acceptance(self):
-        self.world.scripts["site-test"] = "tag0"  # Worker without marker, no record, no repo
+        self.world.scripts["site-test"] = "tag0"  # Worker without record, no repo
         code, out, writes = self.kick("--teardown", "site-test", "--force-orphan")
         self.assertEqual((code, writes), (1, []))
         self.assertIn("no GitHub repo", out)
 
-    def test_worker_without_revision_marker_needs_force_orphan_to_tear_down(self):
+    def test_teardown_without_record_needs_force_orphan(self):
         self.kick()
-        del self.world.live["site-test"]  # deployed some other way: no marker
+        self.forget_record()
         code, out, writes = self.kick("--teardown", "site-test")
         self.assertEqual((code, writes), (1, []))
-        self.assertIn("--force-orphan", out)
+        self.assertIn("Worker site-test exists, and this machine has no record of creating it", out)
+        self.assertIn("pass --force-orphan", out)
         code, out, _ = self.kick("--teardown", "site-test", "--force-orphan")
         self.assertEqual(code, 0, out)
         self.assertEqual(self.world.scripts, {})
 
-    def test_worker_without_revision_marker_needs_adopt_to_provision(self):
+    def test_existing_worker_without_record_needs_adopt(self):
         self.kick()
-        del self.world.live["site-test"]
+        self.forget_record()
+        del self.world.live["site-test"]  # what it serves now is unknown
         code, out, writes = self.kick()
         self.assertEqual((code, writes), (1, []))
-        self.assertIn("✗ preflight", out)
+        self.assertIn("✗ preflight — Worker site-test already exists in account", out)
         self.assertIn("pass --adopt", out)
-        self.forget_record()
         code, out, writes = self.kick("--adopt")
         self.assertEqual(code, 0, out)
+        self.assertIn("no record on this machine, --adopt", out)
         self.assertIn("redeploying", out)  # its old green check-run does not prove what is live now
         self.assertIn("cmd gh workflow run", self.names(writes))
+        self.assertIn("install website-dev", out)  # fake repo has no .agents/skills/website-dev
 
     def test_same_slug_from_another_org_aborts_before_any_write(self):
         self.kick()
         code, out, writes = self.kick("another-org")
         self.assertEqual((code, writes), (1, []))
         self.assertIn("✗ preflight", out)
-        self.assertIn("not a commit of another-org/site-test", out)
-        self.world.repos["another-org/site-test"] = dict(self.world.repos["dentai-org/site-test"], history={"e" * 40})
-        code, out, writes = self.kick("another-org", "--adopt")  # adopt does not override a foreign marker
-        self.assertEqual((code, writes), (1, []))
-        self.assertEqual(self.world.live["site-test"][0], "dentai-org/site-test")
+        self.assertIn("for dentai-org/site-test, not another-org/site-test", out)
 
     def test_existing_repo_without_record_needs_adopt(self):
         self.kick()
-        self.forget_record()
+        Path(self.tmp.name, "state", f"{ACC}-site-test.json").write_text(json.dumps(
+            {"account": ACC, "worker": "site-test", "repo": "dentai-org/site-test"}))  # Worker claim, no repo_id
         code, out, writes = self.kick()
         self.assertEqual((code, writes), (1, []))
-        self.assertIn("--adopt", out)
-        code, out, _ = self.kick("--adopt")
+        self.assertIn("is not a kickstart from this machine; pass --adopt", out)
+
+    def test_teardown_stops_deploys_before_deleting_anything(self):
+        self.kick()
+        queued = self.world.start_run("dentai-org/site-test", delay=5)  # would recreate the Worker later
+        code, out, writes = self.kick("--teardown", "site-test")
         self.assertEqual(code, 0, out)
-        self.assertIn("install website-dev", out)  # fake repo has no .agents/skills/website-dev
+        names = self.names(writes)
+        disable, cancel = (names.index("PUT /repos/dentai-org/site-test/actions/workflows/deploy.yml/disable"),
+                           names.index(f"POST /repos/dentai-org/site-test/actions/runs/{queued['id']}/cancel"))
+        first_delete = min(i for i, n in enumerate(names) if n.startswith(("DELETE", "cmd rp repo rm")))
+        self.assertLess(disable, cancel)
+        self.assertLess(cancel, first_delete)
+        self.assertEqual(queued["conclusion"], "cancelled")
+        self.world.advance_runs()
+        self.assertEqual(self.world.scripts, {})  # nothing came back
+
+    def test_teardown_aborts_while_a_run_will_not_stop(self):
+        self.kick()
+        self.world.start_run("dentai-org/site-test", delay=99)["stuck"] = True
+        code, out, writes = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 1)
+        self.assertIn("✗ deploys — deploy runs still active", out)
+        self.assertFalse([n for n in self.names(writes) if n.startswith("DELETE") or "rp repo rm" in n])
+        self.assertIn("site-test", self.world.scripts)
 
     def test_subprocess_env_carries_no_operator_secrets(self):
         import os

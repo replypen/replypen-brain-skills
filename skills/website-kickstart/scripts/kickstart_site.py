@@ -14,8 +14,9 @@ run: GitHub never returns its value, and re-setting converges a rotated token), 
 failure continues where it stopped. `--dry-run` never writes: reads run when their credential is
 present, writes are printed. urllib + PyYAML; shells out to git, gh, rp with a minimal environment.
 
-Ownership: an existing Worker is only touched when it serves /replypen-revision.json naming a commit
-of <org>/site-<slug>. Everything else needs an explicit --adopt (provision) or --force-orphan (teardown).
+Ownership: an existing Worker (and, for teardown, the whole site) is only touched when this machine's
+state record names that exact account + Worker + repo. Everything else needs an explicit --adopt
+(provision) or --force-orphan (teardown).
 """
 
 from __future__ import annotations
@@ -58,6 +59,8 @@ DEPLOY_SECRET, ACCOUNT_VAR = "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"
 POLL_SECONDS = 10
 DEPLOY_POLLS = 72  # 12 min: build + deploy jobs, plus queueing behind a push-triggered run
 LIVE_POLLS = 12  # 2 min
+DISPATCH_POLLS = 6  # 1 min for a dispatched run to be listed
+STOP_POLLS = 12  # teardown: 2 min for cancelled runs to stop
 VIEWPORTS = {"mobile": (390, 844), "desktop": (1280, 800)}
 
 
@@ -135,8 +138,8 @@ class Kickstart:
         self.s = {}  # facts gathered along the way, printed in the summary
         self._checkout = None
         self.secrets = [t for t in (self.cf_token, self.deploy_token, self.gh_pat, self.br_token) if len(t) >= 8]
-        # This machine's record: which repo it personalised (an existing repo without it needs --adopt)
-        # and where a partial teardown parked the repo.
+        # This machine's record: the Worker it claimed for which repo (ownership), the repo it personalised
+        # (an existing repo without it needs --adopt) and where a partial teardown parked the repo.
         self.state_path = Path(args.state_dir).expanduser() / f"{args.account}-{self.worker}.json"
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {}
 
@@ -219,11 +222,11 @@ class Kickstart:
                          f"/accounts/{self.a.account}{path}", body)
         return None if data is None else data.get("result")
 
-    def gh(self, method, path, body=None, *, pat=False):
+    def gh(self, method, path, body=None, *, pat=False, ok=(200, 201, 204)):
         token = self.gh_pat if pat else self.gh_token()
         try:
             return self._api(GH_API, token, "GH_SITE_PROVISIONING_PAT" if pat else "a GitHub token",
-                             method, path, body)
+                             method, path, body, ok)
         except StepFailed as e:
             # An org may forbid classic PATs (pro-backup does): the gh login's OAuth token still works there.
             if e.status != 403 or "personal access token (classic)" not in str(e):
@@ -231,7 +234,7 @@ class Kickstart:
             login = self.gh_login_token()
             if not login or login == token:
                 raise
-            return self._api(GH_API, login, "the gh login", method, path, body)
+            return self._api(GH_API, login, "the gh login", method, path, body, ok)
 
     def act(self, cmd, *, stdin=None, shown=None):
         """Run a writing command, or print it on a dry run. `shown` replaces argv in the plan line."""
@@ -270,36 +273,46 @@ class Kickstart:
             return None
         return any(s.get("id") == self.worker for s in scripts)
 
-    def check_owner(self, override, flag):
-        """Raise unless the same-named Worker is this repo's. Proof: it serves the revision marker only
-        the repo's deploy job writes, naming a commit GitHub finds in <org>/site-<slug>. A repo generated
-        from the template starts a fresh history, so another site's revision never matches. Stateless,
-        so it holds on any machine; the workers.dev host pins exactly this Worker name in the account.
-        No marker (never deployed by the workflow, workers.dev disabled) ⇒ only `override` accepts it."""
-        status, raw = self.http.request("GET", self.workers_dev + REVISION_PATH)
-        try:
-            sha = json.loads(raw).get("revision") if status == 200 else None
-        except (ValueError, AttributeError):
-            sha = None
-        if sha and re.fullmatch(r"[0-9a-f]{40}", sha):
-            if self.gh("GET", f"/repos/{self.full_name}/commits/{sha}"):
-                return f"deployed from {self.full_name} @ {sha[:8]}"
-            raise StepFailed(f"Worker {self.worker} serves revision {sha[:8]}, which is not a commit of "
-                             f"{self.full_name}; refusing to touch it (pick another --worker-name/slug)")
+    def record_conflict(self):
+        """The repo this machine's record names for this account + Worker, when it is not ours."""
+        other = self.state.get("repo")
+        return other if other and other.lower() != self.full_name.lower() else None
+
+    def owns_worker(self):
+        """This machine's record (written by the run that saw the Worker free and created it) names exactly
+        this account + Worker + repo. Nothing served by the Worker counts: a fork keeps history, a marker
+        is content anyone can serve."""
+        st = self.state
+        return (st.get("account"), st.get("worker"), (st.get("repo") or "").lower()) == (
+            self.a.account, self.worker, self.full_name.lower())
+
+    def check_owner(self, override, flag, what):
+        """Raise unless this machine's record proves `what` belongs to this repo, or the operator overrides.
+        A record naming another repo is refused even with the override: that is this machine's own site."""
+        if other := self.record_conflict():
+            raise StepFailed(f"this machine created Worker {self.worker} for {other}, not {self.full_name} "
+                             f"({self.state_path}); pick another slug/--worker-name, tear {other} down first, "
+                             "or delete that record if it is wrong")
+        if self.owns_worker():
+            return f"created by this machine for {self.full_name}"
         if override:
-            return f"no revision marker, {flag}"
-        raise StepFailed(f"Worker {self.worker} exists but {self.workers_dev}{REVISION_PATH} names no "
-                         f"{self.full_name} commit (HTTP {status}); pass {flag} if it is really this repo's")
+            return f"no record on this machine, {flag}"
+        raise StepFailed(f"{what}, and this machine has no record of creating it for {self.full_name} "
+                         f"({self.state_path}); run from the machine that created it, or pass {flag} "
+                         f"if it really is {self.full_name}'s")
 
     def step_preflight(self):
         """Before any write: a same-named Worker in the shared account must already be ours, since the
-        first deploy would overwrite it."""
+        first deploy would overwrite it. A free one is claimed in the record before the deploy creates it."""
         exists = self.worker_exists()
         if exists is None:
             return f"would check Worker {self.worker} is free or ours"
-        if not exists:
-            return f"Worker {self.worker} is free"
-        return f"Worker {self.worker} exists, {self.check_owner(self.a.adopt, '--adopt')}"
+        if exists:
+            return f"Worker {self.worker} exists, " + self.check_owner(
+                self.a.adopt, "--adopt", f"Worker {self.worker} already exists in account {self.a.account}")
+        if not self.record_conflict():
+            self.save_state()
+        return f"Worker {self.worker} is free"
 
     # ---- 1. repository --------------------------------------------------------------------------
 
@@ -378,7 +391,7 @@ class Kickstart:
         parked = re.compile(re.escape(self.full_name) + r"-teardown-\d+", re.IGNORECASE)
         if repo and parked.fullmatch(repo["full_name"]):
             return repo, True
-        if self.state.get("parked_repo"):
+        if self.state.get("parked_repo") and not self.record_conflict():
             repo = self.gh("GET", f"/repos/{self.state['parked_repo']}")
             if repo:
                 return repo, True
@@ -493,12 +506,12 @@ class Kickstart:
         self.act(["gh", "variable", "set", ACCOUNT_VAR, "--body", self.a.account, *repo])
         sha = self.s.get("head_sha")
         if self.a.dry_run and not sha:
-            self.plan(f"gh workflow run deploy.yml --ref main, wait for check-run '{DEPLOY_CHECK}', "
+            self.plan(f"gh workflow run deploy.yml --ref main, wait for that run, "
                       f"GET {self.live_url}/ and {REVISION_PATH}")
             return "would deploy main"
         run = self.deploy_run(sha)
         if run and run.get("status") != "completed":
-            run = self.wait_deploy(sha, after=run["id"] - 1)  # a push-triggered run; it may still succeed
+            run = self.wait_check(sha, run["id"])  # a push-triggered run; it may still succeed
         if run and run.get("conclusion") == "success":
             # A green check alone is not enough: the Worker may since have been deleted or overwritten.
             try:
@@ -507,15 +520,18 @@ class Kickstart:
                 return f"'{DEPLOY_CHECK}' on {sha[:8]} already succeeded; {live}"
             except StepFailed as err:
                 self.say("·", "deploy", f"live site is not {sha[:8]} ({err}); redeploying")
-        # None yet, one that ran before the secret existed, or a stale live site: dispatch a fresh run.
+        # None yet, one that ran before the secret existed, or a stale live site: dispatch a fresh run and
+        # follow THAT run, never "any newer check": an older push run can still land a failure meanwhile.
+        seen = None if self.a.dry_run else {r["id"] for r in self.dispatch_runs(sha)}
         self.act(["gh", "workflow", "run", Path(WORKFLOW).name, "--ref", "main", *repo])
         if self.a.dry_run:
-            return f"would dispatch {Path(WORKFLOW).name} on main and wait for '{DEPLOY_CHECK}' on {sha[:8]}"
-        run = self.wait_deploy(sha, after=run["id"] if run else 0)
+            return f"would dispatch {Path(WORKFLOW).name} on main and wait for that run on {sha[:8]}"
+        run = self.wait_run(self.dispatched_run(sha, seen))
         self.s["deploy_run"] = run.get("html_url", "-")
         if run.get("conclusion") != "success":
-            raise StepFailed(f"'{DEPLOY_CHECK}' concluded {run.get('conclusion')}: {run.get('html_url')}")
-        return f"'{DEPLOY_CHECK}' on {sha[:8]} success; {self.probe_live(sha)}"
+            raise StepFailed(f"dispatched {Path(WORKFLOW).name} run concluded {run.get('conclusion')}: "
+                             f"{run.get('html_url')}")
+        return f"dispatched run on {sha[:8]} success; {self.probe_live(sha)}"
 
     def deploy_run(self, sha):
         """The newest `Website deploy` check-run on `sha` (ids grow; filter=all keeps reruns)."""
@@ -523,15 +539,42 @@ class Kickstart:
         data = self.gh("GET", f"/repos/{self.full_name}/commits/{sha}/check-runs?check_name={q}&filter=all") or {}
         return max(data.get("check_runs") or [], key=lambda r: r["id"], default=None)
 
-    def wait_deploy(self, sha, *, after):
-        """Poll until a check-run newer than id `after` completes."""
+    def wait_check(self, sha, check_id):
+        """Poll until check-run `check_id` completes."""
         for _ in range(DEPLOY_POLLS):
-            run = self.deploy_run(sha)
-            if run and run["id"] > after and run.get("status") == "completed":
+            data = self.gh("GET", f"/repos/{self.full_name}/check-runs/{check_id}") or {}
+            if data.get("status") == "completed":
+                return data
+            self.sleep(POLL_SECONDS)
+        raise StepFailed(f"'{DEPLOY_CHECK}' on {sha[:8]} still running after {DEPLOY_POLLS * POLL_SECONDS}s: "
+                         f"https://github.com/{self.full_name}/actions")
+
+    def workflow_runs(self, query=""):
+        data = self.gh("GET", f"/repos/{self.full_name}/actions/workflows/{Path(WORKFLOW).name}/runs"
+                              f"?per_page=100{query}") or {}
+        return data.get("workflow_runs") or []
+
+    def dispatch_runs(self, sha):
+        return self.workflow_runs(f"&event=workflow_dispatch&head_sha={sha}")
+
+    def dispatched_run(self, sha, seen):
+        """Our dispatch: a workflow_dispatch run of deploy.yml on `sha` that did not exist before it. Matching
+        by id (not by created_at) needs no agreement between this laptop's clock and GitHub's."""
+        for _ in range(DISPATCH_POLLS):
+            fresh = [r for r in self.dispatch_runs(sha) if r["id"] not in seen and r.get("head_sha") == sha]
+            if fresh:
+                return min(fresh, key=lambda r: r["id"])
+            self.sleep(POLL_SECONDS)
+        raise StepFailed(f"dispatched {Path(WORKFLOW).name} but no workflow_dispatch run on {sha[:8]} appeared "
+                         f"(main moved meanwhile?): https://github.com/{self.full_name}/actions")
+
+    def wait_run(self, run):
+        for _ in range(DEPLOY_POLLS):
+            if run.get("status") == "completed":
                 return run
             self.sleep(POLL_SECONDS)
-        raise StepFailed(f"no completed '{DEPLOY_CHECK}' on {sha[:8]} after {DEPLOY_POLLS * POLL_SECONDS}s: "
-                         f"https://github.com/{self.full_name}/actions")
+            run = self.gh("GET", f"/repos/{self.full_name}/actions/runs/{run['id']}") or run
+        raise StepFailed(f"dispatched run not completed after {DEPLOY_POLLS * POLL_SECONDS}s: {run.get('html_url')}")
 
     def probe_live(self, sha, polls=LIVE_POLLS):
         needle = html.escape(self.a.name)
@@ -631,8 +674,8 @@ class Kickstart:
     # ---- teardown (throwaway sites only) --------------------------------------------------------
 
     def teardown(self):
-        """Undo a kickstart: rp mirror row, Worker, App access + deploy secret. Ownership is proven before
-        the first delete. Neither our gh login nor the PAT may delete repos, so the repo is renamed out of
+        """Undo a kickstart: stop deploys, then rp mirror row, Worker, App access + deploy secret. Ownership
+        (this machine's record, or --force-orphan) is proven before the first write. Neither our gh login nor the PAT may delete repos, so the repo is renamed out of
         the way (the slug is free again) and archived; the delete command is printed. Rerunnable from any
         partial failure (record + redirect + idempotent deletes)."""
         if self.a.teardown != self.worker:
@@ -644,6 +687,13 @@ class Kickstart:
             self.say("✗", "preflight", f"{err} — nothing was changed")
             return 1
         self.say("·" if self.a.dry_run else "✓", "preflight", plan["detail"])
+        # Gate: a queued deploy run still holds the secret and would recreate the Worker after its delete.
+        try:
+            detail = self.teardown_actions(plan["repo"])
+            self.say("·" if self.a.dry_run else "✓", "deploys", ("would: " if self.a.dry_run else "") + detail)
+        except StepFailed as err:
+            self.say("✗", "deploys", f"{err} — nothing else was changed; rerun the same command")
+            return 1
         steps = (("ReplyPen mirror", lambda: self.teardown_replypen()),
                  ("cloudflare", lambda: self.teardown_cloudflare(plan["worker"])),
                  ("github", lambda: self.teardown_github(plan["repo"], plan["parked"])))
@@ -661,13 +711,49 @@ class Kickstart:
 
     def teardown_preflight(self):
         exists = self.worker_exists()
-        owner = self.check_owner(self.a.force_orphan, "--force-orphan") if exists else "already deleted"
+        owner = self.check_owner(self.a.force_orphan, "--force-orphan",
+                                 f"Worker {self.worker} " + ("exists" if exists else "is already deleted"))
         repo, parked = self.find_repo()
         if repo is None:
             raise StepFailed(f"no GitHub repo {self.full_name} (nor a teardown-renamed one): "
                              "wrong org/slug, or already fully torn down")
         where = f"repo {repo['full_name']}" + (" (renamed by an earlier teardown)" if parked else "")
-        return {"worker": exists, "repo": repo, "parked": parked, "detail": f"Worker {self.worker} {owner}; {where}"}
+        worker = f"Worker {self.worker} " + ("exists" if exists else "already deleted")
+        return {"worker": exists, "repo": repo, "parked": parked, "detail": f"{worker}, {owner}; {where}"}
+
+    def teardown_actions(self, repo):
+        """Disable deploy.yml, cancel every queued/in-progress run of it and wait (bounded) until none is
+        active. Archived ⇒ Actions are off already."""
+        if repo.get("archived"):
+            return "repo archived, Actions off"
+        base = f"/repos/{repo['full_name']}/actions"
+        try:
+            self.gh("PUT", f"{base}/workflows/{Path(WORKFLOW).name}/disable")
+        except StepFailed as err:
+            if err.status != 404:
+                raise
+            return f"no {WORKFLOW}"
+        cancelled = set()
+        for attempt in range(STOP_POLLS):
+            data = self.gh("GET", f"{base}/workflows/{Path(WORKFLOW).name}/runs?per_page=100") or {}
+            active = [r for r in data.get("workflow_runs") or [] if r.get("status") != "completed"]
+            if not active:
+                verb = "disable" if self.a.dry_run else "disabled"
+                return f"{verb} {Path(WORKFLOW).name}, " + (f"cancelled {len(cancelled)} run(s)" if cancelled
+                                                            else "no active runs")
+            for run in active:
+                if run["id"] not in cancelled:
+                    try:
+                        self.gh("POST", f"{base}/runs/{run['id']}/cancel", ok=(202,))
+                    except StepFailed as err:
+                        if err.status != 409:  # 409: it completed meanwhile
+                            raise
+                    cancelled.add(run["id"])
+            if self.a.dry_run:
+                return f"disable {Path(WORKFLOW).name}, cancel {len(active)} active run(s)"
+            self.sleep(POLL_SECONDS)
+        raise StepFailed(f"deploy runs still active after {STOP_POLLS * POLL_SECONDS}s: "
+                         + ", ".join(r.get("html_url", str(r["id"])) for r in active))
 
     def cf_delete(self, path):
         """DELETE with retries; 404 = already gone."""
@@ -781,14 +867,14 @@ def parse_args(argv=None):
     p.add_argument("--account", default=DEFAULT_ACCOUNT, help="Cloudflare account id (default: Rootcause Sites)")
     p.add_argument("--live-url", help="mirror live_url (default: the workers.dev URL; set the real domain after DNS)")
     p.add_argument("--adopt", action="store_true",
-                   help="existing repo: skip creation and placeholder filling; accept a same-named Worker without "
-                        "a revision marker from this repo")
+                   help="existing repo: skip creation and placeholder filling; accept a same-named Worker "
+                        "this machine has no record of creating")
     p.add_argument("--mirror-name", default=MIRROR_NAME, help="ReplyPen mirror name (default: site)")
     p.add_argument("--teardown", metavar="WORKER", help="undo a throwaway kickstart; value must equal the Worker name")
     p.add_argument("--force-orphan", action="store_true",
-                   help="teardown: also delete a Worker that serves no revision marker from this repo")
+                   help="teardown: proceed without this machine's record of creating the site")
     p.add_argument("--state-dir", default="~/.local/state/website-kickstart",
-                   help="kickstart records (personalised repo + teardown resume point)")
+                   help="kickstart records (Worker ownership, personalised repo, teardown resume point)")
     p.add_argument("--dry-run", action="store_true", help="read live state, print writes, change nothing")
     p.add_argument("--out", default="~/Downloads", help="where screenshots go")
     args = p.parse_args(argv)

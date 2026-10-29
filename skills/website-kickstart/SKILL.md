@@ -50,19 +50,20 @@ Scripts Write + Account Settings Read; `CLOUDFLARE_ACCOUNT_ID` is a repo variabl
 
 | Step | What | Notes |
 |---|---|---|
-| preflight | a same-named Worker in the shared account must already be ours | read-only; refuses before any write (the first deploy would overwrite it) |
+| preflight | a same-named Worker in the shared account must already be ours | refuses before any write (the first deploy would overwrite it); a free Worker is claimed in this machine's record |
 | repo | `POST /repos/replypen/site-template/generate`, fill `__WORKER_NAME__`/`__SITE_NAME__`/`__PROJECT__`/`__TENANT__` (no tenant ⇒ `__PROJECT__/__TENANT__` → `<project>`), push main | `--adopt`: existing repo, checks `wrangler.jsonc` name = Worker. Any framework works (the build job runs `build.sh`, the deploy reads `assets.directory`). The repo must carry `.github/workflows/deploy.yml` |
 | github app | add the repo to the `replypen` App on the org | id via `GET /orgs/<org>/installations` (gh login); `PUT /user/installations/{id}/repositories/{repo}` with the PAT. Refuses while it lacks Checks/Statuses read (prints the accept URL; else chat edits fail "could not authenticate with GitHub"). Where no token may list/edit app repos (org forbids classic PATs) it prints "unverifiable, add by hand" + the settings URL and continues; the mirror refresh proves it |
-| deploy | `gh secret set` (token on stdin) + `gh variable set`, then wait for check-run `Website deploy` success on the head sha; dispatch `gh workflow run deploy.yml --ref main` when there is none, it failed (the push run raced the secret) or the live site is stale. Live 200 + name, `/replypen-revision.json` = sha | the first deploy creates the Worker. Secret re-set every run (unreadable; converges a rotated token) |
+| deploy | `gh secret set` (token on stdin) + `gh variable set`; fast path: check-run `Website deploy` on the head sha succeeded (an in-progress one is awaited) and the live site already serves it. Else `gh workflow run deploy.yml --ref main` and follow **that** run (a `workflow_dispatch` run on the head sha that did not exist before; never "any newer check", since an older push run can still land a failure) to its conclusion. Then live 200 + name, `/replypen-revision.json` = sha | the first deploy creates the Worker. Secret re-set every run (unreadable; converges a rotated token) |
 | ReplyPen mirror | `rp project repo add name=site role=website live_url preview_url_template deploy_check="Website deploy" revision_path=/replypen-revision.json form_challenge=turnstile` + `dev mirror refresh --expect-sha` | `--mirror-name` if the tenant has another `site`. `form_challenge` only when `_data/site.yml` has a `turnstile_sitekey`, so the server never demands a token the page can't produce |
 | screenshots | Browser Rendering, 390 px + 1280 px full page | 429 = free-tier rate limit, retried |
 
-**Ownership (never touch someone else's site).** A Worker counts as ours when its
-`https://<worker>.rootcause-sites.workers.dev/replypen-revision.json` names a commit GitHub finds in
-`<org>/site-<slug>` (template-generated repos start their own history, so another site never matches; works
-from any machine). Anything else needs `--adopt` (provision) or `--force-orphan` (teardown); a marker from
-another repo is always refused. An existing repo this machine did not personalise
-(`~/.local/state/website-kickstart/<account>-<worker>.json`) needs `--adopt`. Subprocesses get a minimal env
+**Ownership (never touch someone else's site).** Only this machine's record
+(`~/.local/state/website-kickstart/<account>-<worker>.json`, written by the run that found the Worker free and
+created it) proves a Worker is `<org>/site-<slug>`'s: it must name that exact account + Worker + repo. Nothing
+the Worker serves counts (a fork keeps the history; the revision marker is spoofable content). No record ⇒
+`--adopt` (provision) or `--force-orphan` (teardown); a record naming another repo is refused even with those
+(pick another slug, or delete the record if it is wrong). An existing repo this machine did not personalise
+(no `repo_id` in the record) needs `--adopt`. Subprocesses get a minimal env
 and stdin `/dev/null` (the deploy token reaches `gh` on stdin only); known secret values are redacted from
 all output. `--name` is written as a JSON-encoded YAML scalar and parsed back before the push.
 
@@ -76,7 +77,7 @@ owns the org (sets secrets/variables, dispatches) and an `rp` login. Account def
 **Verify:** the summary's `deploy run` link is green; `curl https://<live>/replypen-revision.json` names
 the head sha of main; a chat edit opens a branch whose `Website deploy` check posts a preview URL. Rerunning
 the same command must report every step as already done. Tests (fake GitHub/Actions/Cloudflare/rp world):
-`uv run --no-project --with pyyaml python -m unittest skills/website-kickstart/tests/test_kickstart.py`.
+`uv run --no-project --with pyyaml --with pytest pytest skills/website-kickstart/tests -q`.
 
 **Replacing a WordPress site?** Before the domain switch run `rp … project knowledge sync get`: a `supporthero`
 (WordPress REST) `base_url` on that domain breaks the daily KB sync. Publish a WP-shaped feed from the new site
@@ -96,8 +97,10 @@ Both apex and `www` as Worker custom domains serve 200: add one zone **Single Re
 (`PUT /zones/<id>/rulesets/phases/http_request_dynamic_redirect/entrypoint`, `concat("https://www.<domain>", http.request.uri.path)`,
 301, `preserve_query_string`). `CF_SITES_USER_TOKEN` has Dynamic URL Redirects Write (since 2026-10-25); no other operator token does.
 
-**Throwaway:** `--teardown site-<slug>` removes the rp mirror, the Worker, App access and the repo's deploy
-secret, then renames the repo to `site-<slug>-teardown-<ts>` and archives it (our tokens lack `delete_repo`;
-it prints the delete command). Ownership is proven first (wrong org = refusal, nothing changed); a missing
-repo is an error. Rerun resumes a partial teardown: the renamed repo is found via the record or GitHub's
+**Throwaway:** `--teardown site-<slug>` first disables `deploy.yml` and cancels its queued/in-progress runs,
+waiting (≤2 min) until none is active, since a queued run still holds the secret and would recreate the Worker;
+still active ⇒ it stops with nothing deleted. Then it removes the rp mirror, the Worker, App access and the
+repo's deploy secret, and renames the repo to `site-<slug>-teardown-<ts>` and archives it (our tokens lack `delete_repo`;
+it prints the delete command). Ownership (record or `--force-orphan`) is proven first (wrong org = refusal,
+nothing changed); a missing repo is an error. Rerun resumes a partial teardown: the renamed repo is found via the record or GitHub's
 redirect, deletes retry and treat 404 as done.
