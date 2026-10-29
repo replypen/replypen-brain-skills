@@ -46,8 +46,9 @@ def _cli() -> str:
 
 CF_API = "https://api.cloudflare.com/client/v4"
 GH_API = "https://api.github.com"
-# GitHub's non-terminal workflow-run statuses (the list endpoint's `status` filter takes one at a time).
-ACTIVE_RUN_STATUSES = ("queued", "in_progress", "waiting", "pending", "requested")
+# GitHub's non-terminal workflow-run statuses (the list endpoint's `status` filter takes one at a time), in
+# lifecycle order: a run that moves on between two queries lands in a status not yet queried.
+ACTIVE_RUN_STATUSES = ("requested", "queued", "pending", "waiting", "in_progress")
 DEFAULT_ACCOUNT = "60c5feed78b351b48868d3a691184c4b"  # Cloudflare "Rootcause Sites"
 WORKERS_SUBDOMAIN = "rootcause-sites"  # <worker>.rootcause-sites.workers.dev
 TEMPLATE = "replypen/site-template"
@@ -738,13 +739,19 @@ class Kickstart:
             if err.status != 404:
                 raise
             return f"no {WORKFLOW}"
-        cancelled = set()
+        cancelled, empty_scans = set(), 0
         for attempt in range(STOP_POLLS):
             # Filter server-side per non-terminal status: an unfiltered list pages old active runs out of view.
             active = []
             for status in ACTIVE_RUN_STATUSES:
                 data = self.gh("GET", f"{base}/workflows/{Path(WORKFLOW).name}/runs?status={status}&per_page=100") or {}
                 active += [r for r in data.get("workflow_runs") or [] if r.get("status") != "completed"]
+            # Two empty scans in a row: one scan is several queries, and a status move between them can
+            # still slip a run past the order above (e.g. a status GitHub adds later).
+            empty_scans = 0 if active else empty_scans + 1
+            if empty_scans == 1 and not self.a.dry_run:
+                self.sleep(POLL_SECONDS)
+                continue
             if not active:
                 verb = "disable" if self.a.dry_run else "disabled"
                 return f"{verb} {Path(WORKFLOW).name}, " + (f"cancelled {len(cancelled)} run(s)" if cancelled

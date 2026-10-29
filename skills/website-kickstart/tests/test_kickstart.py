@@ -67,6 +67,8 @@ class World:
         self.n = 0
 
     # ---- Actions ----
+    before_list = ()  # callables(status) run before each workflow-runs list query is answered
+
     def start_run(self, repo, event="push", delay=None):
         if self.repos[repo].get("workflow_disabled"):
             if event == "workflow_dispatch":
@@ -82,7 +84,7 @@ class World:
 
     def advance_runs(self):
         for run in self.runs:
-            if run["status"] == "completed":
+            if run["status"] == "completed" or run.get("hold"):
                 continue
             if run["cancel"] and not run["stuck"]:
                 run |= {"status": "completed", "conclusion": "cancelled"}
@@ -177,6 +179,8 @@ class World:
             self.advance_runs()
             ev, sha = query.get("event", [None])[0], query.get("head_sha", [None])[0]
             status, per_page = query.get("status", [None])[0], int(query.get("per_page", ["30"])[0])
+            for hook in self.before_list:
+                hook(status)
             runs = [r for r in self.runs if self.redirects.get(r["repo"], r["repo"]) == name
                     and ev in (None, r["event"]) and sha in (None, r["sha"]) and status in (None, r["status"])]
             return js({"total_count": len(runs), "workflow_runs": [  # newest first, first page only, like GitHub
@@ -609,6 +613,20 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn(f"POST /repos/dentai-org/site-test/actions/runs/{old['id']}/cancel", self.names(writes))
         self.assertEqual(old["conclusion"], "cancelled")
+
+    def test_teardown_catches_a_run_that_moves_on_between_status_queries(self):
+        self.kick()
+        run = self.world.start_run("dentai-org/site-test", delay=99)
+        run |= {"status": "waiting", "hold": True}
+
+        def move_on(status):  # waiting → in_progress just before the "waiting" query is answered
+            if status == "waiting" and run["hold"]:
+                run.update(hold=False, status="in_progress")
+        self.world.before_list = (move_on,)
+        code, out, writes = self.kick("--teardown", "site-test")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"POST /repos/dentai-org/site-test/actions/runs/{run['id']}/cancel", self.names(writes))
+        self.assertEqual(run["conclusion"], "cancelled")
 
     def test_refused_provisioning_leaves_no_record_a_teardown_would_trust(self):
         self.kick()
