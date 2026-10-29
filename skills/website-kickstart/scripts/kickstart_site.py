@@ -685,7 +685,10 @@ class Kickstart:
         """Does the site render the bot-check widget? A clone failure fails the step (never a silent off)."""
         if self.a.dry_run and not self._checkout:
             return True  # plan as the template ships; a dry run clones nothing
-        site = yaml.safe_load((self.checkout() / "_data" / "site.yml").read_text()) or {}
+        path = self.checkout() / "_data" / "site.yml"
+        if not path.exists():
+            return False  # not our template (an adopted Astro site…): leave the mirror's form_challenge as it is
+        site = yaml.safe_load(path.read_text()) or {}
         return bool(str(site.get("turnstile_sitekey") or "").strip())
 
     # ---- 6. screenshots -------------------------------------------------------------------------

@@ -77,7 +77,8 @@ class World:
             return self.cloudflare(method, path.removeprefix(f"/client/v4/accounts/{ACC}"), body)
         # the live site: up once the Worker exists and a build succeeded
         if self.scripts and any(b["outcome"] == "success" for b in self.builds):
-            site = yaml.safe_load(next(iter(self.repos.values()))["files"]["_data/site.yml"])
+            files = next(iter(self.repos.values()))["files"]
+            site = yaml.safe_load(files.get("_data/site.yml") or "name: Praktijk Test")  # adopted non-template site
             return 200, f"<h1>{html.escape(site['name'])}</h1>".encode()
         return 404, b"not found"
 
@@ -316,6 +317,15 @@ class KickstartTest(unittest.TestCase):
                 TEMPLATE_FILES["_data/site.yml"] = orig
                 self.assertEqual(code, 0, out)
                 self.assertIn("form_challenge=turnstile", next(w[2] for w in writes if w[1] == "rp repo add"))
+
+    def test_adopted_site_without_template_data_file(self):
+        """An adopted non-template site (Astro, no _data/site.yml) re-runs cleanly and keeps its bot check."""
+        self.kick()
+        del self.world.repos["dentai-org/site-test"]["files"]["_data/site.yml"]
+        Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+        code, out, writes = self.kick("--adopt")
+        self.assertEqual(code, 0, out)
+        self.assertFalse([w for w in writes if "form_challenge" in str(w)])
 
     def test_project_scope_site_has_no_tenant(self):
         """No --tenant ⇒ the project's own site: form posts to /forms/<project>, mirror at project scope."""
