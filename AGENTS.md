@@ -130,7 +130,7 @@ Only these are first-class:
 - `brain-website-scout` — local broad public-site mapping and Firecrawl capture, then per-topic
   synthesis into a progressive-disclosure brain; raw pages stay gitignored.
 - `website-kickstart` — operator-laptop provisioning of a chat-editable tenant website (template repo,
-  GitHub App access, Workers Builds triggers, first build, `role=website` mirror, screenshots); `--teardown`.
+  ReplyPen App access, GitHub Actions deploy secret + first deploy, `role=website` mirror, screenshots); `--teardown`.
 - `brain-ui-targets` — inventory of the project app's DOM targets for chat-widget "where to click"
   guidance: KB annotation mining, source map, local crawler, selector rules, minimal `data-rc-guide` hooks.
 - `brain-kb-mirror` — local monthly re-pull of a third-party public help center into a committed

@@ -1,4 +1,4 @@
 interface:
   display_name: "Website Kickstart"
-  short_description: "Provision a chat-editable tenant website on Workers Builds in one command"
-  default_prompt: "Use $website-kickstart to provision a new tenant website (repo, Workers Builds, ReplyPen mirror) and report the live URL and screenshots."
+  short_description: "Provision a chat-editable tenant website deployed by GitHub Actions in one command"
+  default_prompt: "Use $website-kickstart to provision a new tenant website (repo, GitHub Actions deploy, ReplyPen mirror) and report the live URL and screenshots."

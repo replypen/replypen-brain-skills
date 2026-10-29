@@ -1,4 +1,4 @@
-"""kickstart_site.py against an in-memory GitHub + Cloudflare + rc world (shapes recorded 2026-10-09)."""
+"""kickstart_site.py against an in-memory GitHub (+ Actions) + Cloudflare + rp world."""
 
 from __future__ import annotations
 
@@ -29,35 +29,57 @@ TEMPLATE_FILES = {
     "package.json": '{ "name": "__WORKER_NAME__" }\n',
     "_data/site.yml": 'name: "__SITE_NAME__"\ncontact_form_action: "https://app.replypen.com/forms/__PROJECT__/__TENANT__"\n'
                       'turnstile_sitekey: "0x4AAAAtest"\n',
+    ".github/workflows/deploy.yml": "name: Website deploy\n",
 }
-TOKENS = {"CF_SITES_USER_TOKEN": "cf", "GH_SITE_PROVISIONING_PAT": "pat", "CF_BROWSER_RENDERING_TOKEN": "br"}
+PERSONALISED = ("wrangler.jsonc", "package.json", "_data/site.yml")
+TOKENS = {"CF_SITES_USER_TOKEN": "cf", "CF_SITES_DEPLOY_TOKEN": "deploy-token-xyz",
+          "GH_SITE_PROVISIONING_PAT": "pat", "CF_BROWSER_RENDERING_TOKEN": "br"}
 
 
 class World:
-    """GitHub + Cloudflare + rc state; every write is appended to `writes`."""
+    """GitHub + Actions + Cloudflare + rp state; every write is appended to `writes`.
+
+    A deploy run (push or dispatch) completes on the next check-runs poll: success when the repo has the
+    deploy secret + account variable and `deploy_outcomes` (consumed per run) does not say otherwise.
+    Success creates/updates the Worker named in wrangler.jsonc and makes it serve that sha's site."""
 
     def __init__(self):
-        self.repos = {}  # full_name -> {"id", "files", "sha", "archived"}
-        self.installs = {"replypen": (168123503, set()), "cloudflare-workers-and-pages": (169196228, set())}
-        self.scripts = {}  # name -> tag
-        self.triggers = {}  # uuid -> trigger
-        self.builds = []
-        self.build_outcomes = []  # consumed per started build; default success
+        self.repos = {}  # full_name -> {"id", "files", "sha", "history", "archived", "secrets", "vars"}
+        self.install = (168123503, set())
+        self.scripts = {}  # worker name -> tag
+        self.live = {}  # worker name -> (repo full_name, sha) it serves
+        self.runs = []  # check-runs: {"id", "repo", "sha", "status", "conclusion", "html_url"}
+        self.deploy_outcomes = []
         self.rc_repos = []
-        self.connections = {}  # uuid -> connection
         self.redirects = {}  # old full_name -> new (GitHub keeps answering renamed repos)
         self.fail_once = set()  # (method, path prefix) answered 503 once
         self.writes = []
         self.rp_scopes = []
-        self.perms = {}  # app_slug -> installation permissions override
+        self.perms = None  # ReplyPen installation permissions override
         self.token = None  # bearer of the current GitHub request
         self.no_classic_pat = False  # the org's policy refuses the classic PAT (403)
         self.no_user_installations = False  # …and /user/installations refuses gh's OAuth token too
+        self.argv = []  # every command line, to prove no secret rides in argv
         self.n = 0
 
-    def uid(self, prefix):
+    # ---- Actions ----
+    def start_run(self, repo):
         self.n += 1
-        return f"{prefix}-{self.n}"
+        self.runs.append({"id": self.n, "repo": repo, "sha": self.repos[repo]["sha"], "status": "queued",
+                          "conclusion": None, "html_url": f"https://github.com/{repo}/actions/runs/{self.n}"})
+
+    def advance_runs(self):
+        for run in self.runs:
+            if run["status"] == "completed":
+                continue
+            repo = self.repos[run["repo"]]
+            armed = ks.DEPLOY_SECRET in repo["secrets"] and repo["vars"].get(ks.ACCOUNT_VAR) == ACC
+            outcome = self.deploy_outcomes.pop(0) if self.deploy_outcomes else "success"
+            run |= {"status": "completed", "conclusion": outcome if armed else "failure"}
+            if run["conclusion"] == "success":
+                worker = re.search(r'"name": "([^"]+)"', repo["files"]["wrangler.jsonc"]).group(1)
+                self.scripts.setdefault(worker, f"tag-{worker}")
+                self.live[worker] = (run["repo"], run["sha"])
 
     # ---- HTTP ----
     def request(self, method, url, *, headers=None, body=None):
@@ -75,12 +97,15 @@ class World:
             return self.github(method, path, query, body)
         if u.netloc == "api.cloudflare.com":
             return self.cloudflare(method, path.removeprefix(f"/client/v4/accounts/{ACC}"), body)
-        # the live site: up once the Worker exists and a build succeeded
-        if self.scripts and any(b["outcome"] == "success" for b in self.builds):
-            files = next(iter(self.repos.values()))["files"]
-            site = yaml.safe_load(files.get("_data/site.yml") or "name: Praktijk Test")  # adopted non-template site
-            return 200, f"<h1>{html.escape(site['name'])}</h1>".encode()
-        return 404, b"not found"
+        worker = u.netloc.split(".")[0]
+        if worker not in self.live or worker not in self.scripts:
+            return 404, b"not found"
+        repo, sha = self.live[worker]
+        if path == ks.REVISION_PATH:
+            return 200, json.dumps({"revision": sha}).encode()
+        files = self.repos[self.redirects.get(repo, repo)]["files"]
+        site = yaml.safe_load(files.get("_data/site.yml") or "name: Praktijk Test")  # adopted non-template site
+        return 200, f"<h1>{html.escape(site['name'])}</h1>".encode()
 
     def ok(self, result, status=200):
         return status, json.dumps({"success": True, "errors": [], "messages": [], "result": result}).encode()
@@ -106,28 +131,37 @@ class World:
                        "html_url": f"https://github.com/{name}", "archived": repo.get("archived", False)})
         if path == "/repos/replypen/site-template/generate":
             self.redirects.pop(f"{body['owner']}/{body['name']}", None)
-            self.repos[f"{body['owner']}/{body['name']}"] = {"id": 1000 + self.n, "files": dict(TEMPLATE_FILES),
-                                                              "sha": "a" * 40}
+            sha = f"{len(self.repos) + 1:x}" * 40  # every generated repo starts its own history
+            self.repos[f"{body['owner']}/{body['name']}"] = {
+                "id": 1000 + self.n, "files": dict(TEMPLATE_FILES), "sha": sha[:40], "history": {sha[:40]},
+                "secrets": {}, "vars": {}}
             return js({}, 201)
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/contents/(.+)", path):
             text = self.repos[m.group(1)]["files"].get(m.group(2))
             return js({"content": base64.b64encode(text.encode()).decode()}) if text else js({}, 404)
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/commits/main", path):
             return js({"sha": self.repos[m.group(1)]["sha"]})
-        if re.fullmatch(r"/repos/[^/]+/[^/]+/commits/\w+/check-runs", path):
-            done = [b for b in self.builds if b["outcome"]]
-            runs = [{"status": "completed", "conclusion": done[-1]["outcome"]}] if done else []
-            return js({"check_runs": runs})
+        if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/commits/([0-9a-f]{40})", path):
+            repo = self.repos.get(m.group(1))
+            return js({"sha": m.group(2)}) if repo and m.group(2) in repo["history"] else js({"message": "No commit"}, 404)
+        if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/commits/(\w+)/check-runs", path):
+            self.advance_runs()
+            assert query.get("check_name") == [ks.DEPLOY_CHECK], query
+            return js({"check_runs": [r for r in self.runs if (r["repo"], r["sha"]) == m.groups()]})
+        if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/actions/secrets/(\w+)", path):
+            secrets = self.repos[m.group(1)]["secrets"]
+            return (204, b"") if secrets.pop(m.group(2), None) else js({"message": "Not Found"}, 404)
         if re.fullmatch(r"/orgs/[^/]+/installations", path):
-            return js({"installations": [{"id": i, "app_slug": slug, "repository_selection": "selected",
-                                          "app_id": 4006321 if slug == "replypen" else 1,
-                                          "permissions": self.perms.get(slug, {"checks": "read", "statuses": "read"})}
-                                         for slug, (i, _) in self.installs.items()]})
+            return js({"installations": [
+                {"id": 99, "app_slug": "other-app", "app_id": 1, "repository_selection": "all"},
+                {"id": self.install[0], "app_slug": "replypen", "app_id": 4006321, "repository_selection": "selected",
+                 "permissions": self.perms or {"checks": "read", "statuses": "read"}}]})
         if m := re.fullmatch(r"/user/installations/(\d+)/repositories(?:/(\d+))?", path):
             if self.no_user_installations:
                 return js({"message": "You must authenticate with an access token authorized to a GitHub App, "
                                       "a personal access token, or basic auth in order to list repositories"}, 403)
-            members = next(r for i, r in self.installs.values() if i == int(m.group(1)))
+            assert int(m.group(1)) == self.install[0]
+            members = self.install[1]
             if method == "PUT":
                 members.add(int(m.group(2)))
                 return 204, b""
@@ -144,53 +178,13 @@ class World:
             return self.ok([{"id": n, "tag": t} for n, t in self.scripts.items()])
         if m := re.fullmatch(r"/workers/scripts/([\w-]+)", path):
             self.scripts.pop(m.group(1))
+            self.live.pop(m.group(1), None)
             return self.ok(None)
-        if path == "/builds/repos/connections":
-            uuid = f"conn-{body['provider_account_name']}-{body['repo_name']}"
-            self.connections[uuid] = body | {"repo_connection_uuid": uuid}
-            return self.ok(self.connections[uuid])
-        if path.startswith("/builds/repos/connections/"):
-            if not self.connections.pop(path.rsplit("/", 1)[1], None):
-                return 404, b'{"success": false, "errors": [{"message": "not found"}]}'
-            return self.ok(None)
-        if path == "/builds/tokens":
-            return self.ok([{"build_token_uuid": "tok-1", "build_token_name": "site-de-kies build token"}])
-        if m := re.fullmatch(r"/builds/workers/(\w+)/triggers", path):
-            return self.ok([t for t in self.triggers.values() if t["external_script_id"] == m.group(1)])
-        if path == "/builds/triggers":
-            uuid = self.uid("trig")
-            conn = body["repo_connection_uuid"]
-            self.triggers[uuid] = {k: v for k, v in body.items() if k != "repo_connection_uuid"} | {
-                "trigger_uuid": uuid, "repo_connection": self.connections[conn]}
-            return self.ok(self.triggers[uuid])
-        if m := re.fullmatch(r"/builds/triggers/([\w-]+)", path):
-            if method == "DELETE":
-                self.triggers.pop(m.group(1))
-                return self.ok(None)
-            if "repo_connection_uuid" in body:
-                body = dict(body, repo_connection=self.connections[body.pop("repo_connection_uuid")])
-            self.triggers[m.group(1)].update(body)
-            return self.ok(self.triggers[m.group(1)])
-        if m := re.fullmatch(r"/builds/triggers/([\w-]+)/builds", path):
-            build = {"build_uuid": self.uid("build"), "status": "queued", "outcome": None, "sha": body["commit_hash"],
-                     "branch": body["branch"]}
-            self.builds.append(build)
-            return self.ok({"build_uuid": build["build_uuid"]})
-        if re.fullmatch(r"/builds/workers/\w+/builds", path):
-            for b in self.builds:  # each poll advances a running build to its end
-                if b["status"] != "stopped":
-                    b["status"] = "stopped"
-                    b["outcome"] = self.build_outcomes.pop(0) if self.build_outcomes else "success"
-            return self.ok([{"build_uuid": b["build_uuid"], "status": b["status"], "build_outcome": b["outcome"],
-                             "created_on": b["build_uuid"],
-                             "build_trigger_metadata": {"commit_hash": b["sha"], "branch": b["branch"]}}
-                            for b in self.builds])
-        if re.fullmatch(r"/builds/builds/[\w-]+/logs", path):
-            return self.ok({"lines": [[0, "boom"]]})
         raise AssertionError(f"unrouted Cloudflare {method} {path}")
 
     # ---- commands ----
-    def run(self, cmd, *, cwd=None, env=None):
+    def run(self, cmd, *, cwd=None, env=None, stdin=None):
+        self.argv.append(list(cmd))
         if cmd[:3] == ["gh", "auth", "token"]:
             return "gho_x\n"
         if cmd[:3] == ["gh", "repo", "clone"]:
@@ -200,23 +194,27 @@ class World:
                 (target / rel).write_text(text)
             target.joinpath(".origin").write_text(cmd[3])
             return ""
-        if cmd[:2] == ["bash", "build.sh"] and cwd:
-            # the real build parses _data/site.yml with js-yaml
-            yaml.safe_load((Path(cwd) / "_data/site.yml").read_text())
         if cmd[0] == "git":
             root = Path(cmd[2])
             if "push" in cmd:
-                repo = self.repos[root.joinpath(".origin").read_text()]
-                repo["files"] = {rel: (root / rel).read_text() for rel in TEMPLATE_FILES}
-                repo["sha"] = "b" * 40
+                name = root.joinpath(".origin").read_text()
+                repo = self.repos[name]
+                repo["files"] |= {rel: (root / rel).read_text() for rel in PERSONALISED}
+                repo["sha"] = "b" + repo["sha"][1:]
+                repo["history"].add(repo["sha"])
                 self.writes.append(("cmd", "git push", None))
+                self.start_run(name)  # the push itself starts the deploy workflow
             return ""
-        if cmd[:2] == ["bash", "build.sh"]:
-            return ""
-        if cmd[:3] == ["pnpm", "dlx", "wrangler@4"]:
-            name = re.search(r'"name": "([^"]+)"', (Path(cwd) / "wrangler.jsonc").read_text()).group(1)
-            self.scripts[name] = "tag0"
-            self.writes.append(("cmd", "wrangler deploy", None))
+        if cmd[:3] in (["gh", "secret", "set"], ["gh", "variable", "set"], ["gh", "workflow", "run"]):
+            repo = self.repos[cmd[cmd.index("--repo") + 1]]
+            self.writes.append(("cmd", " ".join(cmd[:3]), stdin))
+            if cmd[1] == "secret":
+                repo["secrets"][cmd[3]] = stdin
+            elif cmd[1] == "variable":
+                repo["vars"][cmd[3]] = cmd[cmd.index("--body") + 1]
+            else:
+                assert cmd[3:6] == ["deploy.yml", "--ref", "main"], cmd
+                self.start_run(cmd[cmd.index("--repo") + 1])
             return ""
         if cmd[0] == "rp":
             n = 5  # rp --project P (--tenant T | --scope project) …
@@ -257,6 +255,9 @@ class KickstartTest(unittest.TestCase):
         self.world.writes, writes = [], self.world.writes
         return code, out.getvalue(), writes
 
+    def forget_record(self):
+        Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+
     @staticmethod
     def names(writes):
         return [f"{m} {p}" for m, p, _ in writes]
@@ -268,34 +269,57 @@ class KickstartTest(unittest.TestCase):
             "POST /repos/replypen/site-template/generate",
             "cmd git push",
             "PUT /user/installations/168123503/repositories/1000",
-            "PUT /user/installations/169196228/repositories/1000",
-            "cmd wrangler deploy",
-            "PUT /builds/repos/connections",
-            "POST /builds/triggers",
-            "POST /builds/triggers",
-            "POST /builds/triggers/trig-1/builds",
+            "cmd gh secret set",
+            "cmd gh variable set",
+            # no dispatch: the push-triggered run picked up the secret before its deploy job
             "cmd rp repo add",
             "cmd rp dev mirror",
             "POST /browser-rendering/screenshot",
             "POST /browser-rendering/screenshot",
         ])
-        files = self.world.repos["dentai-org/site-test"]["files"]
-        self.assertIn('"name": "site-test"', files["wrangler.jsonc"])
-        self.assertIn("forms/dentai/test", files["_data/site.yml"])
-        self.assertIn('name: "Praktijk Test"', files["_data/site.yml"])
-        prod, preview = (w[2] for w in writes if w[:2] == ("POST", "/builds/triggers"))
-        self.assertEqual((prod["branch_includes"], prod["deploy_command"], prod["build_token_uuid"]),
-                         (["main"], "npx wrangler@4 deploy", "tok-1"))
-        self.assertEqual((preview["branch_excludes"], preview["deploy_command"]), (["main"], "npx wrangler@4 preview"))
-        self.assertTrue(prod["build_caching_enabled"])
+        repo = self.world.repos["dentai-org/site-test"]
+        self.assertIn('"name": "site-test"', repo["files"]["wrangler.jsonc"])
+        self.assertIn("forms/dentai/test", repo["files"]["_data/site.yml"])
+        self.assertIn('name: "Praktijk Test"', repo["files"]["_data/site.yml"])
+        self.assertEqual(repo["secrets"], {"CLOUDFLARE_API_TOKEN": "deploy-token-xyz"})
+        self.assertEqual(repo["vars"], {"CLOUDFLARE_ACCOUNT_ID": ACC})
+        self.assertFalse([a for a in self.world.argv if any("deploy-token-xyz" in x for x in a)])  # stdin only
+        self.assertEqual(self.world.live["site-test"], ("dentai-org/site-test", repo["sha"]))  # workflow made it
         rc_add = next(w[2] for w in writes if w[1] == "rp repo add")
         self.assertIn("preview_url_template=https://{branch}-site-test.rootcause-sites.workers.dev", rc_add)
-        self.assertIn("deploy_check=Workers Builds", rc_add)
+        self.assertIn("deploy_check=Website deploy", rc_add)
+        self.assertIn("revision_path=/replypen-revision.json", rc_add)
         self.assertIn("form_challenge=turnstile", rc_add)  # bot check on: the template renders the widget
+        self.assertIn(f"--expect-sha {repo['sha']}", " ".join(next(w[2] for w in writes if w[1] == "rp dev mirror")))
         self.assertTrue((Path(self.tmp.name) / "test-mobile.png").exists())
-        self.assertEqual(len(json.loads((Path(self.tmp.name) / "test-triggers.json").read_text())), 2)
-        self.assertIn("✓ screenshots", out)
+        self.assertIn(f"/replypen-revision.json = {repo['sha'][:8]}", out)
+        self.assertIn("deploy run  https://github.com/dentai-org/site-test/actions/runs/", out)
         self.assertIn("Pas op de website", out)
+
+    def test_push_run_without_secret_is_replaced_by_a_dispatched_run(self):
+        self.world.deploy_outcomes = ["failure"]  # the push run lost the race with the secret
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertIn("cmd gh workflow run", self.names(writes))
+        self.assertEqual([r["conclusion"] for r in self.world.runs], ["failure", "success"])
+
+    def test_failed_deploy_stops_then_rerun_redispatches(self):
+        self.world.deploy_outcomes = ["failure", "failure"]
+        code, out, writes = self.kick()
+        self.assertEqual(code, 1)
+        self.assertIn("✗ deploy", out)
+        self.assertIn("concluded failure: https://github.com/dentai-org/site-test/actions/runs/", out)
+        self.assertNotIn("cmd rp repo add", self.names(writes))
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertIn("cmd gh workflow run", self.names(writes))
+
+    def test_missing_deploy_token_stops_before_touching_secrets(self):
+        env = {k: v for k, v in TOKENS.items() if k != "CF_SITES_DEPLOY_TOKEN"}
+        code, out, writes = self.kick(env=env)
+        self.assertEqual(code, 1)
+        self.assertIn("✗ deploy — CF_SITES_DEPLOY_TOKEN is not set", out)
+        self.assertNotIn("cmd gh secret set", self.names(writes))
 
     def test_no_sitekey_no_bot_check(self):
         """A template without a filled sitekey shows no widget, so the mirror must not demand a token."""
@@ -322,10 +346,17 @@ class KickstartTest(unittest.TestCase):
         """An adopted non-template site (Astro, no _data/site.yml) re-runs cleanly and keeps its bot check."""
         self.kick()
         del self.world.repos["dentai-org/site-test"]["files"]["_data/site.yml"]
-        Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+        self.forget_record()
         code, out, writes = self.kick("--adopt")
         self.assertEqual(code, 0, out)
         self.assertFalse([w for w in writes if "form_challenge" in str(w)])
+
+    def test_adopted_repo_without_workflow_is_refused(self):
+        self.kick()
+        del self.world.repos["dentai-org/site-test"]["files"][".github/workflows/deploy.yml"]
+        code, out, writes = self.kick("--adopt")
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("has no .github/workflows/deploy.yml: copy it from replypen/site-template", out)
 
     def test_project_scope_site_has_no_tenant(self):
         """No --tenant ⇒ the project's own site: form posts to /forms/<project>, mirror at project scope."""
@@ -338,10 +369,9 @@ class KickstartTest(unittest.TestCase):
 
     def test_org_forbidding_classic_pats_falls_back_to_the_gh_login(self):
         self.world.no_classic_pat = True
-        code, out, writes = self.kick()
+        code, out, _ = self.kick()
         self.assertEqual(code, 0, out)
-        repo_id = self.world.repos["dentai-org/site-test"]["id"]
-        self.assertTrue(all(repo_id in members for _, members in self.world.installs.values()))
+        self.assertIn(self.world.repos["dentai-org/site-test"]["id"], self.world.install[1])
 
     def test_org_where_no_token_may_edit_app_repos_continues_with_a_hint(self):
         self.world.no_classic_pat = self.world.no_user_installations = True
@@ -351,12 +381,12 @@ class KickstartTest(unittest.TestCase):
         self.assertFalse([p for m, p, _ in writes if m == "PUT" and p.startswith("/user/installations/")])
 
     def test_replypen_app_without_check_permissions_stops_with_the_accept_url(self):
-        self.world.perms["replypen"] = {"contents": "write", "pull_requests": "write"}
+        self.world.perms = {"contents": "write", "pull_requests": "write"}
         code, out, writes = self.kick()
         self.assertEqual(code, 1)
         self.assertIn("lacks checks, statuses: read", out)
         self.assertIn("/settings/installations/168123503/permissions/update", out)
-        self.assertNotIn("cmd wrangler deploy", self.names(writes))
+        self.assertNotIn("cmd gh secret set", self.names(writes))
 
     def test_scope_is_explicit(self):
         for argv in ([], ["--tenant", "t", "--project-scope"]):
@@ -367,32 +397,12 @@ class KickstartTest(unittest.TestCase):
         self.kick()
         code, out, writes = self.kick()
         self.assertEqual(code, 0, out)
-        # only the idempotent upsert, the mirror refresh and fresh screenshots remain
+        # only the re-set deploy secret/variable, the mirror refresh and fresh screenshots remain
         self.assertEqual(self.names(writes), [
-            "PUT /builds/repos/connections", "cmd rp dev mirror",
+            "cmd gh secret set", "cmd gh variable set", "cmd rp dev mirror",
             "POST /browser-rendering/screenshot", "POST /browser-rendering/screenshot"])
         self.assertIn("already succeeded", out)
-
-    def test_failed_build_stops_then_rerun_retriggers(self):
-        self.world.build_outcomes = ["fail"]
-        code, out, writes = self.kick()
-        self.assertEqual(code, 1)
-        self.assertIn("✗ first build", out)
-        self.assertNotIn("cmd rp repo add", self.names(writes))
-        self.assertTrue(list(Path(self.tmp.name).glob("test-build-*.log.json")))
-        code, out, writes = self.kick()
-        self.assertEqual(code, 0, out)
-        self.assertIn("POST /builds/triggers/trig-1/builds", self.names(writes))
-        self.assertNotIn("POST /builds/triggers", self.names(writes))  # triggers kept
-
-    def test_trigger_drift_is_patched_not_recreated(self):
-        self.kick()
-        prod = next(t for t in self.world.triggers.values() if t["branch_includes"] == ["main"])
-        prod["deploy_command"] = "npx wrangler deploy"
-        _, _, writes = self.kick()
-        patch = [w for w in writes if w[0] == "PATCH"]
-        self.assertEqual(patch, [("PATCH", f"/builds/triggers/{prod['trigger_uuid']}",
-                                  {"deploy_command": "npx wrangler@4 deploy"})])
+        self.assertIn("Worker site-test exists, deployed from dentai-org/site-test", out)
 
     def test_dry_run_without_credentials_writes_nothing(self):
         world_run = self.world.run
@@ -401,14 +411,20 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(writes, [])
         self.assertIn("(dry-run) would POST /repos/replypen/site-template/generate", out)
+        self.assertIn("(dry-run) would $ gh secret set CLOUDFLARE_API_TOKEN --repo dentai-org/site-test "
+                      "< $CF_SITES_DEPLOY_TOKEN", out)
         self.assertIn("(dry-run) would $ rp --project dentai --tenant test project repo add name=site", out)
         self.assertIn("result  dry-run", out)
 
     def test_dry_run_with_credentials_reads_but_never_writes(self):
         self.kick()
+        self.world.deploy_outcomes = ["failure"]
+        self.world.repos["dentai-org/site-test"]["sha"] = "c" * 40  # new head, not yet deployed
+        self.world.start_run("dentai-org/site-test")
         code, out, writes = self.kick("--dry-run")
         self.assertEqual((code, writes), (0, []))
-        self.assertIn("(dry-run) would PUT", out)  # the connection upsert is still only planned
+        self.assertIn("(dry-run) would $ gh workflow run deploy.yml --ref main", out)
+        self.assertFalse([a for a in self.world.argv if a[:2] in (["gh", "secret"], ["gh", "workflow"])][1:])
 
     def test_mirror_name_collision_is_refused(self):
         self.world.rc_repos = [{"name": "site", "git_url": "https://github.com/x/other.git"}]
@@ -422,35 +438,33 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 1)
         code, out, _ = self.kick("--teardown", "site-test")
         self.assertEqual(code, 0, out)
-        self.assertEqual((self.world.scripts, self.world.triggers, self.world.rc_repos), ({}, {}, []))
-        self.assertTrue(all(not members for _, members in self.world.installs.values()))
+        self.assertEqual((self.world.scripts, self.world.rc_repos, self.world.install[1]), ({}, [], set()))
         parked = [n for n in self.world.repos if n.startswith("dentai-org/site-test-teardown-")]
         self.assertEqual(len(parked), 1)
         self.assertTrue(self.world.repos[parked[0]]["archived"])
+        self.assertEqual(self.world.repos[parked[0]]["secrets"], {})  # no deploy token left behind
         self.assertIn("gh repo delete", out)
         code, out, _ = self.kick()  # the slug is free again
         self.assertEqual(code, 0, out)
 
-    # ---- review 2026-10-09 regressions (Astra): ownership, secrets, YAML, resumable teardown ----
+    # ---- ownership, secrets, YAML, resumable teardown ----
 
     def test_teardown_from_wrong_org_refuses_before_any_write(self):
         self.kick()
         code, out, writes = self.kick("wrong-org", "--teardown", "site-test")
         self.assertEqual((code, writes), (1, []))
-        self.assertIn("builds from dentai-org/site-test", out)
+        self.assertIn("not a commit of wrong-org/site-test", out)
         self.assertIn("site-test", self.world.scripts)
 
     def test_teardown_missing_repo_is_an_error_not_acceptance(self):
-        self.world.scripts["site-test"] = "tag0"  # unbound Worker, no record, no repo
+        self.world.scripts["site-test"] = "tag0"  # Worker without marker, no record, no repo
         code, out, writes = self.kick("--teardown", "site-test", "--force-orphan")
         self.assertEqual((code, writes), (1, []))
         self.assertIn("no GitHub repo", out)
 
-    def test_teardown_of_unbound_worker_needs_record_or_force_orphan(self):
+    def test_worker_without_revision_marker_needs_force_orphan_to_tear_down(self):
         self.kick()
-        for t in list(self.world.triggers):  # someone removed the Git connection by hand
-            del self.world.triggers[t]
-        Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+        del self.world.live["site-test"]  # deployed some other way: no marker
         code, out, writes = self.kick("--teardown", "site-test")
         self.assertEqual((code, writes), (1, []))
         self.assertIn("--force-orphan", out)
@@ -458,19 +472,33 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.world.scripts, {})
 
+    def test_worker_without_revision_marker_needs_adopt_to_provision(self):
+        self.kick()
+        del self.world.live["site-test"]
+        code, out, writes = self.kick()
+        self.assertEqual((code, writes), (1, []))
+        self.assertIn("✗ preflight", out)
+        self.assertIn("pass --adopt", out)
+        self.forget_record()
+        code, out, writes = self.kick("--adopt")
+        self.assertEqual(code, 0, out)
+        self.assertIn("redeploying", out)  # its old green check-run does not prove what is live now
+        self.assertIn("cmd gh workflow run", self.names(writes))
+
     def test_same_slug_from_another_org_aborts_before_any_write(self):
         self.kick()
         code, out, writes = self.kick("another-org")
         self.assertEqual((code, writes), (1, []))
         self.assertIn("✗ preflight", out)
-        self.assertTrue(all(t["repo_connection"]["provider_account_name"] == "dentai-org"
-                            for t in self.world.triggers.values()))
-        code, out, writes = self.kick("another-org", "--adopt")  # adopt does not override a foreign binding
+        self.assertIn("not a commit of another-org/site-test", out)
+        self.world.repos["another-org/site-test"] = dict(self.world.repos["dentai-org/site-test"], history={"e" * 40})
+        code, out, writes = self.kick("another-org", "--adopt")  # adopt does not override a foreign marker
         self.assertEqual((code, writes), (1, []))
+        self.assertEqual(self.world.live["site-test"][0], "dentai-org/site-test")
 
     def test_existing_repo_without_record_needs_adopt(self):
         self.kick()
-        Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+        self.forget_record()
         code, out, writes = self.kick()
         self.assertEqual((code, writes), (1, []))
         self.assertIn("--adopt", out)
@@ -481,20 +509,20 @@ class KickstartTest(unittest.TestCase):
     def test_subprocess_env_carries_no_operator_secrets(self):
         import os
         import sys
-        probe = "import os; print(sorted(k for k in os.environ if k.endswith(('TOKEN', '_PAT'))))"
+        probe = "import os, sys; print(sorted(k for k in os.environ if k.endswith(('TOKEN', '_PAT'))), sys.stdin.read())"
         with unittest.mock.patch.dict(os.environ, {"GH_SITE_PROVISIONING_PAT": "SENTINEL_PAT_123",
-                                                   "CF_SITES_USER_TOKEN": "SENTINEL_CF_456"}):
+                                                   "CF_SITES_DEPLOY_TOKEN": "SENTINEL_CF_456"}):
             self.assertEqual(ks.run_command([sys.executable, "-c", probe]).strip(), "[]")
-            out = ks.run_command([sys.executable, "-c", probe], env={"CLOUDFLARE_API_TOKEN": "x"}).strip()
-            self.assertEqual(out, "['CLOUDFLARE_API_TOKEN']")
+            out = ks.run_command([sys.executable, "-c", probe], stdin="piped").strip()
+            self.assertEqual(out, "[] piped")
 
     def test_secrets_in_failing_command_output_are_redacted(self):
         env = {k: v * 8 for k, v in TOKENS.items()}  # only values >= 8 chars count as secrets
         world_run = self.world.run
 
         def leaky(cmd, **kw):
-            if cmd[:2] == ["bash", "build.sh"]:
-                raise ks.StepFailed(f"env: {env['GH_SITE_PROVISIONING_PAT']} {env['CF_SITES_USER_TOKEN']}")
+            if cmd[:3] == ["gh", "secret", "set"]:
+                raise ks.StepFailed(f"env: {env['GH_SITE_PROVISIONING_PAT']} {env['CF_SITES_DEPLOY_TOKEN']}")
             return world_run(cmd, **kw)
         args = ks.parse_args(["dentai-org", "test", "--project", "dentai", "--tenant", "test",
                               "--out", self.tmp.name, "--state-dir", self.tmp.name + "/state"])
@@ -503,7 +531,7 @@ class KickstartTest(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(k.main(), 1)
         self.assertIn("env: *** ***", out.getvalue())
-        self.assertNotIn(env["GH_SITE_PROVISIONING_PAT"], out.getvalue())
+        self.assertNotIn(env["CF_SITES_DEPLOY_TOKEN"], out.getvalue())
 
     def test_names_with_quotes_backslashes_newlines_stay_valid_yaml(self):
         for name in ['Praktijk "De Brug"', "Back\\slash: yes", "Twee\nregels", "Tandarts Ève & Zoon #1"]:
@@ -513,35 +541,18 @@ class KickstartTest(unittest.TestCase):
                 self.assertEqual(code, 0, out)
                 site = yaml.safe_load(self.world.repos["dentai-org/site-test"]["files"]["_data/site.yml"])
                 self.assertEqual(site["name"], name)
-                Path(self.tmp.name, "state").joinpath(f"{ACC}-site-test.json").unlink()
+                self.forget_record()
 
     def test_bad_slugs_are_rejected(self):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             ks.parse_args(["dentai-org", "Bad Slug", "--project", "dentai", "--tenant", "t"])
 
-    def test_teardown_resumes_after_connection_delete_failure(self):
-        self.kick()
-        orig = self.world.cloudflare
-        def always_503(method, path, body):
-            if method == "DELETE" and path.startswith("/builds/repos/connections/"):
-                return 503, b'{"success": false}'
-            return orig(method, path, body)
-        self.world.cloudflare = always_503  # outlasts the retries
-        code, out, _ = self.kick("--teardown", "site-test")
-        self.assertEqual(code, 1, out)
-        self.assertEqual(self.world.triggers, {})
-        self.world.cloudflare = orig
-        code, out, writes = self.kick("--teardown", "site-test")
-        self.assertEqual(code, 0, out)
-        self.assertIn(("DELETE", "/builds/repos/connections/conn-dentai-org-site-test", None), writes)
-        self.assertEqual(self.world.connections, {})
-
     def test_transient_503_is_retried(self):
         self.kick()
-        self.world.fail_once = {("DELETE", "/builds/triggers/")}
+        self.world.fail_once = {("DELETE", "/workers/scripts/")}
         code, out, _ = self.kick("--teardown", "site-test")
         self.assertEqual(code, 0, out)
-        self.assertEqual((self.world.triggers, self.world.connections, self.world.scripts), ({}, {}, {}))
+        self.assertEqual(self.world.scripts, {})
 
     def test_teardown_resumes_after_archive_failure(self):
         self.kick()
@@ -560,47 +571,9 @@ class KickstartTest(unittest.TestCase):
         code, out, _ = self.kick("--teardown", "site-test")
         self.assertEqual(code, 0, out)
         self.assertIn("renamed by an earlier teardown", out)
+        self.assertIn("Worker site-test already deleted", out)
         self.assertTrue(self.world.repos[parked[0]]["archived"])
         self.assertEqual(len([n for n in self.world.repos if "-teardown-" in n]), 1)  # no second rename
-
-    def test_teardown_without_local_record_resumes_after_connection_delete_failure(self):
-        self.kick()
-        state = Path(self.tmp.name, "state", f"{ACC}-site-test.json")
-        state.unlink()  # teardown from another machine: ownership comes from the live binding only
-        orig = self.world.cloudflare
-
-        def always_503(method, path, body):
-            if method == "DELETE" and path.startswith("/builds/repos/connections/"):
-                return 503, b'{"success": false}'
-            return orig(method, path, body)
-        self.world.cloudflare = always_503
-        code, out, _ = self.kick("--teardown", "site-test")
-        self.assertEqual(code, 1, out)
-        self.assertEqual(self.world.triggers, {})  # now unbound
-        self.assertIn("conn-dentai-org-site-test", json.loads(state.read_text())["connections"])
-        self.world.cloudflare = orig
-        code, out, writes = self.kick("--teardown", "site-test")  # no --force-orphan needed
-        self.assertEqual(code, 0, out)
-        self.assertIn(("DELETE", "/builds/repos/connections/conn-dentai-org-site-test", None), writes)
-        self.assertEqual((self.world.connections, self.world.scripts), ({}, {}))
-
-    def test_unlinked_github_org_gets_a_hint_and_rerun_reuses_the_worker(self):
-        orig = self.world.cloudflare
-
-        def unlinked(method, path, body):
-            if method == "PUT" and path == "/builds/repos/connections":
-                return 404, json.dumps({"success": False, "errors": [
-                    {"code": 8000008, "message": "This project is disconnected from your Git account"}]}).encode()
-            return orig(method, path, body)
-        self.world.cloudflare = unlinked
-        code, out, _ = self.kick()
-        self.assertEqual(code, 1)
-        self.assertIn("Import a repository → Add GitHub account → dentai-org", out)
-        self.world.cloudflare = orig
-        code, out, writes = self.kick()
-        self.assertEqual(code, 0, out)
-        self.assertNotIn("cmd wrangler deploy", self.names(writes))
-        self.assertIn("unbound, created by this machine's kickstart", out)
 
 
 if __name__ == "__main__":
