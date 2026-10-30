@@ -238,6 +238,10 @@ bump did not land, replypen CI (`scripts/check_workspace_pin.py`) goes red on un
 replypen's `promote.py` preflight **FAILs** while lib commits sit past the pin (even unpushed local
 ones) — but don't rely on the gates; release as you go.
 
+Installed clones follow releases on their own: `scripts/kit_update.py` (called by the managed
+pre-commit hook, `brain_run.py`/`brain_test.py`, `brain_git_sync.py`) moves a tag-pinned clone to the
+newest tag once a day and relinks new skills into the brain; it never touches a clone on a branch.
+
 Local scripts don't wait for a release: analysis/report entry points (`usage.py`, the fleet-report,
 harvest, helpcenter-suggestions, grounding-intake and source-routing collectors) call
 `scripts/kit_fresh.py` `ensure(__file__)` in their `__main__` block, which re-execs them from an
@@ -278,6 +282,7 @@ uv run --no-project python -m py_compile skills/local-brain-work/scripts/*.py
 # PYTHONPATH is load-bearing here and in uv-mode children: `--with .` can serve a CACHED wheel of an
 # unchanged version, so local runtime source must precede site-packages while iterating on runtime/lib.
 cd runtime && PYTHONPATH=$(pwd) uv run --with '.[test]' --no-project pytest tests -q   # ~40s
+uv run --no-project --with pytest pytest -q -p no:cacheprovider scripts/test_kit_*.py   # kit_fresh/kit_update
 ./scripts/test-skills.sh [skill…]   # skill engines, one pytest per skill (~95s all); a bare `pytest skills` collides
 bash tests/test-refresh-brains-release.sh   # after refresh-brains.sh / brain_git_sync.py edits
 ./check-release-coherence.sh

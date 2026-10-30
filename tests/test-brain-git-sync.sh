@@ -274,27 +274,137 @@ assert_ancestor "$pre_remote" "$FINAL"
 test "$(cat "$LOCAL/local-race.txt")" = "local before race"
 test "$(cat "$LOCAL/remote-race.txt")" = "remote during push"
 
-# Preserve the locally known tracking tip even if fetch discovers that another actor force-rewrote
-# origin/main. Both the replaced and replacement histories must survive the reconciled merge.
-new_fixture force-rewritten-origin
-write_file "$PEER/old-remote.txt" "old remote history"
-git -C "$PEER" add old-remote.txt
-git -C "$PEER" commit -q -m "old remote history"
-git -C "$PEER" push -q origin main
-old_remote_sha="$(git -C "$PEER" rev-parse HEAD)"
-git -C "$LOCAL" fetch -q origin main
-test "$(git -C "$LOCAL" rev-parse origin/main)" = "$old_remote_sha"
-git -C "$PEER" reset -q --hard "$INITIAL"
-write_file "$PEER/new-remote.txt" "replacement remote history"
-git -C "$PEER" add new-remote.txt
-git -C "$PEER" commit -q -m "replacement remote history"
-new_remote_sha="$(git -C "$PEER" rev-parse HEAD)"
-git -C "$PEER" push -q --force origin main
-output="$(run_sync --json)"
+# A force-updated origin/main (2026-10-30: `journal/` stripped from every brain's history) must never
+# be merged back silently. rewrite_origin: LOCAL knows OLD_REMOTE, then PEER force-pushes NEW_REMOTE.
+rewrite_origin() {
+  write_file "$PEER/old-remote.txt" "old remote history"
+  git -C "$PEER" add old-remote.txt
+  git -C "$PEER" commit -q -m "old remote history"
+  git -C "$PEER" push -q origin main
+  OLD_REMOTE="$(git -C "$PEER" rev-parse HEAD)"
+  git -C "$LOCAL" fetch -q origin main
+  test "$(git -C "$LOCAL" rev-parse origin/main)" = "$OLD_REMOTE"
+  "$@"
+  git -C "$PEER" reset -q --hard "$INITIAL"
+  write_file "$PEER/new-remote.txt" "replacement remote history"
+  git -C "$PEER" add new-remote.txt
+  git -C "$PEER" commit -q -m "replacement remote history"
+  NEW_REMOTE="$(git -C "$PEER" rev-parse HEAD)"
+  git -C "$PEER" push -q --force origin main
+}
+expect_rewritten_stop() {
+  set +e
+  run_sync --json >"$TMP/rewritten.json" 2>&1
+  local status=$?
+  set -e
+  test "$status" = 2
+  uv run --no-project python -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["status"] == "rewritten", d; assert sys.argv[2] in d["rewritten_remote_shas"]' \
+    "$TMP/rewritten.json" "$OLD_REMOTE"
+  test "$(git --git-dir="$ORIGIN" rev-parse main)" = "$NEW_REMOTE"
+}
+
+# Default: stop before merging or pushing, and keep stopping on a rerun (the fetch already moved
+# origin/main, so only the saved recovery state still remembers the replaced tip).
+new_fixture rewritten-origin-stops
+rewrite_origin git -C "$LOCAL" merge -q --ff-only origin/main
+pre_local="$(git -C "$LOCAL" rev-parse HEAD)"
+expect_rewritten_stop
+expect_rewritten_stop
+test "$(git -C "$LOCAL" rev-parse HEAD)" = "$pre_local"
+
+# accept, nothing of our own: main moves onto the new history; recovery state is gone.
+output="$(run_sync --rewritten-remote accept --json)"
 assert_json_ok "$output"
 assert_converged_clean
-assert_ancestor "$old_remote_sha" "$FINAL"
-assert_ancestor "$new_remote_sha" "$FINAL"
+test "$FINAL" = "$NEW_REMOTE"
+test ! -e "$LOCAL/old-remote.txt"
+test ! -e "$LOCAL/.git/brain-git-sync-state.json"
+test -z "$(git -C "$LOCAL" for-each-ref refs/brain-git-sync/)"
+test "$(git -C "$LOCAL" for-each-ref --format='%(objectname)' refs/brain-git-sync-rescue/)" = "$pre_local"
+
+# accept with an unpushed commit made on the replaced history: only that commit is replayed.
+new_fixture rewritten-origin-own-commit
+add_own_commit() {
+  git -C "$LOCAL" merge -q --ff-only origin/main
+  write_file "$LOCAL/local.txt" "local work on old history"
+  git -C "$LOCAL" add local.txt
+  git -C "$LOCAL" commit -q -m "local work"
+}
+rewrite_origin add_own_commit
+expect_rewritten_stop
+output="$(run_sync --rewritten-remote accept --json)"
+assert_json_ok "$output"
+assert_converged_clean
+assert_ancestor "$NEW_REMOTE" "$FINAL"
+if git -C "$LOCAL" merge-base --is-ancestor "$OLD_REMOTE" "$FINAL"; then exit 1; fi
+test ! -e "$LOCAL/old-remote.txt"
+test "$(cat "$LOCAL/local.txt")" = "local work on old history"
+
+# accept blocked by an untracked file the new history adds: the rewrite stays remembered, so after
+# moving the file aside a plain rerun still stops instead of merging the replaced history back.
+new_fixture rewritten-origin-untracked-blocks-reset
+rewrite_origin git -C "$LOCAL" merge -q --ff-only origin/main
+write_file "$LOCAL/new-remote.txt" "local untracked"
+set +e
+run_sync --rewritten-remote accept --json >/dev/null 2>&1
+accept_status=$?
+set -e
+test "$accept_status" = 2
+test "$(git -C "$LOCAL" rev-parse HEAD)" = "$OLD_REMOTE"
+rm "$LOCAL/new-remote.txt"
+expect_rewritten_stop
+
+# A local merge carrying changes of its own (here: a file added inside the merge) cannot be replayed
+# as plain commits: accept stops before touching main or origin.
+new_fixture rewritten-origin-own-merge
+own_merge() {
+  git -C "$LOCAL" switch -q -c side "$INITIAL"
+  write_file "$LOCAL/side.txt" "side work"
+  git -C "$LOCAL" add side.txt
+  git -C "$LOCAL" commit -q -m "side work"
+  git -C "$LOCAL" switch -q main
+  git -C "$LOCAL" merge -q --ff-only origin/main
+  git -C "$LOCAL" merge -q --no-ff --no-commit side
+  write_file "$LOCAL/inside-merge.txt" "edit made inside the merge"
+  git -C "$LOCAL" add inside-merge.txt
+  git -C "$LOCAL" commit -q -m "merge side"
+  git -C "$LOCAL" branch -q -D side
+}
+rewrite_origin own_merge
+pre_local="$(git -C "$LOCAL" rev-parse HEAD)"
+set +e
+run_sync --rewritten-remote accept --json >"$TMP/own-merge.json" 2>&1
+accept_status=$?
+set -e
+test "$accept_status" = 2
+grep -q local_merges_with_changes "$TMP/own-merge.json"
+test "$(git -C "$LOCAL" rev-parse HEAD)" = "$pre_local"
+test "$(git --git-dir="$ORIGIN" rev-parse main)" = "$NEW_REMOTE"
+
+# A stale recovery state from an earlier blocked sync (here: a failing verifier) is caught too.
+new_fixture rewritten-origin-stale-state
+leave_stale_state() {
+  set +e
+  run_sync --verify-command false --json >/dev/null 2>&1
+  set -e
+  test -f "$LOCAL/.git/brain-git-sync-state.json"
+}
+rewrite_origin leave_stale_state
+expect_rewritten_stop
+output="$(run_sync --rewritten-remote accept --json)"
+assert_json_ok "$output"
+assert_converged_clean
+test "$FINAL" = "$NEW_REMOTE"
+
+# restore: an accidental force-push is undone by merging the dropped tip back (old behaviour).
+new_fixture rewritten-origin-restore
+rewrite_origin true
+expect_rewritten_stop
+output="$(run_sync --rewritten-remote restore --json)"
+assert_json_ok "$output"
+assert_converged_clean
+assert_ancestor "$OLD_REMOTE" "$FINAL"
+assert_ancestor "$NEW_REMOTE" "$FINAL"
 test "$(cat "$LOCAL/old-remote.txt")" = "old remote history"
 test "$(cat "$LOCAL/new-remote.txt")" = "replacement remote history"
 

@@ -168,6 +168,7 @@ if [ -d "$KIT/.git" ]; then
 fi
 
 # 1. One pinned clone on disk (shared by every brain). Pin the shared clone to a tag, never float main.
+#    scripts/kit_update.py later moves it to each newer tag (once a day, from paths agents already run).
 #    If RC_BRAIN_KIT points at the checkout running this install.sh, treat it as a developer/local
 #    override and do not mutate it.
 if [ -n "$KIT_OVERRIDE" ] && [ -d "$KIT" ] && [ "$(cd "$KIT" && pwd)" = "$SCRIPT_DIR" ]; then

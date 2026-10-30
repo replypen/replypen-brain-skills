@@ -59,6 +59,16 @@ RUNTIME_LOCK = (RUNTIME / "requirements.lock").resolve()
 DEFAULT_IMAGE = os.environ.get("RC_WORKSPACE_IMAGE", f"ghcr.io/replypen/workspace:v{VERSION}")
 
 
+def kit_autoupdate(brain_dir: Path) -> None:
+    """Daily catch-up of an installed kit clone to the newest release tag (scripts/kit_update.py)."""
+    sys.path.insert(0, str(RUNTIME.parent / "scripts"))
+    try:
+        import kit_update
+    except ImportError:  # a skill shipped without the kit root
+        return
+    kit_update.maybe_update(brain_dir)
+
+
 def runtime_skew() -> str | None:
     """Why docker mode's image would NOT carry this kit's `runtime/` bytes, else None.
 

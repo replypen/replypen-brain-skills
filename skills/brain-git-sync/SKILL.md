@@ -52,6 +52,9 @@ never overwrite it.
    script — it resumes the merge and re-enters the bounded race loop.
    [recovery.md](references/recovery.md) covers conflict and blocker recovery.
 
+   **Status `rewritten`** = `origin/main` was force-updated; nothing merged. Open
+   [recovery.md](references/recovery.md#rewritten-remote-status-rewritten-exit-2) for accept/restore.
+
 5. **Finish only on exit `0`.** Report the final SHA, the local and remote commits integrated, files
    committed, and anything intentionally left unpublished. `--json` gives machine evidence; require
    `ancestry_verified: true` — `brain-publish` takes its publish SHA from exactly that receipt. Goal is
@@ -82,6 +85,6 @@ fast-forward and mirrors still refresh. `--dry-run` builds the commit and pushes
 - Branch `main`, an `origin`, and a freshly fetched `origin/main`.
 - Merge divergent work; never rebase. Fast-forward only when cleanly behind.
 - Never reset, force-push, destructively check out, or use the global stash (shared state, its own
-  races).
+  races). Exception: the script's own `--rewritten-remote accept`.
 - Never report success until local `main` equals a freshly fetched `origin/main` and every observed
   local and remote commit is an ancestor of the final SHA.

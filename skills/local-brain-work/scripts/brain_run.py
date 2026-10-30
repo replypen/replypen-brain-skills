@@ -114,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     if not brain_dir.is_dir():
         print(f"error: brain dir not found: {brain_dir}", file=sys.stderr)
         return 1
+    E.kit_autoupdate(brain_dir)
 
     try:
         mirrors = E.discover_mirrors(brain_dir, args.mirrors_root, args.mirror)

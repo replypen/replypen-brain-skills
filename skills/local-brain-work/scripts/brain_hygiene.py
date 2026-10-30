@@ -67,6 +67,7 @@ fails at commit time, not at push.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -797,7 +798,11 @@ def main(argv: list[str] | None = None) -> int:
     except bs.StructureError as exc:
         print(f"brain-hygiene: {exc}", file=sys.stderr)
         return 2
-    if args.staged:
+    if args.staged:  # the managed pre-commit hook: the one kit path every brain commit runs
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+        with contextlib.suppress(ImportError):
+            import kit_update
+            kit_update.maybe_update(root)
         files = subprocess.run(["git", "-C", str(root), "diff", "--cached", "--name-only",
                                 "--diff-filter=ACMR"], capture_output=True, text=True).stdout.split()
     else:

@@ -7,7 +7,11 @@ description: "Update or check the installed ReplyPen brain-skills kit and the rp
 
 Two independently versioned things live on the laptop: the **kit** (`replypen-brain-skills`, installed
 per brain checkout by `install.sh`) and the **`rp` CLI** (sibling repo `replypen/replypen-cli`).
-Neither auto-updates inside an already-installed Codex or Claude setup — that is why this skill exists.
+
+The kit catches up on its own from v0.14.25: once a day the managed pre-commit hook, `brain_run.py`,
+`brain_test.py` and `brain_git_sync.py` move the shared clone to the newest release tag and link new
+skills into the brain (`scripts/kit_update.py`; `RP_KIT_AUTOUPDATE=0` opts out, a clone on a branch is
+never touched). An older install needs step 3 once. `rp` does not auto-update.
 
 ## Why the skills tree looks the way it does
 

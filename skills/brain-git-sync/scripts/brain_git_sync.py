@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -456,6 +457,103 @@ def _clear_transaction(git: Git) -> None:
         raise SyncError(f"sync succeeded but recovery state could not be cleared: {error}") from error
 
 
+def _remembered_remote_tips(transaction: dict[str, object]) -> list[str]:
+    tips = [transaction.get("initial_remote_sha"), *(transaction.get("observed_remote_shas") or [])]
+    return list(dict.fromkeys(tip for tip in tips if isinstance(tip, str) and tip))
+
+
+def _rewritten_tips(git: Git, transaction: dict[str, object], remote_sha: str) -> list[str]:
+    """Remembered remote tips the fetched origin/main no longer contains. A remote tip only ever
+    leaves origin/main's history through a force-update, e.g. a deliberate history rewrite
+    (2026-10-30: `journal/` stripped from every brain), so merging it back would republish it."""
+    return [tip for tip in _remembered_remote_tips(transaction) if not _is_ancestor(git, tip, remote_sha)]
+
+
+def _own_commits(git: Git, head: str, transaction: dict[str, object], remote_sha: str) -> list[str]:
+    """Non-merge commits on HEAD that neither the replaced nor the new remote history holds."""
+    exclude = [*_remembered_remote_tips(transaction), remote_sha]
+    return git.out("rev-list", "--reverse", "--no-merges", head, "--not", *exclude).splitlines()
+
+
+def _merges_with_own_changes(git: Git, head: str, transaction: dict[str, object], remote_sha: str) -> list[str]:
+    """Local merge commits whose tree differs from a plain re-merge of their parents (a conflict
+    resolution, an edit made inside the merge). Replaying non-merge commits cannot carry those
+    changes over. Git older than 2.36 lacks `--remerge-diff`: every local merge counts."""
+    exclude = [*_remembered_remote_tips(transaction), remote_sha]
+    merges = git.out("rev-list", "--merges", head, "--not", *exclude).splitlines()
+    own = []
+    for sha in merges:
+        shown = git.run("show", "--format=", "--remerge-diff", sha, check=False)
+        if shown.returncode or _output(shown.stdout).strip():
+            own.append(sha)
+    return own
+
+
+def _rewritten_error(git: Git, transaction: dict[str, object], rewritten: list[str], remote_sha: str) -> SyncError:
+    own = _own_commits(git, git.out("rev-parse", "HEAD"), transaction, remote_sha)
+    return SyncError(
+        f"origin/main was force-updated: it no longer contains remembered remote commit(s) "
+        f"{_format_shas(rewritten)} (now {remote_sha[:12]}). Nothing was merged or pushed. "
+        "Intended rewrite (a history cleanup)? Rerun with --rewritten-remote accept: main moves onto "
+        "the new origin/main, its own commits "
+        f"({_format_shas(own)}) are replayed on top, and this sync's recovery state is cleared. "
+        "Commits dropped by mistake? Rerun with --rewritten-remote restore to merge them back.",
+        kind="rewritten",
+        details={"rewritten_remote_shas": rewritten, "remote_sha": remote_sha, "local_only_commits": own},
+    )
+
+
+def _accept_rewritten_remote(
+    git: Git, transaction: dict[str, object], rewritten: list[str], remote_sha: str, reporter: Reporter
+) -> None:
+    """Move main onto the rewritten origin/main without losing anything of its own: a rescue ref
+    keeps the old HEAD, commits only this computer had are cherry-picked back, and `reset --keep`
+    refuses to overwrite an untracked file."""
+    current = inventory(git)
+    if _in_progress(git, "MERGE_HEAD") or current.conflicts:
+        raise SyncError("a merge is in progress on the replaced history: `git merge --abort`, then rerun "
+                        "with --rewritten-remote accept")
+    head = git.out("rev-parse", "HEAD")
+    on_replaced = not _is_ancestor(git, remote_sha, head) or any(_is_ancestor(git, t, head) for t in rewritten)
+    if current.staged or current.unstaged:
+        raise SyncError(
+            "uncommitted tracked changes: `git commit` the intended ones (they are replayed onto the new "
+            "history with main's other own commits), then rerun with --rewritten-remote accept",
+            details={"inventory": asdict(current)},
+        )
+    own = _own_commits(git, head, transaction, remote_sha) if on_replaced else []
+    merges = _merges_with_own_changes(git, head, transaction, remote_sha) if on_replaced else []
+    if merges:
+        raise SyncError(
+            f"local merge commit(s) {_format_shas(merges)} carry changes of their own (`git show "
+            "--remerge-diff <sha>`) that replaying commits cannot carry over; move main onto the new "
+            "history by hand (recovery.md, rewritten remote), then rerun with --rewritten-remote accept",
+            details={"local_merges_with_changes": merges, "local_only_commits": own},
+        )
+    rescue = f"refs/brain-git-sync-rescue/{time.strftime('%Y%m%d-%H%M%S')}"
+    git.run("update-ref", rescue, head)
+    if on_replaced:
+        reset = git.run("reset", "--keep", remote_sha, check=False)
+        if reset.returncode:
+            raise SyncError(f"cannot move main onto {remote_sha[:12]} without overwriting untracked files: "
+                            f"{_output(reset.stderr).strip()}; move them aside and rerun with "
+                            "--rewritten-remote accept")
+    _clear_transaction(git)  # only now: until HEAD left the replaced history, reruns must keep stopping
+    reporter.note(f"Accepted rewritten origin/main {remote_sha[:12]}; replaced remote tips "
+                  f"{_format_shas(rewritten)}; old HEAD kept at {rescue}")
+    if own:
+        pick = git.run("cherry-pick", "-x", *own, check=False)
+        if pick.returncode:
+            raise SyncError(
+                "replaying this computer's own commits onto the new origin/main conflicted: resolve, "
+                "`git add` and `git cherry-pick --continue` (repeat until done), then rerun the sync. "
+                f"Old HEAD kept at {rescue}",
+                kind="conflict",
+                details={"local_only_commits": own, "rescue_ref": rescue},
+            )
+        reporter.note(f"Replayed own commits: {_format_shas(own)}")
+
+
 def _verify_env() -> dict[str, str]:
     """Verify commands must not inherit the ephemeral venv this script may itself run under
     (`uv run --no-project python brain_git_sync.py`): a bare `python3` in a verify command would
@@ -562,6 +660,7 @@ def _synchronize(
     project: str = "",
     reporter: Reporter | None = None,
     allow_detached: bool = False,
+    rewritten_remote: str = "",
     error_context: dict[str, object],
 ) -> SyncResult:
     reporter = reporter or Reporter(False)
@@ -623,6 +722,7 @@ def _synchronize(
             "verify_commands": list(verify_commands),
             "verified_head": None,
             "verified_commands": [],
+            "created_at": int(time.time()),
         }
         remote_commits = transaction["remote_commits"]
         observed = transaction["observed_remote_shas"]
@@ -635,6 +735,9 @@ def _synchronize(
                     _commit_list(git, current_local_sha, remote_tip),
                 )
     else:
+        created = transaction.get("created_at")
+        age = f"{(time.time() - created) / 86400:.0f} day(s) old" if isinstance(created, int) else "age unknown"
+        reporter.note(f"Resuming an unfinished sync ({age}; state {_transaction_path(git)})")
         if verify_commands:
             transaction["verify_commands"] = list(verify_commands)
             transaction["verified_head"] = None
@@ -660,6 +763,24 @@ def _synchronize(
     for protected_remote_sha in observed:
         _protect_remote_tip(git, protected_remote_sha)
     _save_transaction(git, transaction)
+
+    # Saved first on purpose: the remembered tips make a rerun stop here too, even though this fetch
+    # already moved refs/remotes/origin/main onto the rewritten history.
+    rewritten = _rewritten_tips(git, transaction, fetched_remote_sha)
+    if rewritten and rewritten_remote != "restore":
+        if rewritten_remote != "accept":
+            raise _rewritten_error(git, transaction, rewritten, fetched_remote_sha)
+        _accept_rewritten_remote(git, transaction, rewritten, fetched_remote_sha, reporter)
+        return _synchronize(
+            repo,
+            commit_message=commit_message,
+            max_push_attempts=max_push_attempts,
+            verify_commands=verify_commands,
+            project=project,
+            reporter=reporter,
+            allow_detached=allow_detached,
+            error_context=error_context,
+        )
 
     initial_inventory_data = transaction.get("initial_inventory")
     initial_local_sha = transaction.get("initial_local_sha")
@@ -740,6 +861,8 @@ def _synchronize(
         _append_unique(observed_remote_shas, [remote_sha])
         _protect_remote_tip(git, remote_sha)
         _save_transaction(git, transaction)
+        if rewritten_remote != "restore" and (rewritten := _rewritten_tips(git, transaction, remote_sha)):
+            raise _rewritten_error(git, transaction, rewritten, remote_sha)
 
         current = inventory(git)
         if any((current.staged, current.unstaged, current.untracked, current.conflicts)):
@@ -919,6 +1042,7 @@ def synchronize(
     project: str = "",
     reporter: Reporter | None = None,
     allow_detached: bool = False,
+    rewritten_remote: str = "",
 ) -> SyncResult:
     """Run a sync and retain all available pre-mutation evidence on failure."""
     error_context: dict[str, object] = {}
@@ -931,6 +1055,7 @@ def synchronize(
             project=project,
             reporter=reporter,
             allow_detached=allow_detached,
+            rewritten_remote=rewritten_remote,
             error_context=error_context,
         )
     except SyncError as error:
@@ -986,6 +1111,16 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--rewritten-remote",
+        choices=("accept", "restore"),
+        default="",
+        help=(
+            "origin/main was force-updated and dropped remote commits this checkout remembers: "
+            "accept = move main onto the new history (own commits replayed, recovery state "
+            "cleared); restore = merge the dropped commits back (default: stop)"
+        ),
+    )
+    parser.add_argument(
         "--json", action="store_true", help="emit one machine-readable result object"
     )
     return parser
@@ -1002,6 +1137,12 @@ def _fail(error: SyncError, *, json_output: bool) -> NoReturn:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+    try:
+        import kit_update
+        kit_update.maybe_update(args.repo)
+    except ImportError:
+        pass
     try:
         result = synchronize(
             args.repo,
@@ -1011,6 +1152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             project=args.project,
             reporter=Reporter(args.json),
             allow_detached=args.detached_head,
+            rewritten_remote=args.rewritten_remote,
         )
     except SyncError as error:
         _fail(error, json_output=args.json)

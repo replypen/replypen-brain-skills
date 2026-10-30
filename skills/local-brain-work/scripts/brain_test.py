@@ -72,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     args, args.pytest_args = p.parse_known_args(sys.argv[1:] if argv is None else argv)
 
     brain_dir = E.resolve_brain_dir(args.brain)
+    E.kit_autoupdate(brain_dir)
     dirs = test_dirs(brain_dir)
     if not dirs:
         if args.require_live:
