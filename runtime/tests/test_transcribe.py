@@ -109,5 +109,31 @@ class TranscribeTest(unittest.TestCase):
         self.assertEqual((sent["instructions"], sent["keywords"]), ("10:02 opened kamp 17", ["a", "b"]))
 
 
+    @responses.activate
+    def test_frame_read_posts_moments_and_leaves_the_transcript_alone(self):
+        transcript = Path(str(self.media) + ".transcript.md")
+        transcript.write_text("[03:12] SCREEN: order id UNREADABLE\n", encoding="utf-8")
+        self._broker(status="done", transcript="[03:12]\nOrder 4417-AB", mode="screen")
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = transcribe.main([str(transcript), "--at", "03:12", "--at", "241.5", "--instructions", "the order id"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue(), "[03:12]\nOrder 4417-AB\n")
+        sent = json.loads(responses.calls[0].request.body)
+        self.assertEqual(sent["at_seconds"], [192.0, 241.5])
+        self.assertEqual(sent["instructions"], "the order id")
+        self.assertEqual(transcript.read_text(encoding="utf-8"), "[03:12] SCREEN: order id UNREADABLE\n")
+
+    def test_frame_read_refuses_bad_moments_before_calling_the_host(self):
+        self.assertEqual(transcribe.parse_moment("1:03:12"), 3792.0)
+        self.assertEqual(transcribe.parse_moment("[00:07]"), 7.0)
+        for bad in (["x"], ["-3"], ["1"] * 7):
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(transcribe.main([str(self.media), *sum((["--at", b] for b in bad), [])]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

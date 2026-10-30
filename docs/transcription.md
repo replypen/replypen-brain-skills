@@ -23,9 +23,14 @@ python -m lib.transcribe /tmp/attachments/2-schermopname.webm \
   conversation at a time.
 - **Long recordings.** One call waits up to ~9 min. Exit code 3 = still transcribing: run the SAME
   command again — it joins the running job, nothing is billed twice.
+- **Exact text at a moment (screen only).** `--at 03:12 [--at 04:01] --instructions "the order id"`
+  reads full-resolution stills of those moments instead of transcribing: up to 6, seconds, never cached,
+  the transcript file untouched. Use it when an id/amount matters or the timeline says UNREADABLE — the
+  video transcript reads frames at a fixed token budget, a still reads far smaller text.
 - **Errors.** Exit 2 with the host's sentence: no sidecar (wrong path), attachment not in this
   conversation, not a recording, transcription unavailable in this run (only chat runs mount it).
 
-Function form: `transcribe.transcribe(path, instructions=..., keywords=[...]) -> Result`
+Function form: `transcribe.transcribe(path, instructions=..., keywords=[...]) -> Result`, and
+`transcribe.read_frames(path, ["03:12"], instructions=...) -> str`
 (`transcript`, `mode`, `duration_seconds`, `cached`, `path`); raises `TranscribeError` /
 `TranscribePending` / `TranscribeUnavailable`.

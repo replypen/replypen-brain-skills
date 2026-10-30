@@ -16,6 +16,11 @@ CLI (prints the transcript, or its head + the path when long):
     python -m lib.transcribe <path> [--instructions TEXT | --instructions-file FILE]
                                     [--keywords a,b] [--language nl] [--full]
 
+Exact text at a moment of a SCREEN recording (an id, an amount, a line marked UNREADABLE): ``--at``
+reads full-resolution frames instead of transcribing — up to 6 moments, ``mm:ss`` or seconds, with
+``--instructions`` saying what to read. Seconds, never cached, and the transcript file is untouched:
+    python -m lib.transcribe <path> --at 03:12 [--at 04:01] [--instructions "the order id"]
+
 A long recording takes minutes. One call waits up to ~9 minutes; if the host is still working it
 exits 3 with "still transcribing" — run the SAME command again: it joins that transcription instead
 of starting (and paying for) a second one. The same arguments later are served from cache; different
@@ -127,6 +132,46 @@ def transcribe(
     )
 
 
+MAX_FRAMES = 6  # host cap per frame read
+FRAME_WAIT_SECONDS = 120
+
+
+def parse_moment(value: str | float) -> float:
+    """``192``, ``192.5``, ``03:12`` or ``1:03:12`` → seconds from the recording's start."""
+    if isinstance(value, (int, float)):
+        seconds = float(value)
+    else:
+        text = str(value).strip().strip("[]")
+        try:
+            parts = [float(p) for p in text.split(":")]
+        except ValueError as exc:
+            raise TranscribeError(f"--at {value!r}: use mm:ss (e.g. 03:12) or seconds") from exc
+        if not parts or len(parts) > 3:
+            raise TranscribeError(f"--at {value!r}: use mm:ss (e.g. 03:12) or seconds")
+        seconds = 0.0
+        for p in parts:
+            seconds = seconds * 60 + p
+    if seconds < 0:
+        raise TranscribeError(f"--at {value!r} is before the recording starts")
+    return seconds
+
+
+def read_frames(path: str | os.PathLike, at: list | tuple, *, instructions: str = "") -> str:
+    """Read the exact on-screen text at these moments of a screen recording (full-resolution stills)."""
+    moments = [parse_moment(a) for a in at]
+    if not moments or len(moments) > MAX_FRAMES:
+        raise TranscribeError(f"pass 1 to {MAX_FRAMES} moments with --at")
+    meta = read_sidecar(path)
+    body = {
+        "attachment_id": str(meta["attachment_id"]).strip(),
+        "instructions": (instructions or "").strip(),
+        "keywords": [],
+        "at_seconds": moments,
+        "wait_seconds": FRAME_WAIT_SECONDS,
+    }
+    return str(_post(body).get("transcript") or "")
+
+
 def _post(body: dict) -> dict:
     import requests
 
@@ -203,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--keywords", default="", help="comma-separated names/product terms")
     parser.add_argument("--language", default="", help="override the spoken-language hint (e.g. nl)")
     parser.add_argument("--full", action="store_true", help="print the whole transcript, however long")
+    parser.add_argument("--at", action="append", default=[], metavar="MM:SS",
+                        help="read the exact on-screen text at this moment instead (repeatable, up to 6)")
     args = parser.parse_args(argv)
 
     instructions = args.instructions
@@ -211,6 +258,13 @@ def main(argv: list[str] | None = None) -> int:
         with src:
             instructions = src.read()
     keywords = [k for k in args.keywords.split(",") if k.strip()]
+    if args.at:
+        try:
+            print(read_frames(args.path, args.at, instructions=instructions).rstrip())
+        except TranscribeError as exc:
+            print(f"lib.transcribe: {exc}", file=sys.stderr)
+            return 2
+        return 0
     try:
         res = transcribe(args.path, instructions=instructions, keywords=keywords, language=args.language)
     except TranscribePending as exc:
