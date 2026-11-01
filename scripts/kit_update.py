@@ -420,6 +420,7 @@ def apply(job: bool = False) -> int:
             installed = _clone_tag()  # recheck inside the lock: another updater may have moved it
             if not held:
                 status, detail = "deferred", "another kit update held the lock"
+                _record(status)  # a hung updater holding the lock must still escalate after days
             elif not installed:
                 status, detail = "failed", f"{ROOT} left its release tag while waiting for the lock"
             else:
