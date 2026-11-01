@@ -238,9 +238,13 @@ bump did not land, replypen CI (`scripts/check_workspace_pin.py`) goes red on un
 replypen's `promote.py` preflight **FAILs** while lib commits sit past the pin (even unpushed local
 ones) — but don't rely on the gates; release as you go.
 
-Installed clones follow releases on their own: `scripts/kit_update.py` (called by the managed
-pre-commit hook, `brain_run.py`/`brain_test.py`, `brain_git_sync.py`) moves a tag-pinned clone to the
-newest tag once a day and relinks new skills into the brain; it never touches a clone on a branch.
+Installed clones follow releases on their own: `scripts/kit_update.py`. Primary: the daily
+`brain-kit-refresh` t3-schedule job (06:45; `install.sh` arms it, and so does the usage path on machines
+installed earlier) runs the newest tag's updater before T3 starts, relinks every brain (missing/stale
+links, outdated hook) and installs into unlinked brain checkouts; its cheap thread settles unless a
+failure needs the user. Fallback: the managed pre-commit hook, `brain_run.py`/`brain_test.py`,
+`brain_git_sync.py` (once a day). One lock in the clone's `.git`; no tag move while another brain is
+mid-commit/rebase. Never touches a clone on a branch. Opt out: `install.sh --no-schedule`.
 
 Local scripts don't wait for a release: analysis/report entry points (`usage.py`, the fleet-report,
 harvest, helpcenter-suggestions, grounding-intake and source-routing collectors) call

@@ -20,6 +20,9 @@
 #   bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/main/install.sh) [BRAIN_DIR]
 #   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.14.26 ./install.sh ~/code/replypen/replypen-brain-foo
 #   ./install.sh --latest-version
+#
+# With t3-schedule on PATH it also arms the daily kit refresh job (scripts/kit_update.py; opt out with
+# --no-schedule, which sticks).
 set -euo pipefail
 
 KIT="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}"
@@ -35,8 +38,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<EOF
-usage: install.sh [--tag vX.Y.Z] [BRAIN_DIR]
+usage: install.sh [--tag vX.Y.Z] [--schedule|--no-schedule] [BRAIN_DIR]
        install.sh --latest-version
+       install.sh --print-hook   (the managed pre-commit hook this kit writes; the updater compares)
+
+--no-schedule: disarm the daily kit refresh job and stay opted out; --schedule: opt back in.
 
 No BRAIN_DIR: auto-detect the current brain checkout from \$PWD or its parents.
 Outside a brain checkout, pass BRAIN_DIR explicitly.
@@ -76,12 +82,37 @@ print(max(tags, key=version_key))
 PY
 }
 
+HOOK_MARK="# replypen-brain-skills managed pre-commit hook"
+LEGACY_HOOK_MARK="# rootcause-brain-skills managed pre-commit hook"
+hook_body() {
+  cat <<HOOK_EOF
+#!/bin/sh
+$HOOK_MARK (install.sh; rewritten on every kit refresh).
+# Bypass once: git commit --no-verify
+GATE="$KIT/skills/local-brain-work/scripts/brain_hygiene.py"
+[ -f "\$GATE" ] || { echo "brain hygiene: kit missing at \$GATE, skipped" >&2; exit 0; }
+# An interpreter that cannot start (e.g. a mise shim in an untrusted checkout) must not block commits.
+if python3 -c '' 2>/dev/null; then exec python3 "\$GATE" --staged; fi
+if uv run --no-project python -c '' 2>/dev/null; then exec uv run --no-project python "\$GATE" --staged; fi
+echo "brain hygiene: no working python3/uv here (untrusted mise.toml?), skipped; the push gate still runs" >&2
+HOOK_EOF
+}
+
 BRAIN_ARG=""
+SCHEDULE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --latest-version|--print-latest-version)
       latest_tag
       exit 0
+      ;;
+    --print-hook)
+      hook_body
+      exit 0
+      ;;
+    --schedule|--no-schedule)
+      SCHEDULE="$1"
+      shift
       ;;
     --tag)
       TAG="${2:?--tag needs vX.Y.Z}"
@@ -262,6 +293,13 @@ for old in \
 do
   is_kit_link "$old" && rm "$old"
 done
+# Any other kit link whose skill no longer exists (renamed or retired after this list was written).
+for dir in "$BRAIN/.agents/skills" "$BRAIN/.claude/skills"; do
+  [ -d "$dir" ] && [ ! -L "$dir" ] || continue
+  for link in "$dir"/*; do
+    if is_kit_link "$link" && [ ! -e "$link" ]; then rm "$link"; fi
+  done
+done
 
 # 3. Codex-first discovery. `.agents/skills/` is the one canonical per-brain tree. Claude Code uses
 #    `.claude/skills -> ../.agents/skills` when possible; that relative alias is meant to be COMMITTED
@@ -434,8 +472,6 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
 # 4b. Managed pre-commit hook: brain_hygiene.py --staged (conflict markers, projection `{{ }}`,
 #     `/Users/` paths, dead links, customer-copy em dashes, mermaid) fails at commit time instead of
 #     at push. Never replaces a user-owned hook or a core.hooksPath setup; says so instead.
-HOOK_MARK="# replypen-brain-skills managed pre-commit hook"
-LEGACY_HOOK_MARK="# rootcause-brain-skills managed pre-commit hook"
 HOOKS_PATH="$(git -C "$BRAIN" config core.hooksPath || true)"
 HOOK="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
 if [ -n "$BRAIN_PREFIX" ]; then
@@ -445,17 +481,7 @@ elif [ -n "$HOOKS_PATH" ] || { [ -e "$HOOK" ] && ! grep -qF -e "$HOOK_MARK" -e "
   echo "  python3 \"$KIT/skills/local-brain-work/scripts/brain_hygiene.py\" --staged"
 else
   mkdir -p "$(dirname "$HOOK")"
-  cat >"$HOOK" <<HOOK_EOF
-#!/bin/sh
-$HOOK_MARK (install.sh; rewritten on every kit refresh).
-# Bypass once: git commit --no-verify
-GATE="$KIT/skills/local-brain-work/scripts/brain_hygiene.py"
-[ -f "\$GATE" ] || { echo "brain hygiene: kit missing at \$GATE, skipped" >&2; exit 0; }
-# An interpreter that cannot start (e.g. a mise shim in an untrusted checkout) must not block commits.
-if python3 -c '' 2>/dev/null; then exec python3 "\$GATE" --staged; fi
-if uv run --no-project python -c '' 2>/dev/null; then exec uv run --no-project python "\$GATE" --staged; fi
-echo "brain hygiene: no working python3/uv here (untrusted mise.toml?), skipped; the push gate still runs" >&2
-HOOK_EOF
+  hook_body >"$HOOK"
   chmod +x "$HOOK"
 fi
 
@@ -517,3 +543,20 @@ if [ "$WTI_CHANGED" = 1 ]; then
   echo "Updated $WTI (worktree allowlist) — review and commit it with your own brain changes."
 fi
 echo "Do not also install Brain Dev as a user/global plugin; keep discovery repo-local."
+
+# 7. Install clones only: remember this brain for the updater, and arm the daily kit refresh job
+#    (scripts/kit_update.py: idempotent, respects --no-schedule and a `t3-schedule remove`).
+if [ -d "$KIT/.git" ] && [ -f "$KIT/scripts/kit_update.py" ]; then
+  grep -qxF "$BRAIN" "$KIT/.git/replypen-kit-brains" 2>/dev/null || echo "$BRAIN" >>"$KIT/.git/replypen-kit-brains"
+  if [ "${RP_KIT_SCHEDULE:-}" != 0 ] || [ -n "$SCHEDULE" ]; then
+    PY=(python3)
+    python3 -c '' 2>/dev/null || PY=(uv run -q --no-project python)
+    case "$SCHEDULE" in
+      --no-schedule) SCHEDULE_ARGS=(--no-schedule) ;;
+      --schedule) SCHEDULE_ARGS=(--schedule --opt-in) ;;
+      *) SCHEDULE_ARGS=(--schedule) ;;
+    esac
+    "${PY[@]}" "$KIT/scripts/kit_update.py" "${SCHEDULE_ARGS[@]}" ||
+      echo "daily kit refresh job: could not run $KIT/scripts/kit_update.py (python3 missing?)"
+  fi
+fi

@@ -8,10 +8,14 @@ description: "Update or check the installed ReplyPen brain-skills kit and the rp
 Two independently versioned things live on the laptop: the **kit** (`replypen-brain-skills`, installed
 per brain checkout by `install.sh`) and the **`rp` CLI** (sibling repo `replypen/replypen-cli`).
 
-The kit catches up on its own from v0.14.25: once a day the managed pre-commit hook, `brain_run.py`,
-`brain_test.py` and `brain_git_sync.py` move the shared clone to the newest release tag and link new
-skills into the brain (`scripts/kit_update.py`; `RP_KIT_AUTOUPDATE=0` opts out, a clone on a branch is
-never touched). An older install needs step 3 once. `rp` does not auto-update.
+The kit catches up on its own: a daily `brain-kit-refresh` job (06:45 local, t3-schedule; armed by
+`install.sh` or the first usage-triggered update) moves the shared clone to the newest release tag,
+relinks every brain checkout and installs into new ones; the managed pre-commit hook, `brain_run.py`,
+`brain_test.py` and `brain_git_sync.py` do the same once a day as a fallback (`scripts/kit_update.py`;
+`RP_KIT_AUTOUPDATE=0` opts out of both, `install.sh --no-schedule` of the job only; a clone on a branch
+is never touched). Check: `t3-schedule show brain-kit-refresh`, run now: `python3
+~/.replypen-brain-skills/scripts/kit_update.py --apply`. An install older than v0.14.25 needs step 3
+once. `rp` does not auto-update.
 
 ## Why the skills tree looks the way it does
 

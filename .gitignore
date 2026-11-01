@@ -19,3 +19,4 @@ build/
 /.agents/skills/
 /.claude/skills/
 _internal/
+/.agents/schedules/

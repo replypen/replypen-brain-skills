@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export RP_KIT_SCHEDULE=0  # never arm a real launchd/systemd job against a temp kit
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
