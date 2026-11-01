@@ -26,14 +26,13 @@ import json
 import sys
 from typing import Any
 
-from lib import _http_audit, api, oauth
+from lib import api
 
 API_BASE = "https://api.notion.com/v1"
 _NOTION_VERSION = "2026-03-11"
 
-# The manifest row registered here is the lib.api declaration used by GET-based calls. Script calls
-# (POST /search, POST /data_sources/{id}/query) bypass lib.api and call _request() directly,
-# but still share the credential resolution, retry, and backoff via lib.api.Client.
+# Mirrors manifest.yaml; this explicit register() wins over the YAML row, so the read-only POST
+# allowlist must be repeated here or brokered search/query (and `lib.api post notion`) are refused.
 MANIFEST = api.register(
     api.Manifest(
         key="notion",
@@ -49,6 +48,7 @@ MANIFEST = api.register(
         ),
         rate_limit_remaining_header="",  # Notion uses 429 + Retry-After, no remaining-count header
         default_headers={"Notion-Version": _NOTION_VERSION},
+        allowed_post_paths=("/search", "/data_sources/*/query", "/v1/search", "/v1/data_sources/*/query"),
     )
 )
 
@@ -64,37 +64,13 @@ def _request(
     body: dict[str, Any] | None = None,
     query: dict[str, Any] | None = None,
 ) -> Any:
-    """Issue one Notion request with bearer auth + version header.
+    """One Notion call through lib.api, so a brokered run never holds the token.
 
-    lib.api's generic client is GET-oriented; Notion's useful read surfaces include POST JSON-body
-    calls, so the connector owns these few verbs directly.
+    The token carries the connection's write capabilities (Notion has no per-grant scopes), so it
+    must stay host-side; lib.api's read tier admits only GETs and the allowlisted search/query POSTs.
     """
-    cred = oauth.token("notion")
-    url = f"{API_BASE}/{path.lstrip('/')}"
-    resp = _http_audit.request(
-        method.upper(),
-        url,
-        json_body=body,
-        params=query,
-        headers={
-            "Authorization": f"Bearer {cred}",
-            "Notion-Version": _NOTION_VERSION,
-            "Content-Type": "application/json",
-        },
-        timeout=(api.DEFAULT_CONNECT_TIMEOUT, api.DEFAULT_READ_TIMEOUT),
-        endpoint_template=f"/v1/{path.lstrip('/')}",
-        known_secrets=(cred,),
-    )
-    if not (200 <= resp.status_code < 300):
-        try:
-            err = resp.text
-        except Exception:  # noqa: BLE001
-            err = ""
-        raise api.ApiError(resp.status_code, err, url=url)
-    try:
-        return resp.json()
-    except ValueError:
-        raise api.ApiError(resp.status_code, f"non-JSON response: {resp.text[:200]}", url=url)
+    path = path.lstrip("/")
+    return _client().request(method.upper(), path, json_body=body, query=query, endpoint_template=f"/v1/{path}")
 
 
 def _get(path: str, *, query: dict[str, Any] | None = None) -> Any:

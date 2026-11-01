@@ -23,6 +23,7 @@ import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import quote
 
 import responses as responses_lib
 
@@ -202,6 +203,40 @@ class NotionManifest(unittest.TestCase):
         self.assertIn("notion", api.MANIFESTS)
         self.assertEqual(notion_conn.MANIFEST.key, "notion")
         self.assertEqual(notion_conn.MANIFEST.auth.strategy, "bearer")
+
+
+class NotionBrokeredMode(unittest.TestCase):
+    """Brokered run: no token in the container, reads go to the host broker, writes are refused."""
+
+    def setUp(self):
+        self._saved = {k: os.environ.get(k) for k in ("RC_CONN_NOTION", "RC_API_BROKERED_KEYS")}
+        os.environ.pop("RC_CONN_NOTION", None)
+        os.environ["RC_API_BROKERED_KEYS"] = "notion"
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    @responses_lib.activate
+    def test_search_and_query_post_through_broker_without_token(self):
+        broker = "http://rc-broker.internal/notion/__url/"
+        responses_lib.add(responses_lib.POST, broker + quote(SEARCH_URL, safe=""), json=_SEARCH_PAGE_2, status=200)
+        responses_lib.add(responses_lib.POST, broker + quote(DB_QUERY_URL, safe=""), json=_SEARCH_PAGE_2, status=200)
+        notion_conn.search("onboarding")
+        notion_conn.query_database(DB_ID)
+        self.assertEqual(len(responses_lib.calls), 2)
+        for call in responses_lib.calls:
+            self.assertNotIn("Authorization", call.request.headers)
+            self.assertEqual(call.request.headers["Notion-Version"], notion_conn._NOTION_VERSION)
+
+    def test_write_post_is_refused_before_any_request(self):
+        with self.assertRaises(api.MethodPolicyError):
+            notion_conn._post("pages", {"parent": {"page_id": "x"}})
+        with self.assertRaises(api.MethodPolicyError):
+            notion_conn._request("PATCH", "pages/x", body={"archived": True})
 
 
 class NotionSearchPagination(unittest.TestCase):

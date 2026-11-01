@@ -1,8 +1,9 @@
 key: notion
 name: Notion
 kinds: [token, oauth]
-credential_exposure: env
-credential_exposure_reason: provider-enforced read-only credential
+credential_exposure: broker
+# Broker, not env: Notion has no per-grant scopes, so every token carries the connection's
+# update/insert capabilities (needed by the notion.write action). Only the host may hold it.
 # Script connector: Notion's search, data-source-query, and markdown-read endpoints use request
 # shapes that lib.api's GET CLI cannot express ergonomically. The script wraps those calls with
 # field pre-selection while plain GETs can still use lib.api's generic client.
