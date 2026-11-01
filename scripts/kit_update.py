@@ -360,7 +360,11 @@ def _ensure_schedule(verbose: bool = False, opt_in: bool = False) -> str | None:
         return say(f"skipped ({ROOT} is not an install clone at a release tag)")
     exe = shutil.which("t3-schedule")
     if not exe:
-        return say("skipped (t3-schedule not on PATH; the usage-triggered update still runs)")
+        return say("skipped: t3-schedule not on PATH (the usage-triggered update still runs). Fix: run "
+                   "~/.agents/skills/t3-schedule/scripts/install if it exists (links into ~/.local/bin; put that "
+                   "on PATH), else `pnpm dlx skills add pjmuller/skills -s t3-schedule -g -y`, then its "
+                   "scripts/install and `scripts/install --check` (doc: https://github.com/pjmuller/skills/blob/"
+                   "main/skills/t3-schedule/SKILL.md; WSL: linux-wsl.md next to it); then rerun install.sh")
     pointer = Path.home() / ".t3" / "userdata" / "scheduled" / "t3-schedule" / f"{JOB}.json"
     definition = ROOT / ".agents" / "schedules" / f"{JOB}.json"
     at = JOB_AT
