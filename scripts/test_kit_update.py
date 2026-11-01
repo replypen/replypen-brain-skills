@@ -215,9 +215,11 @@ def test_job_repairs_stale_links_and_an_outdated_hook(tmp_path):
     run(clone, tmp_path, "--apply")
     hook = brain / ".git" / "hooks" / "pre-commit"
     hook.write_text(hook.read_text().replace("brain hygiene", "old hygiene"))  # an older release's hook
+    (clone / "docs").mkdir()  # a release that ships docs: the brain lacks both docs links
     (brain / ".agents" / "skills" / "retired").symlink_to(clone / "skills" / "retired")  # skill gone
     out = run(clone, tmp_path, "--apply")
     assert "stale skill links: retired" in out and "outdated pre-commit hook" in out
+    assert "docs links missing or stale" in out and (brain / ".claude" / "docs").resolve() == (clone / "docs").resolve()
     assert "old hygiene" not in hook.read_text()
     assert not os.path.lexists(brain / ".agents" / "skills" / "retired")
 
@@ -251,9 +253,9 @@ def test_job_waits_for_a_held_lock_and_for_a_busy_brain(tmp_path):
     out = run(clone, tmp_path, "--job")
     assert "v0.1.10 waits: git rebase-merge in progress" in out and "thread: SETTLE" in out
     assert tag(clone) == "v0.1.9"
-    last_ok = tmp_path / "cache" / f"last-ok-{hashlib.sha1(str(clone.resolve()).encode()).hexdigest()[:12]}"
-    last_ok.write_text("")
-    os.utime(last_ok, (1, 1))  # deferred for days (a forgotten rebase) → surface it
+    since = tmp_path / "cache" / f"deferred-since-{hashlib.sha1(str(clone.resolve()).encode()).hexdigest()[:12]}"
+    assert since.exists()  # tracked from the first deferral, even with no good check ever
+    os.utime(since, (1, 1))  # deferred for days (a forgotten rebase) → surface it
     assert "no successful check for" in run(clone, tmp_path, "--job", code=1)
 
 

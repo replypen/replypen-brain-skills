@@ -142,9 +142,13 @@ def _due() -> bool:
 
 
 def _record(status: str) -> None:
-    _stamp("tag-check").write_text(("ok" if status in ("unchanged", "updated") else status) + "\n")
-    if status in ("unchanged", "updated"):
-        _stamp("last-ok").write_text(time.strftime("%F %T") + "\n")
+    ok = status in ("unchanged", "updated")
+    _stamp("tag-check").write_text(("ok" if ok else status) + "\n")
+    since = _stamp("deferred-since")  # first deferral since the last good check (also on a fresh install)
+    if ok:
+        since.unlink(missing_ok=True)
+    elif not since.exists():
+        since.write_text(time.strftime("%F %T") + "\n")
 
 
 # --- brains --------------------------------------------------------------------------------------
@@ -255,8 +259,16 @@ def _relink_reasons(brain: Path) -> list[str]:
     stale = sorted({p.name for d in dirs for p in d.iterdir() if _kit_link(p) and not p.exists()})
     if stale:
         reasons.append("stale skill links: " + ", ".join(stale))
-    if (ROOT / "docs").is_dir() and not (brain / ".agents" / "docs").is_symlink():
-        reasons.append("missing docs link")
+    if (ROOT / "docs").is_dir():
+        docs = brain / ".agents" / "docs"
+        alias = brain / ".claude" / "docs"
+        try:
+            ok = docs.is_symlink() and docs.resolve() == (ROOT / "docs").resolve() and alias.is_symlink() \
+                and alias.resolve() == docs.resolve()
+        except OSError:
+            ok = False
+        if not ok:
+            reasons.append("docs links missing or stale")
     gd = _git_dir(brain)
     common = gd
     with contextlib.suppress(OSError):
@@ -289,12 +301,17 @@ def _move(installed: str, skip: Path | None = None) -> tuple[str, str]:
         return "deferred", f"could not list release tags ({exc}); offline?"
     if _key(latest) <= _key(installed):
         return "unchanged", installed
+    try:  # fetch first (refs/objects only): the busy check must sit right before the swap
+        if _git("fetch", "-q", "--tags", "origin", timeout=120).returncode:
+            return "deferred", f"could not fetch {latest}; offline?"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "deferred", f"could not fetch {latest} ({exc}); offline?"
+    # Not a lock on the brains' own git operations (holding their index.lock would block commits if we
+    # died): a commit starting in the sub-second checkout below still races; the quiet hour covers it.
     for brain in _brains():
         if brain != skip and _linked(brain) and (why := _busy(brain)):
             return "deferred", f"{latest} waits: {why} in progress in {brain}"
     try:
-        if _git("fetch", "-q", "--tags", "origin", timeout=120).returncode:
-            return "deferred", f"could not fetch {latest}; offline?"
         done = _git("checkout", "-q", latest, timeout=60)
         if done.returncode or _git("describe", "--tags", "--exact-match").stdout.strip() != latest:
             _git("checkout", "-q", "-f", installed, timeout=60)  # tree was clean: restore the working tag
@@ -408,7 +425,8 @@ def apply(job: bool = False) -> int:
             else:
                 status, detail = _move(installed)
                 _record(status)
-                for brain in _brains():
+                brains = _brains()
+                for brain in brains:
                     linked, unlinked = _linked(brain), not os.path.lexists(_anchor(brain))
                     if not (linked or unlinked):
                         continue  # linked to another kit (a developer checkout) or user content
@@ -427,9 +445,10 @@ def apply(job: bool = False) -> int:
                     else:
                         lines.append(f"kit: {'relinked' if linked else 'installed the kit into'} {brain.name} "
                                      f"({'; '.join(reasons)})")
+                lines.append(f"kit: {sum(map(_linked, brains))} brain checkout(s) linked to this kit")
                 if msg := _ensure_schedule():
                     lines.append(msg)
-    if status == "deferred" and (age := _age(_stamp("last-ok"))) is not None and age > STALE_AFTER:
+    if status == "deferred" and (age := _age(_stamp("deferred-since"))) is not None and age > STALE_AFTER:
         status, detail = "failed", f"no successful check for {int(age // 86400)} days: {detail}"
     head = {"updated": f"kit: updated {installed} → {detail} ({ROOT}); new agent sessions load the new skills",
             "unchanged": f"kit: {detail} is the newest release ({ROOT})",
