@@ -230,8 +230,26 @@ def query_database(
         body["filter"] = filter_json
     if sorts_json:
         body["sorts"] = sorts_json
-    results = _post_paginate(path, body, page_size=page_size)
+    try:
+        results = _post_paginate(path, body, page_size=page_size)
+    except api.ApiError as e:
+        # A Notion URL holds the DATABASE id; queries need its data source id since the 2025 split.
+        source = _single_data_source_of_database(data_source_id) if e.status == 404 else None
+        if not source:
+            raise
+        results = _post_paginate(f"data_sources/{source}/query", body, page_size=page_size)
     return [compact_page(r) for r in results]
+
+
+def _single_data_source_of_database(database_id: str) -> str | None:
+    try:
+        sources = _get(f"databases/{database_id}").get("data_sources") or []
+    except api.ApiError:
+        return None
+    if len(sources) > 1:
+        listed = ", ".join(f"{s.get('id')} ({s.get('name', '')})" for s in sources)
+        raise api.ApiError(404, f"database {database_id} has several data sources; query one of: {listed}")
+    return sources[0].get("id") if sources else None
 
 
 def retrieve_markdown(page_id: str, *, include_transcript: bool = False) -> dict[str, Any]:

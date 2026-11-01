@@ -60,7 +60,7 @@ help_md: |
       python -m lib.connectors.notion search "bug report" --filter page
       python -m lib.connectors.notion search "roadmap" --filter data_source
 
-      # List/query data source entries
+      # List/query data source entries (a database id from a Notion URL also works)
       python -m lib.connectors.notion query-db <data_source_id>
       python -m lib.connectors.notion query-db <data_source_id> --page-size 50
       python -m lib.connectors.notion query-db <data_source_id> --filter-json '{"property":"Status","status":{"equals":"Open"}}'

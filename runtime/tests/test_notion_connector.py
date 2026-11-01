@@ -239,6 +239,37 @@ class NotionBrokeredMode(unittest.TestCase):
             notion_conn._request("PATCH", "pages/x", body={"archived": True})
 
 
+class NotionQueryDatabaseIdFallback(unittest.TestCase):
+    """query-db given a database id (as in a Notion URL) resolves its single data source."""
+
+    def setUp(self):
+        self._saved = os.environ.get("RC_CONN_NOTION")
+        os.environ["RC_CONN_NOTION"] = "secret_" + "notion_test_token"
+
+    def tearDown(self):
+        if self._saved is None:
+            os.environ.pop("RC_CONN_NOTION", None)
+        else:
+            os.environ["RC_CONN_NOTION"] = self._saved
+
+    @responses_lib.activate
+    def test_database_id_falls_back_to_its_data_source(self):
+        ds = "b1b1b1b1-0000-4000-8000-000000000009"
+        responses_lib.add(responses_lib.POST, DB_QUERY_URL, json={"object": "error", "status": 404}, status=404)
+        responses_lib.add(responses_lib.GET, f"{API_BASE}/databases/{DB_ID}", json={"data_sources": [{"id": ds, "name": "Orders"}]})
+        responses_lib.add(responses_lib.POST, f"{API_BASE}/data_sources/{ds}/query", json=_SEARCH_PAGE_2, status=200)
+        rows = notion_conn.query_database(DB_ID)
+        self.assertEqual(len(rows), len(_SEARCH_PAGE_2["results"]))
+
+    @responses_lib.activate
+    def test_unknown_id_keeps_the_original_404(self):
+        responses_lib.add(responses_lib.POST, DB_QUERY_URL, json={"object": "error", "status": 404}, status=404)
+        responses_lib.add(responses_lib.GET, f"{API_BASE}/databases/{DB_ID}", json={"object": "error"}, status=404)
+        with self.assertRaises(api.ApiError) as ctx:
+            notion_conn.query_database(DB_ID)
+        self.assertIn("data_sources", ctx.exception.url)
+
+
 class NotionSearchPagination(unittest.TestCase):
     """POST /v1/search stitches ≥2 pages and places the bearer + Notion-Version on every request."""
 
