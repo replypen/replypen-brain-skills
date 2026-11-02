@@ -224,6 +224,47 @@ def test_job_repairs_stale_links_and_an_outdated_hook(tmp_path):
     assert not os.path.lexists(brain / ".agents" / "skills" / "retired")
 
 
+def test_job_repairs_a_missing_hook_unless_opted_out_or_user_owned(tmp_path):
+    """A brain installed before pre-push existed gets it; --no-hooks sticks; a user hook or core.hooksPath
+    is never flagged (install.sh leaves those alone, so flagging would relink every day)."""
+    _, clone, brain = setup(tmp_path)
+    run(clone, tmp_path, "--apply")
+    hooks = brain / ".git" / "hooks"
+    assert "managed pre-push hook" in (hooks / "pre-push").read_text()
+    (hooks / "pre-push").unlink()
+    out = run(clone, tmp_path, "--apply")
+    assert "missing pre-push hook" in out and (hooks / "pre-push").is_file()
+
+    (hooks / "pre-push").write_text("#!/bin/sh\necho mine\n")
+    assert "pre-push" not in run(clone, tmp_path, "--apply")
+    (hooks / "pre-push").unlink()
+    git(brain, "config", "core.hooksPath", ".githooks")
+    assert "pre-push" not in run(clone, tmp_path, "--apply")
+    git(brain, "config", "--unset", "core.hooksPath")
+
+    done = subprocess.run(["bash", str(clone / "install.sh"), "--no-hooks", str(brain)], capture_output=True,
+                          text=True, env={**os.environ, "RC_BRAIN_KIT": str(clone), "RP_KIT_SCHEDULE": "0"})
+    assert done.returncode == 0 and "pre-commit hook: removed" in done.stdout, done.stdout + done.stderr
+    assert not (hooks / "pre-commit").exists()
+    out = run(clone, tmp_path, "--apply")
+    assert "hook" not in out and not (hooks / "pre-commit").exists()
+
+
+def test_git_hook_env_never_reaches_the_kit_clone(tmp_path, monkeypatch):
+    """A hook exports GIT_INDEX_FILE (GIT_DIR in a linked worktree): the clone's git must not use them."""
+    _, clone, brain = setup(tmp_path)
+    monkeypatch.setenv("GIT_DIR", str(brain / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(brain / ".git" / "index"))
+    monkeypatch.setenv("RP_KIT_ROOT", str(clone))
+    sys.path.insert(0, str(clone / "scripts"))
+    try:
+        import kit_update
+        assert kit_update._clone_tag() == "v0.1.9"
+    finally:
+        sys.path.remove(str(clone / "scripts"))
+        sys.modules.pop("kit_update", None)
+
+
 def test_failed_checkout_keeps_the_installed_tag_and_surfaces(tmp_path):
     _, clone, _ = setup(tmp_path)
     skill(clone, "brain-new")  # untracked file the new tag would overwrite: git refuses the checkout

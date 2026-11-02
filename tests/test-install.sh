@@ -260,8 +260,34 @@ new_brain userhook
 hook="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
 printf '%s\n' '#!/bin/sh' 'echo mine' >"$hook"
 run_install >"$TMP/userhook.out"
-grep -qF 'kept your own hook' "$TMP/userhook.out"
+grep -qF 'pre-commit hook: kept your own hook' "$TMP/userhook.out"
 test "$(sed -n 2p "$hook")" = 'echo mine'
+grep -qF 'managed pre-push hook' "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-push)"
+
+# Managed pre-push hook beside it; --no-hooks removes only marked wrappers and sticks; --hooks opts back in;
+# core.hooksPath is never written to, only told what to add.
+new_brain pushhook
+run_install >/dev/null
+pre_push="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-push)"
+test -x "$pre_push"
+grep -qF 'replypen-brain-skills managed pre-push hook' "$pre_push"
+grep -qF '"$GATE" --push' "$pre_push"
+test "$(RC_BRAIN_KIT="$KIT" "$ROOT/install.sh" --print-hook pre-push)" = "$(cat "$pre_push")"
+RC_BRAIN_KIT="$KIT" "$ROOT/install.sh" --no-hooks "$BRAIN" >"$TMP/nohooks.out"
+grep -qF 'pre-commit hook: removed' "$TMP/nohooks.out"
+grep -qF 'pre-push hook: removed' "$TMP/nohooks.out"
+test ! -e "$pre_push"
+run_install >"$TMP/nohooks2.out"
+grep -qF 'git hooks: opted out' "$TMP/nohooks2.out"
+test ! -e "$pre_push"
+RC_BRAIN_KIT="$KIT" "$ROOT/install.sh" --hooks "$BRAIN" >/dev/null
+test -x "$pre_push"
+new_brain hookspath
+git -C "$BRAIN" config core.hooksPath .githooks
+run_install >"$TMP/hookspath.out"
+grep -qF 'pre-push hook: kept your own hook (core.hooksPath=.githooks)' "$TMP/hookspath.out"
+test ! -e "$BRAIN/.githooks"
+test ! -e "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-common-dir)/hooks/pre-push"
 
 # Pre-rebrand install: ~/.rootcause-brain-skills moves to ~/.replypen-brain-skills (old path kept as a
 # link); links, exclude block and hook made by the old installer stay installer-owned; .rootcause.toml

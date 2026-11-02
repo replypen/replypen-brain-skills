@@ -58,10 +58,15 @@ tree's legacy debt cannot block an unrelated publish; `--all` judges every track
 
     uv run --no-project python brain_hygiene.py            # changed files vs origin/main
     uv run --no-project python brain_hygiene.py --all      # whole tree
-    uv run --no-project python brain_hygiene.py --staged   # staged files (managed pre-commit hook)
+    uv run --no-project python brain_hygiene.py --staged   # managed pre-commit hook
+    uv run --no-project python brain_hygiene.py --push     # managed pre-push hook (refs on stdin)
 
-`install.sh` installs a managed `pre-commit` hook running `--staged`, so a broken diagram or marker
-fails at commit time, not at push.
+The git gates (`--staged`, `--push`, `brain_git_sync.py`) run `gate()`: the exact bytes being committed
+(the index) or pushed (the commit), materialized into a temp checkout, never the working tree; plus the
+lint FAILs (`lib.brain_lint`). Regression-only: a finding already present at the base (HEAD; the
+remote tip) is dropped, except `conflict`/`abs-path`. `--push` also judges cross-file rules whole-tree
+(dead links into untouched files, `reachability` from AGENTS.md) and skips mermaid (commit and publish
+render it). Which gate runs what: docs/specs/brain-lint-gates.md.
 """
 
 from __future__ import annotations
@@ -71,6 +76,7 @@ import contextlib
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -100,6 +106,8 @@ DESCRIPTION_MAX = 1024  # agentskills.io limit; lib.brain_lint DESC_FULL_MAX_LEN
 TOOL_MARKUP_RE = re.compile(r"</(?:content|invoke|parameter|function_calls)>|<invoke\b|<parameter\s+name="
                             r"|<function_calls>|</?antml:[a-z_]+")
 MERMAID_SYNTAX_RE = re.compile(r"(Parse|Lexical|Syntax) error|No diagram type detected", re.I)
+NEVER_BASELINED = ("conflict:", "abs-path:")  # merge junk and laptop paths block even when already at base
+ZERO_SHA = re.compile(r"0+")
 
 # Mirror of replypen internal/chatinspiration (library.go): keep caps, regexes and separators in sync.
 CHAT_INSPIRATION_FILE = "chat_inspiration.md"
@@ -147,6 +155,9 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
     out: list[bs.Finding] = []
     kind = doc.detect_repo_kind(root)[0]
     render = doc.projection_renderer(_projection_spec(root) if kind == "brain" else None)
+    old_spec = _git(root, "show", f"{base}:projection.yaml")
+    render_old = doc.projection_renderer(_parse_projection(old_spec.stdout) if kind == "brain" and
+                                         old_spec.returncode == 0 else None)
     origins = _rename_origins(root, base)
     limit = doc.ON_DEMAND_DOC_LIMIT
     for rel in sorted(files):
@@ -158,7 +169,7 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
             continue
         prev = subprocess.run(["git", "-C", str(root), "show", f"{base}:{origins.get(rel, rel)}"],
                               capture_output=True)
-        old = len(render(rel, prev.stdout.decode("utf-8", errors="replace")).encode("utf-8")) \
+        old = len(render_old(rel, prev.stdout.decode("utf-8", errors="replace")).encode("utf-8")) \
             if prev.returncode == 0 else None
         if old is not None and old > limit:
             continue
@@ -168,30 +179,46 @@ def _spill_crossings(root: Path, files: list[str], base: str) -> list[bs.Finding
     return out
 
 
+_SNAPSHOT: list[Path] = []  # the active snapshot() view: its tree is the temp index, not the working tree
+
+
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+
+
+def _diff_args() -> list[str]:
+    """`git diff <base>` judges index + working tree; inside a snapshot only the temp index is real."""
+    return ["diff", "--cached"] if _SNAPSHOT else ["diff"]
+
+
 def _deleted_since(root: Path, base: str | None) -> set[str]:
     """Paths deleted (a rename counts as delete + add) since `base`, index and working tree."""
     if not base:
         return set()
-    out = subprocess.run(["git", "-C", str(root), "diff", "--no-renames", "--name-only", "--diff-filter=D",
-                          base], capture_output=True, text=True)
-    return set(out.stdout.split()) if out.returncode == 0 else set()
+    out = _git(root, *_diff_args(), "--no-renames", "--name-only", "-z", "--diff-filter=D", base)
+    return {p for p in out.stdout.split("\0") if p} if out.returncode == 0 else set()
 
 
 def _rename_origins(root: Path, base: str) -> dict[str, str]:
     """new path -> its path at `base` for every rename since `base` (index + working tree), so a moved
     legacy doc is compared with itself instead of counting as new."""
-    out = subprocess.run(["git", "-C", str(root), "diff", "-M", "--name-status", "-z", base],
-                         capture_output=True, text=True).stdout.split("\0")
-    origins: dict[str, str] = {}
+    return {new: old for old, new in _renames(root, *_diff_args(), base).items()}
+
+
+def _renames(root: Path, *diff: str) -> dict[str, str]:
+    """base path -> new path for every rename `git <diff>` reports."""
+    out = _git(root, diff[0], "-M", "--name-status", "-z", *diff[1:]).stdout.split("\0")
+    moved: dict[str, str] = {}
     i = 0
     while i < len(out):
         status = out[i]
-        if status.startswith("R") and i + 2 < len(out):
-            origins[out[i + 2]] = out[i + 1]
+        if status.startswith(("R", "C")) and i + 2 < len(out):
+            if status.startswith("R"):
+                moved[out[i + 1]] = out[i + 2]
             i += 3
         else:
             i += 2 if status else 1
-    return origins
+    return moved
 
 
 def _glob_re(glob: str) -> re.Pattern[str]:
@@ -222,9 +249,10 @@ def _projection_spec(root: Path) -> dict | None:
     publish lint (PyYAML) so `doc-spill` measures its bytes; this gate also runs without PyYAML, then a
     line scan: flow (`key: { default: "x" }`) and block `default:` values, quoted escapes decoded."""
     spec = root / "projection.yaml"
-    if not spec.is_file():
-        return None
-    text = spec.read_text("utf-8", errors="replace")
+    return _parse_projection(spec.read_text("utf-8", errors="replace")) if spec.is_file() else None
+
+
+def _parse_projection(text: str) -> dict:
     try:
         import yaml
     except ModuleNotFoundError:
@@ -679,9 +707,12 @@ def _triage_case_findings(root: Path) -> list[bs.Finding]:
                        severity="NOTICE" if f["level"] == "NOTICE" else "ERROR") for f in raw]
 
 
-def check(root: Path, files: list[str] | None = None, base: str | None = None) -> list[bs.Finding]:
+def check(root: Path, files: list[str] | None = None, base: str | None = None, *,
+          mermaid: bool | set[str] = True, cross_file: bool = False) -> list[bs.Finding]:
     """Hygiene findings for a brain at `root`. `files` scopes every rule but `conflict`;
-    None judges the whole tracked tree. `base` (the ref to compare against) enables doc-spill."""
+    None judges the whole tracked tree. `base` (the ref to compare against) enables doc-spill.
+    `mermaid`: False skips diagrams, a set skips blocks whose source it holds (unchanged since the
+    base). `cross_file`: dead links anywhere in the tree plus `reachability` (the push gate)."""
     tracked = bs.git_tracked(root)
     ctx = bs.Ctx(root=root, tracked=tracked, tracked_set=set(tracked),
                  md_files=[p for p in tracked if p.lower().endswith(".md")])
@@ -691,7 +722,9 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
     visible = {p for p in text_files if p not in hidden and not p.startswith(TOOLING_DIRS)}
     scoped = visible if files is None else set(files) & visible
     projection = _projection(root)
-    mmdc = _mermaid_renderer()
+    # a projection.yaml edit can orphan a `{{ key }}` in any templated doc, touched or not
+    templated_scope = visible if files is None or "projection.yaml" in files else scoped
+    mmdc = _mermaid_renderer() if mermaid is not False else None
     findings: list[bs.Finding] = []
     mermaid_seen, renderer_failure = False, ""
 
@@ -713,22 +746,21 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
         for lineno, line in enumerate(text.splitlines(), start=1):
             if CONFLICT_RE.match(line):
                 add("conflict", f"git conflict marker {line[:7]!r}", rel, lineno)
+        if (rel.endswith(".md") and rel in templated_scope and projection is not None
+                and any(g.match(rel) for g in projection[1])):
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                for key in PLACEHOLDER_RE.findall(line):
+                    if key not in projection[0]:
+                        add("placeholder", f"{{{{ {key} }}}} is not declared in projection.yaml "
+                                           "placeholders", rel, lineno)
+                if "{{" in (rest := PLACEHOLDER_RE.sub("", line)) or "}}" in rest:
+                    add("placeholder", "residual `{{`/`}}` in a projection-templated file", rel, lineno)
         if rel not in scoped:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             if m := ABS_PATH_RE.search(line):
                 add("abs-path", f"absolute laptop path {m.group(0)!r}", rel, lineno)
         if rel.endswith(".md"):
-            templated = projection is not None and any(g.match(rel) for g in projection[1])
-            if templated:
-                for lineno, line in enumerate(text.splitlines(), start=1):
-                    for key in PLACEHOLDER_RE.findall(line):
-                        if key not in projection[0]:
-                            add("placeholder", f"{{{{ {key} }}}} is not declared in projection.yaml "
-                                               "placeholders", rel, lineno)
-                    if "{{" in (rest := PLACEHOLDER_RE.sub("", line)) or "}}" in rest:
-                        add("placeholder", "residual `{{`/`}}` in a projection-templated file",
-                            rel, lineno)
             for lineno, line in enumerate(bs.code_free_lines(text), start=1):
                 if m := TOOL_MARKUP_RE.search(line):
                     add("tool-markup", f"leaked tool-call markup {m.group(0)!r} a run reads verbatim; "
@@ -742,6 +774,8 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
                     if EM_DASH in line:
                         add("em-dash", "em dash in customer-facing copy", rel, lineno)
             for lineno, source in _mermaid_blocks(text):
+                if mermaid is False or (isinstance(mermaid, set) and source in mermaid):
+                    continue
                 mermaid_seen = True
                 if not mmdc:
                     continue
@@ -770,8 +804,11 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
                                            f"checkout ({lay.own}); absent, gitignored or run-hidden",
                                            path=rel, line=lineno, severity="NOTICE"))
     for f in bs.check_links(ctx):
-        if f.path in scoped:
+        if cross_file or f.path in scoped:  # cross_file: a deleted target strands links in untouched files
             findings.append(bs.Finding("hygiene", f"links: {f.message}", path=f.path, line=f.line))
+    if cross_file:
+        findings += [bs.Finding("hygiene", f"reachability: {f.message}", path=f.path)
+                     for f in bs.check_reachability(ctx)]
     if mermaid_seen and not mmdc:
         findings.append(bs.Finding("hygiene", "mermaid: skipped, no renderer (`mmdc` or `pnpm`) on "
                                    "PATH; diagrams unchecked; install pnpm (`mise use -g pnpm`), the "
@@ -785,36 +822,237 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None) -
     return findings
 
 
+class Snapshot:
+    """A commit's tree (or the index) as a temp checkout that git commands in it treat as `root`'s
+    repository at those bytes (`active()`): the gates judge exactly what is committed or pushed, never
+    the working tree (partial staging, a dirty tree, unsaved edits). Text files carry real bytes; any
+    other tracked file is an empty stand-in, since rules only test that it exists. The view sits two
+    empty directories deep and keeps the checkout's name, so sibling scans (mirror detection,
+    `brain_paths`) find nothing beside it."""
+
+    def __init__(self, root: Path, commit: str | None, tmp: Path):
+        env = {k: v for k, v in os.environ.items() if k not in ("GIT_WORK_TREE", "GIT_INDEX_FILE")}
+        git_dir = _git(root, "rev-parse", "--absolute-git-dir").stdout.strip()
+        index = tmp / "index"
+        if commit is None:  # the index this commit writes: git exports GIT_INDEX_FILE to the hook
+            src = Path(_git(root, "rev-parse", "--path-format=absolute", "--git-path", "index").stdout.strip())
+            if src.is_file():
+                shutil.copyfile(src, index)
+        self.path = tmp / "v" / "v" / root.name
+        self.path.mkdir(parents=True)
+        self.env = {"GIT_DIR": git_dir, "GIT_WORK_TREE": str(self.path), "GIT_INDEX_FILE": str(index),
+                    "GIT_OPTIONAL_LOCKS": "0", "GIT_LFS_SKIP_SMUDGE": "1"}
+
+        def git(*args: str, data: bytes | None = None) -> bytes:
+            return subprocess.run(["git", "-C", str(self.path), *args], input=data, capture_output=True,
+                                  check=True, env={**env, **self.env}).stdout
+
+        if commit is not None:
+            git("read-tree", commit)
+        real, stand_ins = [], []
+        for entry in git("ls-files", "-s", "-z").split(b"\0"):
+            meta, _, rel = entry.partition(b"\t")
+            if not rel or meta.startswith(b"160000"):  # a submodule has no bytes here
+                continue
+            name = rel.rsplit(b"/", 1)[-1].decode("utf-8", "replace")
+            text = Path(name).suffix.lower() in TEXT_SUFFIXES or name.startswith(".")
+            (real if text or meta.startswith(b"120000") else stand_ins).append(rel)
+        if real:
+            git("checkout-index", "-f", "-z", "--stdin", f"--prefix={self.path}/", data=b"\0".join(real))
+        for rel in stand_ins:
+            dest = self.path / os.fsdecode(rel)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.touch()
+
+    @contextlib.contextmanager
+    def active(self):
+        saved = {k: os.environ.get(k) for k in self.env}
+        os.environ.update(self.env)
+        _SNAPSHOT.append(self.path)
+        try:
+            yield self.path
+        finally:
+            _SNAPSHOT.pop()
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+
+@contextlib.contextmanager
+def _snapshot(root: Path, commit: str | None):
+    with tempfile.TemporaryDirectory(prefix="brain-gate-") as tmp:
+        yield Snapshot(root, commit, Path(tmp).resolve())
+
+
+def _lint_start(view: Path, kind: str) -> subprocess.Popen | None:
+    """Start the publish lint (`lib.brain_lint`, needs PyYAML) on `view` in its own interpreter, so it
+    runs beside the hygiene pass: this one when it has PyYAML, else `uv run --with pyyaml`. None when
+    neither can run it. `_lint_fails` collects its FAIL findings."""
+    runtime = BRAIN_DOC.parents[1]
+    if not (runtime / "lib" / "brain_lint.py").is_file():
+        return None
+    if importlib.util.find_spec("yaml") is not None:
+        py = [sys.executable]
+    elif uv := shutil.which("uv"):
+        py = [uv, "run", "-q", "--no-project", "--with", "pyyaml", "python"]
+    else:
+        return None
+    code = ("import json, sys; sys.path.insert(0, sys.argv[1]); from lib.brain_lint import lint_brain; "
+            "print(json.dumps([(f.rule, f.path, f.message) for f in lint_brain(sys.argv[3], sys.argv[2]) "
+            "if f.level == 'FAIL']))")
+    # cwd=runtime: `-c` puts the cwd first on sys.path, and a brain's own files must not shadow lib/json
+    return subprocess.Popen([*py, "-c", code, str(runtime), kind, str(view)], cwd=runtime, text=True,
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+
+def _lint_fails(proc: subprocess.Popen | None) -> list[bs.Finding] | None:
+    if proc is None:
+        return None
+    try:
+        raw = json.loads(proc.communicate()[0])
+    except ValueError:
+        return None
+    out = []
+    for rule, path, message in raw:
+        rel, _, line = path.partition(":")
+        out.append(bs.Finding("lint", f"{rule}: {message}", path=rel, line=int(line) if line.isdigit() else None))
+    return out
+
+
+def _key(f: bs.Finding, moved: dict[str, str] | None = None) -> tuple[str, str | None, str]:
+    """Baseline identity: line numbers and counts (bytes, chars) shift with unrelated edits; a base
+    finding follows its file through a rename (`moved`: base path -> new path)."""
+    return f.check, (moved or {}).get(f.path, f.path), re.sub(r"\d+", "#", f.message)
+
+
+def _resolves(root: Path, ref: str | None) -> bool:
+    return bool(ref) and _git(root, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode == 0
+
+
+def changed_files(root: Path, base: str | None, commit: str | None) -> list[str]:
+    """Paths `commit` (None: the index) adds or modifies vs `base`; every path when there is no base."""
+    if base is None:
+        args = ["ls-files", "-z"] if commit is None else ["ls-tree", "-r", "-z", "--name-only", commit]
+    else:
+        args = ["diff", "--name-only", "-z", "--diff-filter=ACMR", *(["--cached", base] if commit is None
+                                                                     else [base, commit])]
+    return [p for p in _git(root, *args).stdout.split("\0") if p]
+
+
+def gate(root: Path, base: str | None, commit: str | None = None, *, mermaid: bool = True,
+         cross_file: bool = False) -> list[bs.Finding]:
+    """What `commit` (None: the index) introduces over `base`: hygiene + lint FAILs on the committed
+    bytes, minus every finding the base already has (legacy debt never blocks) except NEVER_BASELINED.
+    No resolvable base (first commit, nothing to compare): the whole tree is judged as is."""
+    base = base if _resolves(root, base) else None
+    files = changed_files(root, base, commit)
+    kind = brain_paths.layout(root).kind
+    with contextlib.ExitStack() as stack:
+        new = stack.enter_context(_snapshot(root, commit))
+        old = stack.enter_context(_snapshot(root, base)) if base else None
+        lints = [_lint_start(new.path, kind), *([_lint_start(old.path, kind)] if old else [])]
+        known: set[str] | None = None
+        prior: list[bs.Finding] = []
+        if old:
+            known = {src for rel in files if (old.path / rel).is_file() and rel.endswith(".md")
+                     for _, src in _mermaid_blocks((old.path / rel).read_text("utf-8", errors="replace"))}
+            with old.active() as view:
+                prior = check(view, files, None, mermaid=False, cross_file=cross_file)
+        with new.active() as view:
+            found = check(view, files, base, mermaid=(known or True) if mermaid else False,
+                          cross_file=cross_file)
+        lint = [_lint_fails(proc) for proc in lints]  # before the views are removed
+    if None in lint:  # half a baseline would turn legacy debt into blockers
+        found.append(bs.Finding("hygiene", "lint: skipped, needs PyYAML or uv on PATH", severity="NOTICE"))
+    else:
+        scope = None if cross_file else set(files)
+        found += [f for f in lint[0] if scope is None or f.path in scope]
+        prior += lint[1] if old else []
+    moved = _renames(root, "diff", *(["--cached", base] if commit is None else [base, commit])) if base else {}
+    seen = {_key(f, moved) for f in prior}
+    return [f for f in found if f.message.startswith(NEVER_BASELINED) or _key(f) not in seen]
+
+
+def _pushed(root: Path, lines: list[str]) -> list[tuple[str, str, str | None]]:
+    """(ref, local sha, base) per pre-push stdin line worth judging: deletes, tags and no-op pushes
+    skip; a new branch (or a remote tip this clone lacks) compares against origin/main."""
+    out = []
+    for line in lines:
+        parts = line.split()
+        if len(parts) != 4:
+            continue
+        _local_ref, local, remote_ref, remote = parts  # `git push origin HEAD:main`: local ref HEAD
+        if ZERO_SHA.fullmatch(local) or local == remote or not remote_ref.startswith("refs/heads/"):
+            continue
+        base = remote if not ZERO_SHA.fullmatch(remote) and _resolves(root, remote) else "origin/main"
+        out.append((remote_ref.removeprefix("refs/heads/"), local, base))
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="brain_hygiene.py", description=__doc__.split("\n\n")[0])
     p.add_argument("--root", help="brain checkout root (default: cwd's git toplevel)")
     p.add_argument("--base", default="origin/main", help="scope rules to files changed vs this ref")
-    p.add_argument("--all", action="store_true", help="judge every tracked file")
-    p.add_argument("--staged", action="store_true",
-                   help="judge only staged files (the managed pre-commit hook)")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--all", action="store_true", help="judge every tracked file")
+    mode.add_argument("--staged", action="store_true",
+                      help="judge the index, regressions vs HEAD (the managed pre-commit hook)")
+    mode.add_argument("--push", action="store_true",
+                      help="judge each pushed commit vs the remote tip; pre-push refs on stdin "
+                           "(the managed pre-push hook)")
     args = p.parse_args(argv)
     try:
         root = bs.git_toplevel(Path(args.root).resolve() if args.root else Path.cwd())
     except bs.StructureError as exc:
         print(f"brain-hygiene: {exc}", file=sys.stderr)
         return 2
-    if args.staged:  # the managed pre-commit hook: the one kit path every brain commit runs
+    if args.staged or args.push:
+        return _hook(root, args.push)
+    files = None if args.all else bs.git_changed_paths(root, args.base)
+    findings = check(root, files, args.base)
+    scope = "all" if files is None else f"{len(files)} changed file(s) vs {args.base}"
+    return _report(findings, f"{scope}; conflict markers: whole tree")
+
+
+def _report(findings: list[bs.Finding], scope: str, label: str = "brain hygiene") -> int:
+    for f in findings:
+        print(f.render())
+    blocking = [f for f in findings if f.severity != "NOTICE"]
+    print(f"{label}: {len(blocking)} FAIL ({scope})")
+    return 1 if blocking else 0
+
+
+def _hook(root: Path, push: bool) -> int:
+    """The managed git hooks. A crash in the gate itself fails open (loudly): a gate bug must not stop
+    every commit in the fleet, nor teach agents `--no-verify`."""
+    if not push:  # the pre-commit hook is the one kit path every brain commit runs (no network on push)
         sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
         with contextlib.suppress(ImportError):
             import kit_update
             kit_update.maybe_update(root)
-        files = subprocess.run(["git", "-C", str(root), "diff", "--cached", "--name-only",
-                                "--diff-filter=ACMR"], capture_output=True, text=True).stdout.split()
-    else:
-        files = None if args.all else bs.git_changed_paths(root, args.base)
-    findings = check(root, files, "HEAD" if args.staged else args.base)
-    for f in findings:
-        print(f.render())
-    blocking = [f for f in findings if f.severity != "NOTICE"]
-    scope = ("all" if files is None else f"{len(files)} staged file(s)" if args.staged
-             else f"{len(files)} changed file(s) vs {args.base}")
-    print(f"brain hygiene: {len(blocking)} FAIL ({scope}; conflict markers: whole tree)")
-    return 1 if blocking else 0
+    label = "brain push gate" if push else "brain hygiene"
+    bypass = "git push --no-verify" if push else "git commit --no-verify"
+    try:
+        if not push:
+            findings, scope = gate(root, "HEAD"), "staged vs HEAD"
+        else:
+            findings, refs = [], _pushed(root, sys.stdin.read().splitlines())
+            for _ref, sha, base in dict.fromkeys(refs):
+                findings += [f for f in gate(root, base, sha, mermaid=False, cross_file=True)
+                             if f not in findings]
+            scope = ", ".join(f"{ref} vs {base if base == 'origin/main' else base[:9]}"
+                              for ref, _sha, base in refs) or "nothing to judge"
+    except Exception as exc:  # noqa: BLE001 — see docstring
+        print(f"{label}: ⚠ gate crashed, skipped ({type(exc).__name__}: {exc}); report it to the kit "
+              "maintainers", file=sys.stderr)
+        return 0
+    code = _report(findings, f"{scope}; regressions only, conflict markers + laptop paths always", label)
+    if code:
+        print(f"{label}: fix the FAIL lines above (legacy debt already at the base never blocks); bypass "
+              f"once: {bypass}")
+    return code
 
 
 if __name__ == "__main__":

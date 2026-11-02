@@ -201,6 +201,8 @@ Ships here:
 
 - local brain engine: `brain_run.py`, `brain_test.py`, `brain_projection.py`, `brain_action.py`,
   `brain_dump.py`;
+- the brain git gates: `brain_hygiene.py` behind the managed `pre-commit`/`pre-push` hooks and
+  `brain_git_sync.py` (regression-only; [which gate runs what](docs/specs/brain-lint-gates.md));
 - the fleet-report engine in `skills/brain-fleet-report/scripts/` (read-only collection over public
   `rp`, plus schema/validate and operator queue publication);
 - the simulate engine in `skills/brain-simulate/scripts/` (case normalization, `rp ask --simulation`
@@ -241,7 +243,7 @@ ones) — but don't rely on the gates; release as you go.
 Installed clones follow releases on their own: `scripts/kit_update.py`. Primary: the daily
 `brain-kit-refresh` t3-schedule job (06:45; `install.sh` arms it, and so does the usage path on machines
 installed earlier) runs the newest tag's updater before T3 starts, relinks every brain (missing/stale
-links, outdated hook) and installs into unlinked brain checkouts; its cheap thread settles unless a
+links, missing/outdated managed git hooks) and installs into unlinked brain checkouts; its cheap thread settles unless a
 failure needs the user. Fallback: the managed pre-commit hook, `brain_run.py`/`brain_test.py`,
 `brain_git_sync.py` (once a day). One lock in the clone's `.git`; no tag move while another brain is
 mid-commit/rebase. Never touches a clone on a branch. Opt out: `install.sh --no-schedule`.

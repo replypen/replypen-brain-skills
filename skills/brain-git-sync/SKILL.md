@@ -38,14 +38,14 @@ never overwrite it.
    `status.brain_source.read_only` is true (a read-only brain alias) is refused outright — sync from
    the source project's own checkout instead.
 
-   **Built-in hygiene gate (brains only, no flag):** before every push the script also runs
-   `local-brain-work/scripts/brain_hygiene.py` on the merged tree and blocks (exit 2, nothing pushed)
-   on git conflict markers anywhere, and, in files changed vs `origin/main`: undeclared/residual
-   projection `{{ }}`, `/Users/` paths, dead relative links, em dashes in customer copy (action
-   `display_name`/`customer_*`, `projection.yaml` defaults, `customer_facing: true` md), and mermaid
-   blocks `mmdc` rejects (skipped with a notice when no renderer runs). Born from the 2026-09-25
-   DentAI publish of `<<<<<<<` markers. Fix the file and rerun; `brain_hygiene.py --all` shows legacy debt. `install.sh`
-   also installs a managed `pre-commit` hook (`--staged`) so the same rules fail at commit time.
+   **Built-in hygiene gate (brains only, no flag):** before every push the script runs
+   `local-brain-work/scripts/brain_hygiene.py`'s gate on the merged HEAD and blocks (exit 2, nothing
+   pushed) on what it adds over the remote tip: conflict markers, projection `{{ }}`, `/Users/` paths,
+   customer-copy em dashes, changed mermaid blocks `mmdc` rejects, lint FAILs, dead links and
+   unreachable routed files tree-wide. Debt already on the remote never blocks (except conflict
+   markers, `/Users/` paths); `brain_hygiene.py --all` shows it. Born from the 2026-09-25 DentAI
+   publish of `<<<<<<<` markers. `install.sh` runs the same gate as managed `pre-commit` and `pre-push`
+   hooks: [which gate runs what](../../docs/specs/brain-lint-gates.md).
 
 4. **Exit 3 = conflicts.** Resolve with repository context, preserving both sides' intent; never take
    ours/theirs wholesale just to finish. Stage each resolved path, run the focused tests, rerun the same

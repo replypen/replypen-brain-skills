@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -179,6 +180,184 @@ def test_staged_mode_judges_only_the_index(tmp_path: Path) -> None:
 
 
 
+
+# --- the git gates: committed/pushed bytes, regressions only ----------------------------------------
+
+KIT = SCRIPTS.parents[2]
+
+
+def hooked(root: Path, origin: Path | None = None) -> Path:
+    """Install the managed wrappers this kit writes (pointing at this checkout) and optionally a bare
+    origin; the brain carries a dead-link-free router, one skill and a playbook."""
+    for name in ("pre-commit", "pre-push"):
+        body = subprocess.run(["bash", str(KIT / "install.sh"), "--print-hook", name], check=True,
+                              capture_output=True, text=True, env={**os.environ, "RC_BRAIN_KIT": str(KIT)}).stdout
+        hook = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", f"hooks/{name}"))
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text(body)
+        hook.chmod(0o755)
+    if origin:
+        git(origin.parent, "init", "-q", "--bare", "-b", "main", str(origin))
+        git(root, "remote", "add", "origin", str(origin))
+        git(root, "push", "-q", "--no-verify", "origin", "main")
+        git(root, "fetch", "-q", "origin")
+    return root
+
+
+def gate_brain(tmp_path: Path, files: dict[str, str] | None = None) -> Path:
+    return make_brain(tmp_path / "brain", {
+        "AGENTS.md": "# Router\nSee [b](playbooks/b.md).\n",
+        "skills/a/SKILL.md": "---\nname: a\ndescription: Use for a.\n---\nSee [b](../../playbooks/b.md).\n",
+        "playbooks/b.md": "# B\n", **(files or {})})
+
+
+def commit(root: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    """Hook output arrives on stderr (git forwards it there): merged into .stdout."""
+    return subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "x", *args], stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True,
+                          env={**os.environ, "RP_KIT_AUTOUPDATE": "0", **(env or {})})
+
+
+def push(root: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(root), "push", "-q", "origin", *args], stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True)
+
+
+def test_commit_gate_judges_the_index_bytes_not_the_worktree(tmp_path: Path) -> None:
+    """Partial staging both ways, `commit -a` and `commit <path>` (git's temp index), a spaced name."""
+    root = hooked(gate_brain(tmp_path))
+    b = root / "playbooks/b.md"
+    b.write_text(f"# B\nRun {LAPTOP}/x\n", "utf-8")  # dirty worktree, nothing staged from it
+    (root / "playbooks/c.md").write_text("# C\n", "utf-8")
+    git(root, "add", "playbooks/c.md")
+    assert commit(root).returncode == 0
+    git(root, "add", "playbooks/b.md")
+    b.write_text("# B\n", "utf-8")  # the bad line is staged, the worktree is clean again
+    run = commit(root)
+    assert run.returncode == 1 and "playbooks/b.md:2: hygiene: abs-path" in run.stdout, run.stdout
+    git(root, "reset", "-q")
+    b.write_text(f"# B\nRun {LAPTOP}/x\n", "utf-8")
+    assert commit(root, "-a").returncode == 1
+    assert commit(root, "playbooks/b.md").returncode == 1
+    b.write_text("# B\n", "utf-8")
+    (root / "playbooks/with space.md").write_text(f"see {LAPTOP}/z\n", "utf-8")
+    git(root, "add", "-A")
+    run = commit(root)
+    assert run.returncode == 1 and "playbooks/with space.md:1: hygiene: abs-path" in run.stdout
+
+
+def test_commit_gate_runs_lint_fails_and_ignores_legacy_debt(tmp_path: Path) -> None:
+    root = gate_brain(tmp_path, {"stray.py": "print(1)\n", "skills/cases/legacy.md": "x" * 7000})
+    hooked(root)
+    (root / "stray.py").write_text("print(2)\n", "utf-8")  # touched legacy debt: still not a regression
+    (root / "skills/cases/legacy.md").write_text("x" * 7100, "utf-8")
+    git(root, "add", "-A")
+    assert commit(root).returncode == 0
+    (root / "new.py").write_text("print(3)\n", "utf-8")
+    git(root, "add", "-A")
+    run = commit(root)
+    assert run.returncode == 1 and "new.py: lint: script-outside-skills" in run.stdout
+    assert "stray.py" not in run.stdout and "legacy.md" not in run.stdout
+
+
+def test_commit_gate_projection_edit_orphans_a_placeholder_in_an_untouched_doc(tmp_path: Path) -> None:
+    root = gate_brain(tmp_path, {"projection.yaml": "placeholders:\n  phone: { type: string }\n",
+                                 "playbooks/b.md": "# B\nBel {{ phone }}.\n"})
+    (root / "projection.yaml").write_text("placeholders:\n  tel: { type: string }\n", "utf-8")
+    git(root, "add", "-A")
+    findings = brain_hygiene.gate(root, "HEAD")
+    assert [f.render() for f in findings if f.severity != "NOTICE"] == [
+        "playbooks/b.md:2: hygiene: placeholder: {{ phone }} is not declared in projection.yaml placeholders"]
+
+
+def test_commit_gate_in_a_linked_worktree(tmp_path: Path) -> None:
+    """Git exports GIT_DIR there; the hooks dir is shared, so the wrapper covers every worktree."""
+    root = hooked(gate_brain(tmp_path))
+    wt = tmp_path / "wt"
+    git(root, "worktree", "add", "-q", "-b", "side", str(wt))
+    (wt / "playbooks/b.md").write_text(f"# B\n{LAPTOP}/x\n", "utf-8")
+    git(wt, "add", "-A")
+    run = commit(wt)
+    assert run.returncode == 1 and "playbooks/b.md:2: hygiene: abs-path" in run.stdout, run.stdout
+    git(wt, "reset", "-q", "--hard")
+    (wt / "playbooks/c.md").write_text("# C\n", "utf-8")
+    git(wt, "add", "-A")
+    assert commit(wt).returncode == 0
+    assert git(root, "status", "--porcelain") == ""  # the main checkout's index and tree untouched
+
+
+def test_push_gate_blocks_cross_file_regressions_never_debt(tmp_path: Path) -> None:
+    root = gate_brain(tmp_path, {"playbooks/old.md": "See [gone](gone.md).\n"})  # legacy dead link
+    hooked(root, tmp_path / "origin.git")
+    git(root, "rm", "-q", "playbooks/b.md")  # strands links in two untouched files
+    assert commit(root, "--no-verify").returncode == 0
+    run = push(root, "main")
+    assert run.returncode != 0, run.stdout
+    assert "AGENTS.md:2: hygiene: links" in run.stdout and "skills/a/SKILL.md:5: hygiene: links" in run.stdout
+    assert "old.md" not in run.stdout
+    git(root, "reset", "-q", "--hard", "HEAD~1")
+    (root / "notes.md").write_text("plain\n", "utf-8")
+    git(root, "add", "-A")
+    assert commit(root).returncode == 0
+    assert push(root, "main").returncode == 0, "legacy dead link must not block"
+
+
+def test_push_gate_judges_the_pushed_commit_per_ref(tmp_path: Path) -> None:
+    """New branch → base origin/main; the worktree's dirt is not judged; HEAD:ref pushes count."""
+    root = hooked(gate_brain(tmp_path), tmp_path / "origin.git")
+    git(root, "checkout", "-q", "-b", "dev/x")
+    (root / "playbooks/b.md").write_text(f"# B\n{LAPTOP}/x\n", "utf-8")
+    git(root, "add", "-A")
+    assert commit(root, "--no-verify").returncode == 0
+    run = push(root, "HEAD:refs/heads/dev/x")
+    assert run.returncode != 0 and "dev/x vs origin/main" in run.stdout, run.stdout
+    git(root, "checkout", "-q", "main")
+    (root / "AGENTS.md").write_text(f"{'<' * 7} HEAD\n", "utf-8")  # uncommitted: not what is pushed
+    (root / "notes.md").write_text("ok\n", "utf-8")
+    git(root, "add", "notes.md")
+    assert commit(root).returncode == 0
+    assert push(root, "main").returncode == 0
+
+
+def test_push_gate_reachability_skips_run_hidden_files(tmp_path: Path) -> None:
+    """pro-backup 2026-11-02: a new `_internal/triage/cases/*.md` is run-hidden, so never routed to."""
+    root = gate_brain(tmp_path)
+    (root / "_internal/triage/cases").mkdir(parents=True)
+    (root / "_internal/triage/cases/x.md").write_text("case\n", "utf-8")
+    (root / "playbooks/orphan.md").write_text("orphan\n", "utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "cases")
+    found = [f.render() for f in brain_hygiene.gate(root, "HEAD~1", "HEAD", cross_file=True)
+             if "reachability" in f.message]
+    assert found == ["playbooks/orphan.md: hygiene: reachability: routed file is not reachable from the project "
+                     "router (AGENTS.md)"]
+
+
+def test_pushed_refs_skip_deletes_tags_and_no_ops(tmp_path: Path) -> None:
+    root = gate_brain(tmp_path)
+    head, zero = git(root, "rev-parse", "HEAD"), "0" * 40
+    unknown = "1" * 40  # a remote tip this clone never fetched
+    assert brain_hygiene._pushed(root, [
+        f"refs/heads/main {zero} refs/heads/old {head}",  # delete
+        f"refs/tags/v1 {head} refs/tags/v1 {zero}",  # tag
+        f"refs/heads/main {head} refs/heads/main {head}",  # no-op
+        f"HEAD {head} refs/heads/main {unknown}",
+        f"refs/heads/x {head} refs/heads/x {zero}",
+    ]) == [("main", head, "origin/main"), ("x", head, "origin/main")]
+
+
+def test_hook_wrapper_fails_open_without_a_python_311(tmp_path: Path) -> None:
+    root = hooked(gate_brain(tmp_path))
+    (root / "playbooks/b.md").write_text(f"# B\n{LAPTOP}/x\n", "utf-8")
+    git(root, "add", "-A")
+    bare = tmp_path / "bin"
+    bare.mkdir()
+    for tool in ("git", "sh", "env", "cat", "basename", "dirname", "sed", "uname"):
+        if found := shutil.which(tool):
+            (bare / tool).symlink_to(found)
+    run = commit(root, env={"PATH": str(bare)})
+    assert run.returncode == 0 and "commit not checked" in run.stdout, run.stdout
+
 # --- doc-spill (6000-byte bash cliff, regression-only NOTICE) -------------------------------------
 
 def _staged_spill(tmp_path: Path, before: dict[str, str], after: dict[str, str]) -> subprocess.CompletedProcess:
@@ -212,8 +391,7 @@ def test_doc_spill_silent_when_already_over_tagged_or_exempt(tmp_path: Path) -> 
                          "knowledge/hc/v.md": "---\nvideo_url: https://y/v\n---\n" + "x" * 7000,
                          "docs/long.md": "x" * 7000, "journal/2026-10.md": "x" * 7000,
                          "AGENTS.md": "x" * 7000})
-    assert run.returncode == 0, run.stdout
-    assert "doc-spill" not in run.stdout
+    assert "doc-spill" not in run.stdout  # the commit-time lint may still FAIL these bare fixtures
 
 
 def test_doc_spill_measures_what_the_publish_lint_measures(tmp_path: Path) -> None:

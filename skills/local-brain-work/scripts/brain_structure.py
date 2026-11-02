@@ -348,7 +348,8 @@ def check_frontmatter(ctx: Ctx) -> list[Finding]:
 
 
 def check_reachability(ctx: Ctx) -> list[Finding]:
-    routed = [md for md in ctx.md_files if _needs_reach(md)]
+    hidden = hidden_paths(ctx)  # a run-hidden file (`_internal/` triage cases, maintainer notes) is never routed to
+    routed = [md for md in ctx.md_files if _needs_reach(md) and md not in hidden]
     if not routed:
         return []
     md_set = set(ctx.md_files)

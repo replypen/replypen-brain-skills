@@ -22,7 +22,8 @@
 #   ./install.sh --latest-version
 #
 # With t3-schedule on PATH it also arms the daily kit refresh job (scripts/kit_update.py; opt out with
-# --no-schedule, which sticks).
+# --no-schedule, which sticks). It writes two managed git hooks, pre-commit and pre-push (opt out with
+# --no-hooks, which sticks and removes them).
 set -euo pipefail
 
 KIT="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}"
@@ -38,11 +39,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<EOF
-usage: install.sh [--tag vX.Y.Z] [--schedule|--no-schedule] [BRAIN_DIR]
+usage: install.sh [--tag vX.Y.Z] [--schedule|--no-schedule] [--hooks|--no-hooks] [BRAIN_DIR]
        install.sh --latest-version
-       install.sh --print-hook   (the managed pre-commit hook this kit writes; the updater compares)
+       install.sh --print-hook [pre-commit|pre-push]   (a managed hook this kit writes; the updater compares)
 
 --no-schedule: disarm the daily kit refresh job and stay opted out; --schedule: opt back in.
+--no-hooks: remove this brain's managed git hooks and stay opted out; --hooks: opt back in.
 
 No BRAIN_DIR: auto-detect the current brain checkout from \$PWD or its parents.
 Outside a brain checkout, pass BRAIN_DIR explicitly.
@@ -82,24 +84,36 @@ print(max(tags, key=version_key))
 PY
 }
 
-HOOK_MARK="# replypen-brain-skills managed pre-commit hook"
-LEGACY_HOOK_MARK="# rootcause-brain-skills managed pre-commit hook"
+# Managed git hooks: thin marked wrappers in git's common hooks dir (linked worktrees share it); the gate
+# itself lives in the pinned kit clone, so a release changes behaviour without rewriting them. The
+# ownership mark (current or pre-rebrand) is what lets a refresh rewrite or --no-hooks remove a hook.
+hook_mark() { echo "# replypen-brain-skills managed $1 hook"; }
+legacy_hook_mark() { echo "# rootcause-brain-skills managed $1 hook"; }
 hook_body() {
+  local name="$1" flag label bypass what
+  case "$name" in
+    pre-commit) flag=--staged label="brain hygiene" bypass="git commit --no-verify" what="commit" ;;
+    pre-push) flag=--push label="brain push gate" bypass="git push --no-verify" what="push" ;;
+  esac
   cat <<HOOK_EOF
 #!/bin/sh
-$HOOK_MARK (install.sh; rewritten on every kit refresh).
-# Bypass once: git commit --no-verify
+$(hook_mark "$name") (install.sh; rewritten on every kit refresh).
+# Bypass once: $bypass
 GATE="$KIT/skills/local-brain-work/scripts/brain_hygiene.py"
-[ -f "\$GATE" ] || { echo "brain hygiene: kit missing at \$GATE, skipped" >&2; exit 0; }
-# An interpreter that cannot start (e.g. a mise shim in an untrusted checkout) must not block commits.
-if python3 -c '' 2>/dev/null; then exec python3 "\$GATE" --staged; fi
-if uv run --no-project python -c '' 2>/dev/null; then exec uv run --no-project python "\$GATE" --staged; fi
-echo "brain hygiene: no working python3/uv here (untrusted mise.toml?), skipped; the push gate still runs" >&2
+[ -f "\$GATE" ] || { echo "$label: kit missing at \$GATE, $what not checked" >&2; exit 0; }
+# The gate needs Python 3.11+; an interpreter that cannot start (e.g. a mise shim in an untrusted
+# checkout) or is older must not block the $what.
+if python3 -c 'import tomllib' </dev/null 2>/dev/null; then exec python3 "\$GATE" $flag; fi
+if uv run -q --no-project --python '>=3.11' python -c '' </dev/null 2>/dev/null; then
+  exec uv run -q --no-project --python '>=3.11' python "\$GATE" $flag
+fi
+echo "$label: no Python 3.11+ (python3/uv) here (untrusted mise.toml?), $what not checked" >&2
 HOOK_EOF
 }
 
 BRAIN_ARG=""
 SCHEDULE=""
+HOOKS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --latest-version|--print-latest-version)
@@ -107,8 +121,15 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     --print-hook)
-      hook_body
+      case "${2:-}" in
+        pre-commit|pre-push) hook_body "$2" ;;
+        *) hook_body pre-commit ;;
+      esac
       exit 0
+      ;;
+    --hooks|--no-hooks)
+      HOOKS="$1"
+      shift
       ;;
     --schedule|--no-schedule)
       SCHEDULE="$1"
@@ -469,21 +490,35 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
   echo "$EXCLUDE_END"
 } >>"$EXCLUDE"
 
-# 4b. Managed pre-commit hook: brain_hygiene.py --staged (conflict markers, projection `{{ }}`,
-#     `/Users/` paths, dead links, customer-copy em dashes, mermaid) fails at commit time instead of
-#     at push. Never replaces a user-owned hook or a core.hooksPath setup; says so instead.
+# 4b. Managed git hooks (brain_hygiene.py): pre-commit judges the staged bytes (`--staged`), pre-push
+#     each pushed commit (`--push`): regressions vs the base only, so legacy debt never blocks. Never
+#     replaces a user-owned hook or a core.hooksPath setup; says what to add instead. `--no-hooks`
+#     removes only marked wrappers and leaves a marker the updater respects.
 HOOKS_PATH="$(git -C "$BRAIN" config core.hooksPath || true)"
-HOOK="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
-if [ -n "$BRAIN_PREFIX" ]; then
-  echo "pre-commit hook: skipped (brain is a subdirectory of its repo)"
-elif [ -n "$HOOKS_PATH" ] || { [ -e "$HOOK" ] && ! grep -qF -e "$HOOK_MARK" -e "$LEGACY_HOOK_MARK" "$HOOK"; }; then
-  echo "pre-commit hook: kept your own hook; add this line to it for early hygiene feedback:"
-  echo "  python3 \"$KIT/skills/local-brain-work/scripts/brain_hygiene.py\" --staged"
-else
-  mkdir -p "$(dirname "$HOOK")"
-  hook_body >"$HOOK"
-  chmod +x "$HOOK"
-fi
+NO_HOOKS="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-common-dir)/replypen-kit-no-hooks"
+case "$HOOKS" in
+  --no-hooks) date +%F >"$NO_HOOKS" ;;
+  --hooks) rm -f "$NO_HOOKS" ;;
+esac
+for name in pre-commit pre-push; do
+  HOOK="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path "hooks/$name")"
+  owned=0
+  [ -f "$HOOK" ] && grep -qF -e "$(hook_mark "$name")" -e "$(legacy_hook_mark "$name")" "$HOOK" && owned=1
+  if [ -e "$NO_HOOKS" ]; then
+    [ "$owned" = 1 ] && rm "$HOOK" && echo "$name hook: removed"
+  elif [ -n "$BRAIN_PREFIX" ]; then
+    echo "$name hook: skipped (brain is a subdirectory of its repo)"
+  elif [ -n "$HOOKS_PATH" ] || { [ -e "$HOOK" ] && [ "$owned" = 0 ]; }; then
+    flag=--staged; [ "$name" = pre-push ] && flag="--push   (reads the hook's stdin: pass it through)"
+    echo "$name hook: kept your own hook${HOOKS_PATH:+ (core.hooksPath=$HOOKS_PATH)}; add this line to it:"
+    echo "  python3 \"$KIT/skills/local-brain-work/scripts/brain_hygiene.py\" $flag"
+  else
+    mkdir -p "$(dirname "$HOOK")"
+    hook_body "$name" >"$HOOK"
+    chmod +x "$HOOK"
+  fi
+done
+[ -e "$NO_HOOKS" ] && echo "git hooks: opted out (re-enable: install.sh --hooks)"
 
 # 5. Agent worktrees carry TRACKED files only; the alias is, the kit content behind it is not. The repo-root
 #    `.worktreeinclude` allowlist is the operator convention for ignored local files an agent should

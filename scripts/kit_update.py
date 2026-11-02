@@ -50,14 +50,23 @@ JOB, JOB_AT = "brain-kit-refresh", "06:45"  # after skills-refresh
 BUSY = ("index.lock", "rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD")
 BRAIN_ROOTS = ("code", "src", "dev", "projects", "Projects")
 BRAIN_NAMES = ("*brain*", "*-replypen-*")  # replypen-brain-*, rootcause-brain-*, kampadmin-replypen-common
-HOOK_MARKS = ("# replypen-brain-skills managed pre-commit hook", "# rootcause-brain-skills managed pre-commit hook")
+HOOKS = ("pre-commit", "pre-push")  # install.sh writes both; `--no-hooks` leaves NO_HOOKS in the git dir
+NO_HOOKS = "replypen-kit-no-hooks"
+# A git hook exports these (GIT_INDEX_FILE always, GIT_DIR in a linked worktree): inherited, the kit clone's
+# own git commands would read, or write, the committing brain's index instead.
+GIT_REPO_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX",
+                "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES")
 KEEP_OPEN = "thread: KEEP OPEN (the user should see this)"
 SETTLE = ('thread: SETTLE (nothing for the user): call the T3 MCP tool t3_thread_organize with '
           '{"action":"settle"} as your last tool call')
 
 
+def _env(**extra: str) -> dict[str, str]:
+    return {**{k: v for k, v in os.environ.items() if k not in GIT_REPO_ENV}, **extra}
+
+
 def _git(*args: str, cwd: Path = ROOT, timeout: int = 15) -> subprocess.CompletedProcess:
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
+    env = _env(GIT_TERMINAL_PROMPT="0", LC_ALL="C")
     return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=timeout, env=env)
 
 
@@ -226,15 +235,18 @@ def _brains() -> list[Path]:
     return sorted(out)
 
 
-_HOOK: list[str | None] = []
+_HOOK: dict[str, str | None] = {}
 
 
-def _expected_hook() -> str | None:
-    if not _HOOK:
-        done = subprocess.run(["bash", str(ROOT / "install.sh"), "--print-hook"], capture_output=True, text=True,
-                              timeout=30, env={**os.environ, "RC_BRAIN_KIT": str(ROOT)})
-        _HOOK.append(done.stdout if done.returncode == 0 and done.stdout else None)
-    return _HOOK[0]
+def _expected_hook(name: str) -> str | None:
+    """What this kit's install.sh writes as hook `name`; None when it writes no such hook (an older
+    install.sh prints its pre-commit body for any name: the mark tells them apart)."""
+    if name not in _HOOK:
+        done = subprocess.run(["bash", str(ROOT / "install.sh"), "--print-hook", name], capture_output=True,
+                              text=True, timeout=30, env=_env(RC_BRAIN_KIT=str(ROOT)))
+        ok = done.returncode == 0 and f"managed {name} hook" in done.stdout
+        _HOOK[name] = done.stdout if ok else None
+    return _HOOK[name]
 
 
 def _kit_link(path: Path) -> bool:
@@ -248,7 +260,7 @@ def _kit_link(path: Path) -> bool:
 
 def _relink_reasons(brain: Path) -> list[str]:
     """Why a linked brain needs this kit's install.sh again: missing or dangling skill links, the docs
-    link, or a managed pre-commit hook that differs from what install.sh writes today."""
+    link, or a managed git hook that is missing or differs from what install.sh writes today."""
     skills = brain / ".agents" / "skills"
     reasons = []
     shipped = sorted(d.name for d in (ROOT / "skills").iterdir() if (d / "SKILL.md").is_file())
@@ -274,11 +286,21 @@ def _relink_reasons(brain: Path) -> list[str]:
     with contextlib.suppress(OSError):
         if gd and (gd / "commondir").is_file():
             common = (gd / (gd / "commondir").read_text().strip()).resolve()
-    hook = common / "hooks" / "pre-commit" if common else None
-    with contextlib.suppress(OSError, UnicodeDecodeError):
-        text = hook.read_text() if hook and hook.is_file() else ""
-        if any(m in text for m in HOOK_MARKS) and (expected := _expected_hook()) and text != expected:
-            reasons.append("outdated pre-commit hook")
+    if common is None or (common / NO_HOOKS).exists():
+        return reasons
+    hooks_path = _git("config", "core.hooksPath", cwd=brain).stdout.strip()
+    for name in HOOKS:
+        if not (expected := _expected_hook(name)):
+            continue
+        hook = common / "hooks" / name
+        try:
+            text = hook.read_text() if hook.is_file() else None
+        except (OSError, UnicodeDecodeError):
+            continue
+        if text is None and not hooks_path and not os.path.lexists(hook):  # install.sh leaves a user setup be
+            reasons.append(f"missing {name} hook")
+        elif text and f"-brain-skills managed {name} hook" in text and text != expected:
+            reasons.append(f"outdated {name} hook")
     return reasons
 
 
@@ -286,7 +308,7 @@ def _install(brain: Path) -> str | None:
     """Run this kit's install.sh on a brain; returns the error, if any."""
     try:
         done = subprocess.run(["bash", str(ROOT / "install.sh"), str(brain)], capture_output=True, text=True,
-                              timeout=120, env={**os.environ, "RC_BRAIN_KIT": str(ROOT), "RP_KIT_SCHEDULE": "0"})
+                              timeout=120, env=_env(RC_BRAIN_KIT=str(ROOT), RP_KIT_SCHEDULE="0"))
     except (OSError, subprocess.SubprocessError) as exc:
         return str(exc)
     return _last(done.stderr, f"install.sh exit {done.returncode}") if done.returncode else None
