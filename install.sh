@@ -102,10 +102,10 @@ $(hook_mark "$name") (install.sh; rewritten on every kit refresh).
 GATE="$KIT/skills/local-brain-work/scripts/brain_hygiene.py"
 [ -f "\$GATE" ] || { echo "$label: kit missing at \$GATE, $what not checked" >&2; exit 0; }
 # The gate needs Python 3.11+; an interpreter that cannot start (e.g. a mise shim in an untrusted
-# checkout) or is older must not block the $what.
+# checkout) or is older must not block the $what. A hook never downloads (uv --offline, no Python download).
 if python3 -c 'import tomllib' </dev/null 2>/dev/null; then exec python3 "\$GATE" $flag; fi
-if uv run -q --no-project --python '>=3.11' python -c '' </dev/null 2>/dev/null; then
-  exec uv run -q --no-project --python '>=3.11' python "\$GATE" $flag
+if uv run -q --offline --no-python-downloads --no-project --python '>=3.11' python -c '' </dev/null 2>/dev/null; then
+  exec uv run -q --offline --no-python-downloads --no-project --python '>=3.11' python "\$GATE" $flag
 fi
 echo "$label: no Python 3.11+ (python3/uv) here (untrusted mise.toml?), $what not checked" >&2
 HOOK_EOF

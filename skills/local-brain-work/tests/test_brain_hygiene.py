@@ -333,6 +333,25 @@ def test_push_gate_reachability_skips_run_hidden_files(tmp_path: Path) -> None:
                      "router (AGENTS.md)"]
 
 
+def test_baseline_keeps_identity_digits_and_follows_renames(tmp_path: Path) -> None:
+    """Review S1: `missing1.md` already dead must not mask a newly dead `missing2.md`. S2: renaming an
+    unchanged doc with legacy tool markup is not new markup; measurements still don't count."""
+    root = gate_brain(tmp_path, {"playbooks/two.md": "[a](missing1.md) [b](missing2.md)\n",
+                                 "playbooks/missing2.md": "x\n",
+                                 "knowledge/legacy.md": "Criteria.\n</content>\n"})
+    git(root, "rm", "-q", "playbooks/missing2.md")
+    git(root, "mv", "knowledge/legacy.md", "knowledge/moved.md")
+    git(root, "commit", "-qm", "rm")
+    found = [f.render() for f in brain_hygiene.gate(root, "HEAD~1", "HEAD", cross_file=True) if f.severity != "NOTICE"]
+    assert found == ["playbooks/two.md:1: hygiene: links: link target does not resolve to a tracked path: missing2.md"]
+    assert brain_hygiene._key(bs_finding("doc-size: 7.1 KB over 6000 bytes")) == \
+        brain_hygiene._key(bs_finding("doc-size: 9.4 KB over 6000 bytes"))
+
+
+def bs_finding(message: str):
+    return brain_hygiene.bs.Finding("lint", message, path="a.md")
+
+
 def test_pushed_refs_skip_deletes_tags_and_no_ops(tmp_path: Path) -> None:
     root = gate_brain(tmp_path)
     head, zero = git(root, "rev-parse", "HEAD"), "0" * 40

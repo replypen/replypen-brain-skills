@@ -100,6 +100,7 @@ TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".json", ".toml", ".sh", ".rb", 
 EM_DASH = "\u2014"
 TOOLING_DIRS = (".agents/", ".claude/", ".github/")
 MERMAID_TIMEOUT_S = 30
+LINT_TIMEOUT_S = 20  # the git gates' lint subprocess; past it the lint is skipped with a NOTICE
 DESCRIPTION_MAX = 1024  # agentskills.io limit; lib.brain_lint DESC_FULL_MAX_LEN (publish lint)
 # Tool-call / transcript tags a model wrote into a file it was editing (kampkompas-staff knowledge/,
 # 2026-09): the agent later reads them back verbatim. Matched outside code spans/fences only.
@@ -896,7 +897,7 @@ def _lint_start(view: Path, kind: str) -> subprocess.Popen | None:
     if importlib.util.find_spec("yaml") is not None:
         py = [sys.executable]
     elif uv := shutil.which("uv"):
-        py = [uv, "run", "-q", "--no-project", "--with", "pyyaml", "python"]
+        py = [uv, "run", "-q", "--offline", "--no-project", "--with", "pyyaml", "python"]  # gates: no network
     else:
         return None
     code = ("import json, sys; sys.path.insert(0, sys.argv[1]); from lib.brain_lint import lint_brain; "
@@ -911,7 +912,11 @@ def _lint_fails(proc: subprocess.Popen | None) -> list[bs.Finding] | None:
     if proc is None:
         return None
     try:
-        raw = json.loads(proc.communicate()[0])
+        raw = json.loads(proc.communicate(timeout=LINT_TIMEOUT_S)[0])
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        return None
     except ValueError:
         return None
     out = []
@@ -921,10 +926,16 @@ def _lint_fails(proc: subprocess.Popen | None) -> list[bs.Finding] | None:
     return out
 
 
+# Measurements in a message (sizes, counts, `line N` / `path:N` back-references) move with unrelated
+# edits; every other digit is identity (a link target `missing2.md`, a placeholder key) and stays.
+MEASURE_RE = re.compile(r"\d+(?:\.\d+)?(?=\s*(?:bytes?|chars?|[KM]i?B|%|lines?|notes|skills|prompts|categories)\b|→)"
+                        r"|(?<=→)\d+|(?<=line )\d+|(?<=\.md:)\d+")
+
+
 def _key(f: bs.Finding, moved: dict[str, str] | None = None) -> tuple[str, str | None, str]:
-    """Baseline identity: line numbers and counts (bytes, chars) shift with unrelated edits; a base
-    finding follows its file through a rename (`moved`: base path -> new path)."""
-    return f.check, (moved or {}).get(f.path, f.path), re.sub(r"\d+", "#", f.message)
+    """Baseline identity, measurements masked (MEASURE_RE); a base finding follows its file through a
+    rename (`moved`: base path -> new path)."""
+    return f.check, (moved or {}).get(f.path, f.path), MEASURE_RE.sub("#", f.message)
 
 
 def _resolves(root: Path, ref: str | None) -> bool:
@@ -948,6 +959,9 @@ def gate(root: Path, base: str | None, commit: str | None = None, *, mermaid: bo
     No resolvable base (first commit, nothing to compare): the whole tree is judged as is."""
     base = base if _resolves(root, base) else None
     files = changed_files(root, base, commit)
+    moved = _renames(root, "diff", *(["--cached", base] if commit is None else [base, commit])) if base else {}
+    origin = {new: old for old, new in moved.items()}
+    old_files = [origin.get(rel, rel) for rel in files]  # a renamed file keeps its baseline
     kind = brain_paths.layout(root).kind
     with contextlib.ExitStack() as stack:
         new = stack.enter_context(_snapshot(root, commit))
@@ -956,21 +970,21 @@ def gate(root: Path, base: str | None, commit: str | None = None, *, mermaid: bo
         known: set[str] | None = None
         prior: list[bs.Finding] = []
         if old:
-            known = {src for rel in files if (old.path / rel).is_file() and rel.endswith(".md")
+            known = {src for rel in old_files if (old.path / rel).is_file() and rel.endswith(".md")
                      for _, src in _mermaid_blocks((old.path / rel).read_text("utf-8", errors="replace"))}
             with old.active() as view:
-                prior = check(view, files, None, mermaid=False, cross_file=cross_file)
+                prior = check(view, old_files, None, mermaid=False, cross_file=cross_file)
         with new.active() as view:
             found = check(view, files, base, mermaid=(known or True) if mermaid else False,
                           cross_file=cross_file)
         lint = [_lint_fails(proc) for proc in lints]  # before the views are removed
     if None in lint:  # half a baseline would turn legacy debt into blockers
-        found.append(bs.Finding("hygiene", "lint: skipped, needs PyYAML or uv on PATH", severity="NOTICE"))
+        found.append(bs.Finding("hygiene", "lint: skipped (needs PyYAML, or uv with pyyaml cached: run "
+                                "brain_lint.py once; or it timed out)", severity="NOTICE"))
     else:
         scope = None if cross_file else set(files)
         found += [f for f in lint[0] if scope is None or f.path in scope]
         prior += lint[1] if old else []
-    moved = _renames(root, "diff", *(["--cached", base] if commit is None else [base, commit])) if base else {}
     seen = {_key(f, moved) for f in prior}
     return [f for f in found if f.message.startswith(NEVER_BASELINED) or _key(f) not in seen]
 
