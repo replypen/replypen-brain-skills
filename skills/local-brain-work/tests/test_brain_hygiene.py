@@ -344,6 +344,7 @@ def test_baseline_keeps_identity_digits_and_follows_renames(tmp_path: Path) -> N
     git(root, "commit", "-qm", "rm")
     found = [f.render() for f in brain_hygiene.gate(root, "HEAD~1", "HEAD", cross_file=True) if f.severity != "NOTICE"]
     assert found == ["playbooks/two.md:1: hygiene: links: link target does not resolve to a tracked path: missing2.md"]
+    assert brain_hygiene._key(bs_finding("links: missing1KB.md")) != brain_hygiene._key(bs_finding("links: missing2KB.md"))
     assert brain_hygiene._key(bs_finding("doc-size: 7.1 KB over 6000 bytes")) == \
         brain_hygiene._key(bs_finding("doc-size: 9.4 KB over 6000 bytes"))
 

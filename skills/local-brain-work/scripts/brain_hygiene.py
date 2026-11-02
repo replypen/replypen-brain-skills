@@ -694,9 +694,18 @@ def _triage_case_findings(root: Path) -> list[bs.Finding]:
         if uv is None:
             return [bs.Finding("hygiene", "triage-cases: skipped, needs PyYAML or uv on PATH",
                                path=triage_cases.CASES_DIR, severity="NOTICE")]
-        proc = subprocess.run([uv, "run", "--no-project", "--with", "pyyaml", "python",
-                               str(Path(triage_cases.__file__).resolve()), "--brain", str(root), "--json"],
-                              capture_output=True, text=True, check=False)
+        offline = ["--offline", "--no-python-downloads"] if _SNAPSHOT else []  # a git gate never downloads
+        try:
+            proc = subprocess.run([uv, "run", *offline, "--no-project", "--with", "pyyaml", "python",
+                                   str(Path(triage_cases.__file__).resolve()), "--brain", str(root), "--json"],
+                                  capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
+                                  timeout=LINT_TIMEOUT_S if _SNAPSHOT else None)
+        except subprocess.TimeoutExpired:
+            proc = None
+        if _SNAPSHOT and (proc is None or proc.returncode not in (0, 1)):
+            return [bs.Finding("hygiene", "triage-cases: skipped, uv could not run the linter offline (run "
+                               "brain_hygiene.py once to cache PyYAML)", path=triage_cases.CASES_DIR,
+                               severity="NOTICE")]
         try:
             raw = json.loads(proc.stdout)  # exit 1 is a lint FAIL with findings; anything else is a crash
             if proc.returncode not in (0, 1) or not isinstance(raw, list):
@@ -928,7 +937,7 @@ def _lint_fails(proc: subprocess.Popen | None) -> list[bs.Finding] | None:
 
 # Measurements in a message (sizes, counts, `line N` / `path:N` back-references) move with unrelated
 # edits; every other digit is identity (a link target `missing2.md`, a placeholder key) and stays.
-MEASURE_RE = re.compile(r"\d+(?:\.\d+)?(?=\s*(?:bytes?|chars?|[KM]i?B|%|lines?|notes|skills|prompts|categories)\b|→)"
+MEASURE_RE = re.compile(r"(?<![\w.-])\d+(?:\.\d+)?(?=\s*(?:bytes?|chars?|[KM]i?B|%|lines?|notes|skills|prompts|categories)\b|→)"
                         r"|(?<=→)\d+|(?<=line )\d+|(?<=\.md:)\d+")
 
 
