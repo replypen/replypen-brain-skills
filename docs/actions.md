@@ -77,6 +77,25 @@ Action docs/runbooks should put exact safety guards and verification checks near
 evidence, disqualifying states, preflight expectations, post-execution proof, and when to refuse or
 escalate.
 
+## Agent-Facing `description`: decision text only
+
+The host pastes every eligible action's `description` and param descriptions into the action tool's
+definition on **every model turn**, so each sentence there costs on every call of every run. Write what
+the model needs to decide, nothing else:
+
+- **Keep:** what it does in plain words; when to call it and when not (name the sibling action instead);
+  ordering or pairing rules, stated once on the action where the choice is made; hard stops; how to read
+  the result (what counts as success, what an uncertain result means, what to do next, whether to retry);
+  anything the draft must quote.
+- **Move out** to the `script.py` docstring or `actions/<id>/README.md` (still `cat`-able on demand):
+  API routes, status codes, token minting, idempotency and cache internals, marker formats the script
+  enforces itself, "headless version of …".
+- **Params:** one line each; enum, pattern and format already render, so don't restate them.
+
+Aim for a description under ~900 characters and param descriptions under ~300: `brain_hygiene.py` prints
+a NOTICE past those (non-blocking). The 2026-11 trim kept every decision rule while cutting the DentAI
+action tool from 34k to 17k characters per turn.
+
 ## Script Hygiene
 
 `script.py` / `preflight.py` are single files by construction — only `sha256(script.py)` is pinned and

@@ -91,6 +91,18 @@ def test_each_failure_is_rejected(tmp_path: Path, rule: str) -> None:
     assert rule in rules(root)
 
 
+def test_action_size_notices_without_blocking(tmp_path: Path) -> None:
+    pytest.importorskip("yaml")
+    manifest = (f"id: refund\ndescription: >-\n  {'word ' * 200}\nparams:\n  - name: invoice\n"
+                f"    type: string\n    description: {'x ' * 200}\n  - name: amount\n    type: number\n"
+                "    description: Amount in euro.\n")
+    root = make_brain(tmp_path, {"actions/refund/manifest.yaml": manifest})
+    notices = [f.message for f in brain_hygiene.check(root) if f.severity == "NOTICE"
+               and f.message.startswith("action-size")]
+    assert len(notices) == 2 and "`invoice`" in notices[1]
+    assert rules(root) == set()
+
+
 def test_code_is_not_a_link_and_not_markup(tmp_path: Path) -> None:
     """A `[title](url)` example in backticks or a fence is prose about links, not a link; leaked tags
     quoted as code are documentation, and run-hidden paths are never judged for them."""

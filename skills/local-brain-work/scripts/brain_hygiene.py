@@ -21,6 +21,10 @@ and dev-tooling dot-dirs are judged for conflict markers only):
                    start (e.g. no headless Chrome), skips the rule with a NOTICE.
   * description  — a `skills/**/*.md` frontmatter `description` over 1024 characters (the Agent
                    Skills limit; the publish lint rejects it, the host keeps only the first 1024).
+  * action-size  — NOTICE only: an action manifest `description` over 900 characters or a param
+                   description over 300. The host renders both into the action tool on every model
+                   turn; implementation detail belongs in script.py / README.md (docs/actions.md).
+                   Needs PyYAML; without it the rule is skipped.
   * chat-inspiration — the chat example-prompt gallery set (root `chat_inspiration.md`, then
                    `chat_inspiration/*.md` by name), parsed as ONE library exactly as the host does
                    (`parse_chat_inspiration_set`), whose parser drops bad lines silently. FAIL:
@@ -102,6 +106,8 @@ TOOLING_DIRS = (".agents/", ".claude/", ".github/")
 MERMAID_TIMEOUT_S = 30
 LINT_TIMEOUT_S = 20  # the git gates' lint subprocess; past it the lint is skipped with a NOTICE
 DESCRIPTION_MAX = 1024  # agentskills.io limit; lib.brain_lint DESC_FULL_MAX_LEN (publish lint)
+ACTION_DESCRIPTION_NOTICE = 900  # rendered into the action tool every turn (docs/actions.md)
+ACTION_PARAM_DESCRIPTION_NOTICE = 300
 # Tool-call / transcript tags a model wrote into a file it was editing (kampkompas-staff knowledge/,
 # 2026-09): the agent later reads them back verbatim. Matched outside code spans/fences only.
 TOOL_MARKUP_RE = re.compile(r"</(?:content|invoke|parameter|function_calls)>|<invoke\b|<parameter\s+name="
@@ -683,6 +689,31 @@ def parse_chat_inspiration_set(files: list[tuple[str, str]], root: Path | None =
     return cats, findings
 
 
+def _action_size_notices(text: str, rel: str) -> list[bs.Finding]:
+    """`action-size`: whitespace-collapsed lengths, as the host renders them into the action tool."""
+    try:
+        import yaml
+    except ModuleNotFoundError:
+        return []
+    try:
+        manifest = yaml.safe_load(text)
+    except (yaml.YAMLError, ValueError):
+        return []  # a broken manifest is brain_lint's finding, not this notice's
+    if not isinstance(manifest, dict):
+        return []
+    out = []
+    size = lambda v: len(" ".join(str(v or "").split()))
+    if (n := size(manifest.get("description"))) > ACTION_DESCRIPTION_NOTICE:
+        out.append(bs.Finding("hygiene", f"action-size: description is {n} chars (aim ≤ {ACTION_DESCRIPTION_NOTICE}); "
+                              "it rides every model turn, so keep decision text and move internals to "
+                              "script.py or README.md (docs/actions.md)", path=rel, severity="NOTICE"))
+    for p in manifest.get("params") or []:
+        if isinstance(p, dict) and (n := size(p.get("description"))) > ACTION_PARAM_DESCRIPTION_NOTICE:
+            out.append(bs.Finding("hygiene", f"action-size: param `{p.get('name')}` description is {n} chars "
+                                  f"(aim ≤ {ACTION_PARAM_DESCRIPTION_NOTICE})", path=rel, severity="NOTICE"))
+    return out
+
+
 def _triage_case_findings(root: Path) -> list[bs.Finding]:
     """`triage-cases`: the whole corpus, as the host parses it (it refuses all cases if one is bad).
     PyYAML is optional for this stdlib-only gate: without it the linter re-runs under `uv`."""
@@ -798,6 +829,7 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None, *
             for lineno, line in enumerate(text.splitlines(), start=1):
                 if (m := MANIFEST_COPY_RE.match(line)) and EM_DASH in m.group(2):
                     add("em-dash", f"em dash in customer-facing `{m.group(1)}`", rel, lineno)
+            findings += _action_size_notices(text, rel)
         elif rel == "projection.yaml":
             for lineno, line in enumerate(text.splitlines(), start=1):
                 if (m := DEFAULT_VALUE_RE.search(line)) and EM_DASH in m.group(1):
