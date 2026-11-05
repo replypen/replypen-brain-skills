@@ -195,7 +195,8 @@ personal/mixed — and **edit** it rather than inventing new top-level structure
 rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes playbooks actions terminology.md 2>/dev/null
 ```
 
-**Durable home** for each reduced signal:
+**Durable home** for each reduced signal (case detail goes to the case file; `AGENTS.md` and `agent` docs
+only for rules most runs need: [startup budget](../../docs/brain-model.md#startup-context-budget)):
 
 | Distilled signal says | Write to |
 |---|---|

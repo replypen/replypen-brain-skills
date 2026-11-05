@@ -218,7 +218,7 @@ both `grounding` and `agent` therefore shows up once, not twice. A doc truncated
 stays readable and selectable past the cut.
 
 Standing rule for every role: **tag sparingly**. Each tagged doc is a per-run token tax on every thread;
-the caps are a safety net, not a budget. Past a cap the body is cut ("read the rest with bash") and
+the caps are a safety net, not a budget ([the budget](#startup-context-budget)). Past a cap the body is cut ("read the rest with bash") and
 models rarely read on; on-demand docs fare no better — a bash read over 6000 chars shows only a ~3 KB
 preview. Lint `doc-size` FAILs an on-demand doc over 6000 bytes as `cat` prints it (whole file; a
 templated doc at its longest render with spec defaults) and WARNs past 5000 for the paths you name; it
@@ -236,12 +236,40 @@ catches the crossing commit earlier. Fix: a lean core (most important rules firs
 
 Use both tags when both consumers must hold a mirror's instructions. Do not tag `/brain/AGENTS.md`, and
 do not add the redundant `agent` tag to `/tenant/AGENTS.md`. Triage is separate: every file, including
-`AGENTS.md`, needs an explicit `triage` tag. A pointer line in `AGENTS.md` is **not** a substitute for an
-`agent` tag — the model will not burn a turn following a pointer mid-task.
+`AGENTS.md`, needs an explicit `triage` tag. For reference most runs consult mid-task, a pointer line in
+`AGENTS.md` is **not** a substitute for an `agent` tag — the model will not burn a turn following a
+pointer mid-task. Case rules a run reads once, up front, are routed, not tagged.
 
 Scan scope for the `grounding`/`agent` roles: the whole brain plus any bound tenant brain; a **mirror**
 file is only picked up at the repo root as `*.md` or under `doc/`, `docs/`, `.claude/`, `.agents/`, root
 `skills/`; `/kb` never. Truncation past a cap appends an explicit marker — the agent may read the rest with `bash`.
+
+### Startup context budget
+
+Every main-loop run starts with `AGENTS.md` + every `agent` doc pasted in full, before it reads a byte of
+the case. North Star: the **smallest start that still lets the agent do excellent work**. Always loaded =
+the rules most runs need, each said once; everything else is an on-demand file the agent opens when the
+case needs it, found through its `description:` and the routing table.
+
+| Hard-loaded | Budget (chars) |
+|---|---|
+| `AGENTS.md` | ≤ 8000: identity in 2-3 lines, the symptom → file routing table, the few rules most runs need |
+| each `agent` doc | ≤ 4000 |
+| `AGENTS.md` + all `agent` docs (one surface-limited doc counts on its own surfaces only) | ≤ 12000 |
+
+- **Hard-load only what most runs use.** Measure before tagging: share of runs that need it (bash reads,
+  SQL in `run_events`). A schema map earns `agent` when a large share of runs write SQL (the cautionary
+  tale below); otherwise route it ("before any SQL, read `skills/records/schema.md`").
+- **Never restate the host prompt**: drafting posture, the reviewer contract (pencils, note,
+  `before_send`, escalation), confidentiality, identity decline, action mechanics, PII tokens. Persona
+  settings own voice, language, length and signature. The action tool lists every action and its params
+  on every turn: never re-list them. The host renders the `/brain` tree: no hand-written file list.
+- **One rule, no example** when the rule carries it; no implementation detail the agent never decides on.
+- **Moving is not deleting**: a rule moved out stays reachable (routing row or "open X when Y" line);
+  keep `triage.md` text for the triage role even when the agent stops loading it.
+
+Hygiene `startup-size` prints a NOTICE when a change leaves the set over budget. Prove a trim with
+old/new replays on real runs before promoting it.
 
 ### Per-surface docs: `surfaces`
 

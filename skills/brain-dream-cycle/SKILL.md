@@ -153,9 +153,11 @@ read/write you need is not exposed through `rp`, finish with a support request t
    runbook it belongs in the brain. Delete any temporary verification rule (`rp project triage rules rm
    <id>`) before finishing.
 
-8. **Apply brain changes narrowly.** Search first, edit the smallest existing home — prefer existing
-   `AGENTS.md`, `terminology.md`, `skills/*/SKILL.md`, `notes/`, scripts or bounded `actions/<id>/` over
-   new top-level structure.
+8. **Apply brain changes narrowly.** Search first, edit the smallest existing home — prefer the case
+   file the rule applies to (`skills/*/SKILL.md`, a runbook, `terminology.md`, `notes/`, scripts or bounded
+   `actions/<id>/`) over new top-level structure. `AGENTS.md` and `include_in: [agent]` docs are pasted into
+   every run: add there only a rule most runs need, within the
+   [startup budget](../../docs/brain-model.md#startup-context-budget).
 
    ```bash
    rg -n "<customer phrase>|<internal term>|<policy name>" AGENTS.md skills notes playbooks actions

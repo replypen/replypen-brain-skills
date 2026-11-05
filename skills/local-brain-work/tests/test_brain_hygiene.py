@@ -103,6 +103,31 @@ def test_action_size_notices_without_blocking(tmp_path: Path) -> None:
     assert rules(root) == set()
 
 
+def test_startup_size_judges_the_hard_loaded_set(tmp_path: Path) -> None:
+    """AGENTS.md + agent-tagged docs are pasted into every run: per-file and whole-set NOTICEs; grounding-only,
+    run-hidden and untouched sets stay silent."""
+    tagged = lambda roles, n: f"---\ndescription: d\ninclude_in: [{roles}]\n---\n" + "x" * n
+    root = make_brain(tmp_path, {
+        "AGENTS.md": "# Router\n" + "r" * 9000,
+        "playbooks/rules.md": tagged("agent", 4500),
+        "skills/records/schema.md": tagged("grounding", 9000),
+        "_internal/old.md": tagged("agent", 9000),
+        ".replypenignore": "_internal/\n",
+        "skills/other.md": "---\ndescription: d\n---\nbody\n",
+        "playbooks/chat.md": "---\ndescription: d\ninclude_in: [agent]\nsurfaces: [chat]\n---\n" + "c" * 3000,
+        "playbooks/chat2.md": "---\ndescription: d\ninclude_in:\n  - agent\nsurfaces:\n  - chat\n---\n" + "c" * 3000,
+    })
+    notices = lambda files=None: [(f.path, f.message) for f in brain_hygiene.check(root, files, mermaid=False)
+                                  if f.message.startswith("startup-size")]
+    found = notices()
+    assert [p for p, _ in found] == ["AGENTS.md", "playbooks/rules.md", "AGENTS.md"]
+    assert "hard-loaded set is" in found[2][1]
+    assert not any(s in found[2][1] for s in ("schema.md", "_internal", "chat.md", "chat2.md"))  # surface-limited: per file only
+    assert notices(["skills/other.md"]) == []  # a change outside the set is not judged
+    assert len(notices(["playbooks/rules.md"])) == 3
+    assert rules(root) == set()
+
+
 def test_code_is_not_a_link_and_not_markup(tmp_path: Path) -> None:
     """A `[title](url)` example in backticks or a fence is prose about links, not a link; leaked tags
     quoted as code are documentation, and run-hidden paths are never judged for them."""

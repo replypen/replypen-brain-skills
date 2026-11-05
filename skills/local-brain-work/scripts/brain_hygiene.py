@@ -25,6 +25,11 @@ and dev-tooling dot-dirs are judged for conflict markers only):
                    description over 300. The host renders both into the action tool on every model
                    turn; implementation detail belongs in script.py / README.md (docs/actions.md).
                    Needs PyYAML; without it the rule is skipped.
+  * startup-size — NOTICE only: the main-loop startup set (root AGENTS.md of a brain/overlay plus every
+                   doc the host pastes for `include_in: [agent]`) over budget: AGENTS.md > 8000 chars,
+                   another agent doc > 4000, the set > 12000. Pasted on every run; case detail belongs in
+                   on-demand files routed by `description:` (docs/brain-model.md §Startup context budget).
+                   Judged when a change touches the set (or --all).
   * chat-inspiration — the chat example-prompt gallery set (root `chat_inspiration.md`, then
                    `chat_inspiration/*.md` by name), parsed as ONE library exactly as the host does
                    (`parse_chat_inspiration_set`), whose parser drops bad lines silently. FAIL:
@@ -108,6 +113,11 @@ LINT_TIMEOUT_S = 20  # the git gates' lint subprocess; past it the lint is skipp
 DESCRIPTION_MAX = 1024  # agentskills.io limit; lib.brain_lint DESC_FULL_MAX_LEN (publish lint)
 ACTION_DESCRIPTION_NOTICE = 900  # rendered into the action tool every turn (docs/actions.md)
 ACTION_PARAM_DESCRIPTION_NOTICE = 300
+# Main-loop startup budget, chars (docs/brain-model.md §Startup context budget). Calibrated 2026-11 on the
+# trimmed DentAI / ProBackup / KampAdmin brains: AGENTS.md 6-7k with its routing table, rules doc ≤4k.
+STARTUP_AGENTS_MD_NOTICE = 8000
+STARTUP_DOC_NOTICE = 4000
+STARTUP_TOTAL_NOTICE = 12000
 # Tool-call / transcript tags a model wrote into a file it was editing (kampkompas-staff knowledge/,
 # 2026-09): the agent later reads them back verbatim. Matched outside code spans/fences only.
 TOOL_MARKUP_RE = re.compile(r"</(?:content|invoke|parameter|function_calls)>|<invoke\b|<parameter\s+name="
@@ -714,6 +724,61 @@ def _action_size_notices(text: str, rel: str) -> list[bs.Finding]:
     return out
 
 
+def _frontmatter_list(doc, text: str, key: str) -> list[str]:
+    """A top-level frontmatter list, flow or block form: `brain_doc.include_in`'s line scan (the host's
+    treeview.frontmatterList) for any key."""
+    block = doc.frontmatter_lines(text) or []
+    strip = lambda s: re.sub(r"(^|\s)#.*$", "", s.rstrip("\r")).strip()
+    for i, raw in enumerate(block):
+        if not raw.startswith(f"{key}:"):
+            continue
+        if rest := strip(raw[len(key) + 1:]):
+            items = rest.strip("[]").split(",")
+        else:
+            items = []
+            for item in map(strip, block[i + 1:]):
+                if not item:
+                    continue
+                if not item.startswith("- "):
+                    break
+                items.append(item[2:])
+        return [v for v in (doc.unquote(p.strip()) for p in items) if v]
+    return []
+
+
+def _startup_size_notices(root: Path, visible: set[str], files: list[str] | None) -> list[bs.Finding]:
+    """`startup-size`: what the host pastes into EVERY main-loop run, judged as a set because the cost
+    is the sum. Whole-file chars of AGENTS.md (pasted whole) and each `agent`-tagged doc. A doc limited by
+    `surfaces:` is pasted only on those surfaces, so it gets the per-file budget but stays out of the sum."""
+    doc = load_brain_doc()
+    if doc is None:
+        return []
+    kind = doc.detect_repo_kind(root)[0]
+    sizes, limited = {}, set()
+    for rel in sorted(p for p in visible if p.endswith(".md")):
+        text = (root / rel).read_text("utf-8", errors="replace")
+        if (rel == "AGENTS.md" and kind != "mirror") or \
+                "agent" in doc.include_in(text) - doc.unread_roles(rel, kind):
+            sizes[rel] = len(text)
+            if _frontmatter_list(doc, text, "surfaces"):
+                limited.add(rel)
+    if not sizes or (files is not None and not set(files) & sizes.keys()):
+        return []
+    out = []
+    hint = "it is pasted into every run: keep rules most runs need, route case detail via `description:`"
+    for rel, n in sizes.items():
+        cap = STARTUP_AGENTS_MD_NOTICE if rel == "AGENTS.md" else STARTUP_DOC_NOTICE
+        if n > cap:
+            out.append(bs.Finding("hygiene", f"startup-size: {n} chars (aim ≤ {cap}); {hint} "
+                                  "(docs/brain-model.md §Startup context budget)", path=rel, severity="NOTICE"))
+    every = {rel: n for rel, n in sizes.items() if rel not in limited}
+    if (total := sum(every.values())) > STARTUP_TOTAL_NOTICE:
+        parts = ", ".join(f"{rel} {n}" for rel, n in sorted(every.items(), key=lambda kv: -kv[1]))
+        out.append(bs.Finding("hygiene", f"startup-size: hard-loaded set is {total} chars (aim ≤ "
+                              f"{STARTUP_TOTAL_NOTICE}): {parts}", path="AGENTS.md", severity="NOTICE"))
+    return out
+
+
 def _triage_case_findings(root: Path) -> list[bs.Finding]:
     """`triage-cases`: the whole corpus, as the host parses it (it refuses all cases if one is bad).
     PyYAML is optional for this stdlib-only gate: without it the linter re-runs under `uv`."""
@@ -836,6 +901,7 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None, *
                     add("em-dash", "em dash in a placeholder default (lands in customer replies)",
                         rel, lineno)
 
+    findings += _startup_size_notices(root, visible, files)
     lay = brain_paths.layout(root)
     refs = brain_paths.extract(root, brain_paths.scan_files(root, sorted(scoped)))
     brain_paths.resolve_local(lay, refs)
