@@ -18,8 +18,10 @@ CLI: `python -m lib.docs url <link> <dest>` · `python -m lib.docs blob <blob_id
   with a document store the workspace holds no S3 keys, so this is the only way in). Never
   `requests.get` a Stripe PDF link or `boto3` the bucket yourself.
 - **Sources (host-owned list).**
-  - `url`: Stripe `invoice_pdf` (invoice) and `pdf` (credit note) links, exactly as the API returns them.
-    Anything else is refused with the reason.
+  - `url`: Stripe `invoice_pdf` (invoice) and `pdf` (credit note) links, exactly as the API returns them;
+    and a `.pdf` file on the project's own LIVE website (its published DPA, terms, brochure: the live
+    address, not a branch preview, no query string). A published website PDF also skips the mirror-copy
+    check, so fetch it here instead of copying it from `/mirrors`. Anything else is refused with the reason.
   - `blob`: a Rails ActiveStorage `active_storage_blobs.id`, on projects whose operator configured a
     document store. The host re-reads the row through THIS run's scoped view, so tenant, end-user and
     hidden-file rules apply exactly as to your own query.

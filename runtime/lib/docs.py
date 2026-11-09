@@ -7,10 +7,13 @@ it is an ordinary generated file again. Renaming is fine (the receipt is the byt
     from lib import docs
     # A Stripe invoice/credit-note PDF link (`invoice.invoice_pdf`, `credit_note.pdf`):
     path = docs.fetch_url(inv["invoice_pdf"], "/tmp/outbox/Invoice-2024-001.pdf")
+    # A PDF the project's own LIVE website publishes (its DPA, terms); also skips the mirror-copy check:
+    path = docs.fetch_url("https://www.example.com/legal/dpa.pdf", "/tmp/outbox/DPA.pdf")
     # A Rails ActiveStorage blob, on projects with a document store (read through your own scoped view):
     path = docs.fetch_blob(row["blob_id"], "/tmp/outbox/attest.pdf")
 
-Only listed document sources are fetched; any other URL is refused with the reason. An expired Stripe
+Only listed document sources (Stripe PDF links, PDFs on the project's own live website) are fetched; any
+other URL is refused with the reason. An expired Stripe
 link answers an error: re-read the invoice for a fresh one.
 
 CLI:

@@ -84,7 +84,7 @@ Keep these planes explicit in every skill, template, and brain edit:
   mount, saving to `/tmp/outbox`; absent mount ⇒ one clear "not enabled" sentence. Cost model + ladder decisions: `docs/image-generation.md`.)
   (`lib.transcribe` — on-demand transcript of a chat recording over the broker's `transcribe` mount,
   with the run's own `--instructions`/`--keywords` added to the project hints: [docs/transcription.md](docs/transcription.md).)
-  (`lib.docs` — the HOST downloads a document of record (Stripe invoice/credit-note PDF link, or an
+  (`lib.docs` — the HOST downloads a document of record (Stripe invoice/credit-note PDF link, a PDF on the project's own live website, or an
   ActiveStorage blob on a project with a document store) and keeps a receipt of its bytes; attached
   unchanged, the file skips the code-shape delivery check. Use it instead of downloading such a document
   yourself; the host owns the source list and the store keys: [docs/host-documents.md](docs/host-documents.md).)
