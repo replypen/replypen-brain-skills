@@ -704,7 +704,8 @@ def build_subject(case: dict[str, Any]) -> str:
     return " ".join(first[:8]) or "Support request"
 
 
-def build_command(case: dict[str, Any], ref: str, timeout: str, sender: str | None) -> list[str]:
+def build_command(case: dict[str, Any], ref: str, timeout: str, sender: str | None,
+                  mirror_refs: list[str] | None = None) -> list[str]:
     # A fixture case's own sender wins: grounding looks the family up by that address.
     frm = case.get("from") or sender or f"simulate-{case['id'][:8].lower()}@example.test"
     command = [_cli(), "ask", build_question(case),
@@ -715,6 +716,8 @@ def build_command(case: dict[str, Any], ref: str, timeout: str, sender: str | No
         command += ["--tenant", case["tenant"]]
     if ref != "main":
         command += ["--brain-ref", ref]
+    for mirror_ref in mirror_refs or []:
+        command += ["--mirror-ref", mirror_ref]
     return command
 
 
@@ -742,7 +745,7 @@ def snapshot_persona(scratch: Path, root: Path) -> None:
 
 
 def run_one(case: dict[str, Any], ref: str, args: argparse.Namespace, root: Path) -> dict[str, Any]:
-    command = build_command(case, ref, args.timeout, args.sender)
+    command = build_command(case, ref, args.timeout, args.sender, args.mirror_ref)
     hard_timeout = parse_duration(args.timeout) + 60
     attempts = 0
     error = ""
@@ -868,7 +871,7 @@ def cmd_run(args: argparse.Namespace, scratch: Path, root: Path) -> int:
 
     if args.dry_run:
         for case in todo:
-            print(" ".join(elide_command(build_command(case, args.ref, args.timeout, args.sender))))
+            print(" ".join(elide_command(build_command(case, args.ref, args.timeout, args.sender, args.mirror_ref))))
         print(f"dry-run: {len(todo)} case(s) would run, {len(skipped)} already done", file=sys.stderr)
         return 0
 
@@ -1618,6 +1621,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--parallel", type=int, default=2, help=f"workers, capped at {MAX_PARALLEL}")
     run.add_argument("--retries", type=int, default=2)
     run.add_argument("--timeout", default="5m")
+    run.add_argument("--mirror-ref", action="append", default=[], metavar="REPO=REF",
+                     help="also mount a dev/* ref of a source mirror (rp ask --mirror-ref); repeatable")
     run.add_argument("--from", dest="sender", help="sender address (default simulate-<id>@example.test)")
     run.add_argument("--only", action="append", default=[], metavar="ID[,ID]")
     run.add_argument("--force", action="store_true", help="re-run cases that already finished")

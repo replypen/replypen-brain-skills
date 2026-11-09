@@ -85,6 +85,7 @@ type distribution, half or more deliberately hard, no FAQ one-liners. Persist wi
 uv run "$SKILL/scripts/simulate.py" run --scratch "$SCRATCH"                      # main
 uv run "$SKILL/scripts/simulate.py" run --scratch "$SCRATCH" --ref dev/<branch>   # A/B a pushed candidate
 # --parallel 2 (max 3) --retries 2 --only ID,ID --force --dry-run --timeout 5m
+# --mirror-ref <repo>=dev/<branch>   A/B a source-mirror change too (repeatable)
 ```
 
 Per case: `rp ask <inbound> --scenario email --simulation --subject … --from simulate-<id>@example.test -o json`.
