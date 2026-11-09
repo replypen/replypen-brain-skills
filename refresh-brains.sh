@@ -258,6 +258,11 @@ if [ -n "$RELEASE" ]; then
   #     (byte-identical — the image bakes runtime/ only, never the skill).
   if [ "$NO_IMAGE" = 1 ]; then
     echo "  (--no-image: skipping image; docker mode needs $IMAGE:v$NEW built before pre-push)"
+  elif [ "$RUNTIME_CHANGED" != 1 ] && [ "$NO_PUSH" != 1 ] && command -v docker >/dev/null 2>&1 &&
+       docker buildx version >/dev/null 2>&1; then
+    # Registry-side copy of the manifest: no daemon, no 1.3G pull (2026-11-09: colima down failed a doc release).
+    say "Re-tag image $IMAGE:v$CUR → :v$NEW in the registry (runtime identical)"
+    run docker buildx imagetools create -t "$IMAGE:v$NEW" "$IMAGE:v$CUR"
   elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
     echo "  ⚠ docker unavailable — image NOT built. Before any docker-mode run:" >&2
     echo "      docker build -f docker/Dockerfile -t $IMAGE:v$NEW $ROOT && docker push $IMAGE:v$NEW" >&2
