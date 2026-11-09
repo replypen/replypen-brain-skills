@@ -264,6 +264,9 @@ case needs it, found through its `description:` and the routing table.
   `before_send`, escalation), confidentiality, identity decline, action mechanics, PII tokens. Persona
   settings own voice, language, length and signature. The action tool lists every action and its params
   on every turn: never re-list them. The host renders the `/brain` tree: no hand-written file list.
+- **Actions cost the tree only through their `.md` docs**: the host lists `actions/` as a doc map (each action's
+  `.md` docs with their `description:`, no manifests, scripts or `_shared/` helpers). Put run guidance in a
+  described doc beside the action; `.replypenignore` operator-only docs (`operator.md`), every run pays for them.
 - **One rule, no example** when the rule carries it; no implementation detail the agent never decides on.
 - **Moving is not deleting**: a rule moved out stays reachable (routing row or "open X when Y" line);
   keep `triage.md` text for the triage role even when the agent stops loading it.
