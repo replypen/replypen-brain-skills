@@ -160,6 +160,7 @@ CLI equivalents: `python -m lib.db --stats accounts --db ruby --format json` and
 | [docs/knowledge-base.md](docs/knowledge-base.md) | Traverse `/kb` and committed `knowledge/`, including frontmatter search from `rp dev console bash`. |
 | [docs/support-boundary.md](docs/support-boundary.md) | Brain-change vs ReplyPen-support decision tree. |
 | [docs/actions.md](docs/actions.md) | Action plane and local hosted-Python action tests. |
+| [docs/person-identification.md](docs/person-identification.md) | Writing and proving "who is this message about?" rules: principles over case recipes, evidence-only scripts. |
 | [docs/rp-cli.md](docs/rp-cli.md) | Public `rp` CLI reference for this kit. |
 
 ## Single Version Line
