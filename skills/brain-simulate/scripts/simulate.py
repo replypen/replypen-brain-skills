@@ -848,6 +848,12 @@ def note_text(payload: dict[str, Any]) -> str:
                         if isinstance(n, dict) and (n.get("body") or "").strip())
 
 
+def mirror_refs_of(record: dict[str, Any]) -> list[str]:
+    """Mirror refs a stored result ran with, read back from its command (results are keyed by brain ref only)."""
+    command = record.get("command") or []
+    return sorted(command[i + 1] for i, part in enumerate(command[:-1]) if part == "--mirror-ref")
+
+
 def cmd_run(args: argparse.Namespace, scratch: Path, root: Path) -> int:
     selection, _cases, by_id = load_selection(scratch)
     only = {i.strip() for arg in (args.only or []) for i in arg.split(",") if i.strip()}
@@ -864,6 +870,10 @@ def cmd_run(args: argparse.Namespace, scratch: Path, root: Path) -> int:
         path = out_dir / f"{case['id']}.json"
         if path.exists() and not args.force:
             existing = read_json(path, "run result")
+            if mirror_refs_of(existing) != sorted(args.mirror_ref):
+                raise SimError(f"{path} ran with mirror refs {mirror_refs_of(existing) or 'none'}, not "
+                               f"{sorted(args.mirror_ref) or 'none'}: give each mirror arm its own --scratch "
+                               "(or --force to overwrite)")
             if existing.get("status") == "done":
                 skipped.append(case["id"])
                 continue

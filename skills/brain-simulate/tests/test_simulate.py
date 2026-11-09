@@ -312,6 +312,16 @@ def test_run_skips_done_cases_unless_forced(tmp_path, capsys):
     assert capsys.readouterr().out.count("rp ask ") == 3
 
 
+def test_run_never_reuses_a_result_from_another_mirror_arm(tmp_path, capsys):
+    ids = seed(tmp_path)
+    sim.write_json(scratch(tmp_path) / "runs" / "main" / f"{ids[0]}.json",
+                   {"case_id": ids[0], "status": "done", "command": ["rp", "ask", "q"]})
+    assert cli(tmp_path, "run", "--dry-run", "--mirror-ref", "common=dev/x") != 0
+    assert "own --scratch" in capsys.readouterr().err
+    assert cli(tmp_path, "run", "--dry-run", "--mirror-ref", "common=dev/x", "--force") == 0
+    assert capsys.readouterr().out.count("--mirror-ref common=dev/x") == 3
+
+
 def test_run_retries_transient_failures_and_snapshots_persona(tmp_path, monkeypatch):
     ids = seed(tmp_path)
     target = ids[0]
