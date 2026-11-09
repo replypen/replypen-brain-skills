@@ -796,3 +796,19 @@ def test_chat_inspiration_cap_finding_names_the_continuation_file() -> None:
         ("chat_inspiration/20-a.md", HEADER + "## A\nnote 9\n- **Two** — two\n")])
     (cap,) = [f for f in found if "has 9 notes" in f.message]
     assert (cap.path, cap.line) == ("chat_inspiration/20-a.md", 5)
+
+
+def test_symlinked_doc_resolves_links_from_its_target(tmp_path: Path) -> None:
+    """Kit 2026-11-09: `.claude/CLAUDE.md -> ../AGENTS.md`; a new AGENTS.md link was judged from `.claude/`."""
+    root = gate_brain(tmp_path)
+    (root / ".claude").mkdir()
+    (root / ".claude/CLAUDE.md").symlink_to("../AGENTS.md")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "alias")
+    (root / "docs").mkdir()
+    (root / "docs/new.md").write_text("# New\n", "utf-8")
+    (root / "AGENTS.md").write_text("# Router\nSee [b](playbooks/b.md) and [n](docs/new.md).\n", "utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "link")
+    found = [f.render() for f in brain_hygiene.gate(root, "HEAD~1", "HEAD", cross_file=True) if "links" in f.message]
+    assert found == []

@@ -113,6 +113,8 @@ Read these before changing product-facing docs/skills:
 - [docs/run-trace-model.md](docs/run-trace-model.md) — how to read `rp run debug`.
 - [docs/side-effects.md](docs/side-effects.md) — read-only vs explicit side effects.
 - [docs/support-boundary.md](docs/support-boundary.md) — brain fix vs support escalation.
+- [docs/ab-eval.md](docs/ab-eval.md) — old vs new for probabilistic changes: gates first, case = unit,
+  blind both-order judge panel, null + planted calibration, pre-registered verdict (`brain-simulate` `ab.py`).
 - [docs/mirrors.md](docs/mirrors.md) — source mirror freshness and local/prod gaps.
 - [docs/secrets.md](docs/secrets.md) — public `rp` flow for adding/rotating grounding env and action
   credentials, and for [registering a new grounding
@@ -161,7 +163,8 @@ Only these are first-class:
   each draft against the human's historical reply, render an HTML report with run links and
   copy-paste steering prompts; re-run with `--ref dev/<branch>` and diff. Fixture cases (synthetic,
   committed, seeded demo dossier, `expect` checks on draft + action proposals) prove a fix when the
-  real thread or record is gone.
+  real thread or record is gone. `ab.py`: old-vs-new on real stored runs (email or chat), N reps per
+  arm, blind both-order judge panel, null/planted calibration, pre-registered verdict ([docs/ab-eval.md](docs/ab-eval.md)).
 - `brain-helpcenter-suggestions` — one window of real customer questions (email runs, in-app chat
   runs, Help Scout) held against the public help-centre inventory: Python collects the corpus and
   every article body, the model classifies in two passes and writes one small markdown file per

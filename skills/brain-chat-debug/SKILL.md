@@ -104,7 +104,8 @@ Replays may run in parallel (each claims its own file); a failed run exits 1 wit
 `replays/<ts>-<label>.md`: refs actually mounted (`override` = your mirror ref), **Expected check**
 with an empty `verdict:` you fill (pass / still wrong / partial; the script never judges), then
 historical vs latest baseline vs this replay: answers, commands, files read. `compare <session8> <a>
-<b>` sets any two replays side by side.
+<b>` sets any two replays side by side. One turn proves a fix; a claim that a change is better or
+worse *in general* needs many turns, reps and a blind judge: [docs/ab-eval.md](../../docs/ab-eval.md).
 
 ## 6. Widen
 

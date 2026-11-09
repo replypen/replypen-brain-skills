@@ -278,7 +278,9 @@ def resolve_target(root: Path, md_rel: str, target: str) -> str | None:
         base = root
         path_part = path_part.lstrip("/")
     else:
-        base = (root / md_rel).parent
+        md = root / md_rel
+        # a symlinked doc (`.claude/CLAUDE.md` -> `../AGENTS.md`) renders from its target: resolve links there
+        base = md.resolve().parent if md.is_symlink() else md.parent
     resolved = Path(os.path.normpath(base / path_part)).resolve()
     try:
         return resolved.relative_to(root).as_posix()

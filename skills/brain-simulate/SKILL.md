@@ -1,6 +1,6 @@
 ---
 name: brain-simulate
-description: "Measure how well a ReplyPen brain behaves today: replay representative, deliberately hard real inbound cases through the production prompt API (`rp ask --simulation`), grade each draft against the human's historical reply on content and tone, and render a self-contained HTML report with run-trace links and copy-paste steering prompts. Use for 'how good is the brain now', a before/after check of a dev/<branch> brain, to find which cases are blocked on grounding vs brain/persona gaps, or to PROVE a brain fix on a seeded fixture dossier when the real thread is retention-scrubbed or its record already changed (fixture cases with deterministic action/draft checks)."
+description: "Measure how well a ReplyPen brain behaves today: replay representative, deliberately hard real inbound cases through the production prompt API (`rp ask --simulation`), grade each draft against the human's historical reply on content and tone, and render a self-contained HTML report with run-trace links and copy-paste steering prompts. Use for 'how good is the brain now', a before/after check of a dev/* brain branch, to find which cases are blocked on grounding vs brain/persona gaps, or to PROVE a brain fix on a seeded fixture dossier when the real thread is retention-scrubbed or its record already changed (fixture cases with deterministic action/draft checks). Also old-vs-new on real stored email/chat runs (`ab.py`): is a brain/prompt change better, worse or the same beyond run-to-run and judge noise."
 ---
 
 # brain-simulate — replay real cases, grade the drafts, steer the brain
@@ -129,6 +129,26 @@ the new drafts, `report --ref dev/<branch> --compare main` for the per-case delt
 [`brain-publish`](../brain-publish/SKILL.md) when the delta holds; `history.jsonl` keeps the trend
 per project. Grounding recommendations become a support request, not a brain edit
 ([docs/support-boundary.md](../../docs/support-boundary.md)).
+
+## Old vs new on real runs (`ab.py`)
+
+Is the candidate better, worse or the same, beyond noise? Replay a set of **real** stored runs (email or chat)
+on both arms, N reps each, and let a blind, position-swapped judge panel decide on a pre-registered rule.
+Read [docs/ab-eval.md](../../docs/ab-eval.md) first (principles, default protocol, measured noise floor).
+
+```bash
+AB="uv run --no-project python $SKILL/scripts/ab.py"
+$AB run     --scratch "$SCRATCH/ab" --cases ids.txt --arm main= --arm 'cand=--brain-ref dev/<branch>'   # ids.txt: run_id[,stratum]
+$AB collect --scratch "$SCRATCH/ab"                    # traces: turn + context, action cards, real SQL errors, brain commit
+$AB metrics --scratch "$SCRATCH/ab" --a main --b cand  # gates first: within-arm vs across-arm
+$AB pack    --scratch "$SCRATCH/ab" --a main --b cand --plants 4
+#   pack-1.md and pack-2.md (labels swapped) → one FRESH judge session each, two model families,
+#   templates/ab-judge-prompt.md → cmp-main-cand/judge-<judge>-<1|2>.jsonl
+$AB verdict --scratch "$SCRATCH/ab" --a main --b cand --margin 0.15 [--null <cmp-a1-a2 dir>]
+```
+
+Every replay is a simulation (`rp ask --replay-run`): live data, nothing executes. Inconclusive → `run
+--reps 2` (all cases), never re-run only the losers. A-vs-A null: `--arm a1= --arm a2=` once per case set.
 
 ## Fixture cases
 
