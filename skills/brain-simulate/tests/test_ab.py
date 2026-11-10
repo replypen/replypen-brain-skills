@@ -174,3 +174,125 @@ def test_run_refuses_reusing_an_arm_name_for_other_flags(tmp_path):
                            reps=1, parallel=1, retries=0, timeout="1m", project=None, seed=1)
     with pytest.raises(ab.ABError, match="already ran"):
         ab.cmd_run(args)
+
+
+def test_run_batches_submits_caps_in_flight_and_retries_a_failed_replay(tmp_path, monkeypatch):
+    (tmp_path / "ids.txt").write_text("c1\nc2\n")
+    calls, polls, n = [], {}, iter(range(100))
+
+    def fake(cmd):
+        calls.append(cmd)
+        if cmd[0] == "ask":
+            cases = cmd[cmd.index("--replay-run") + 1].split(",")
+            return [{"replay_of": c, "rep": 0, "run_id": f"r{next(n)}", "status": "running"} for c in cases], ""
+        ids = cmd[3:]
+        out = []
+        for i in ids:
+            polls[i] = polls.get(i, 0) + 1
+            status = "running" if polls[i] == 1 else ("failed" if i == "r0" else "done")
+            out.append({"run_id": i, "status": status, "outcome": "answered"})
+        return out, ""
+
+    monkeypatch.setattr(ab, "rp_json", fake)
+    monkeypatch.setattr(ab.time, "sleep", lambda s: None)
+    args = SimpleNamespace(scratch=str(tmp_path), cases=str(tmp_path / "ids.txt"), arm=["old=", "new=--brain-ref dev/x"],
+                           reps=1, parallel=2, retries=1, timeout="1m", poll=0, project=None, seed=1)
+    assert ab.cmd_run(args) == 0
+    submits = [c for c in calls if c[0] == "ask"]
+    assert all(len(c[c.index("--replay-run") + 1].split(",")) <= 2 for c in submits)
+    assert all(len(c) - 3 <= 2 for c in calls if c[0] == "run")          # never more than --parallel in flight
+    done = [r for r in ab.read_jsonl(tmp_path / "runs.jsonl")]
+    assert sorted((r["case"], r["arm"]) for r in done) == [("c1", "new"), ("c1", "old"), ("c2", "new"), ("c2", "old")]
+    assert all(r["status"] == "done" for r in done) and any(r["attempts"] == 2 for r in done)   # r0 failed once, retried
+    assert all((tmp_path / "runs" / f"{r['run_id']}.json").exists() for r in done)
+
+
+def test_metrics_show_cost_and_tokens_only_when_collected(tmp_path, capsys):
+    make_run(tmp_path, "r1", "c1", "old", 0)
+    make_run(tmp_path, "r2", "c1", "new", 0)
+    args = SimpleNamespace(scratch=str(tmp_path), a="old", b="new")
+    ab.cmd_metrics(args)
+    assert "cost/tokens: not collected" in capsys.readouterr().out
+    (tmp_path / "usage.json").write_text(json.dumps({"r1": {"cost_usd": 0.05, "prompt_tokens": 1000, "completion_tokens": 50, "total_tokens": 1050},
+                                                     "r2": {"cost_usd": 0.03, "prompt_tokens": 600, "completion_tokens": 40, "total_tokens": 640}}))
+    ab.cmd_metrics(args)
+    out = capsys.readouterr().out
+    assert "0.0500" in out and "0.0300" in out and "1050" in out and "640" in out
+
+
+def test_single_job_submit_reads_the_plain_ask_body(tmp_path, monkeypatch):
+    (tmp_path / "ids.txt").write_text("c1\n")
+
+    def fake(cmd):
+        if cmd[0] == "ask":   # one id → the CLI prints the plain 202 object, not a batch array
+            return {"run_id": "r1", "status": "running"}, ""
+        return [{"run_id": "r1", "status": "done"}], ""
+
+    monkeypatch.setattr(ab, "rp_json", fake)
+    monkeypatch.setattr(ab.time, "sleep", lambda s: None)
+    args = SimpleNamespace(scratch=str(tmp_path), cases=str(tmp_path / "ids.txt"), arm=["old="], reps=1, parallel=1,
+                           retries=0, timeout="1m", poll=0, project=None, seed=1)
+    assert ab.cmd_run(args) == 0
+    assert [r["run_id"] for r in ab.read_jsonl(tmp_path / "runs.jsonl")] == ["r1"]
+
+
+def test_timed_out_replay_keeps_its_slot_and_is_not_resubmitted(tmp_path, monkeypatch):
+    (tmp_path / "ids.txt").write_text("c1\nc2\n")
+    clock = [0.0]
+    monkeypatch.setattr(ab.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(ab.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + 40))
+    submitted, polled = [], []
+
+    def fake(cmd):
+        if cmd[0] == "ask":
+            rid = f"r{len(submitted)}"
+            submitted.append(rid)
+            return {"run_id": rid, "status": "running"}, ""
+        polled.append(cmd[3:])
+        # r0 never finishes (stuck on the host until t=200); r1 finishes at once.
+        return [{"run_id": i, "status": "running" if i == "r0" and clock[0] < 200 else "done"} for i in cmd[3:]], ""
+
+    monkeypatch.setattr(ab, "rp_json", fake)
+    args = SimpleNamespace(scratch=str(tmp_path), cases=str(tmp_path / "ids.txt"), arm=["old="], reps=1, parallel=1,
+                           retries=3, timeout="60s", poll=0, project=None, seed=0)
+    assert ab.cmd_run(args) == 1
+    recs = {r["case"]: r for r in ab.read_jsonl(tmp_path / "runs.jsonl")}
+    timed_out = next(r for r in recs.values() if r["status"] == "timeout")
+    assert timed_out["attempts"] == 1 and len(submitted) == 2          # no second copy of the stuck replay
+    second_submit_poll = next(i for i, p in enumerate(polled) if "r1" in p)
+    assert all("r1" not in p for p in polled[:second_submit_poll])     # r1 waited until the stuck r0 freed its slot
+    assert any(p == ["r0"] for p in polled[1:])
+
+
+def test_run_gives_up_when_status_polls_keep_failing(tmp_path, monkeypatch):
+    (tmp_path / "ids.txt").write_text("c1\n")
+    clock = [0.0]
+    monkeypatch.setattr(ab.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(ab.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + 30))
+    monkeypatch.setattr(ab, "rp_json", lambda cmd: ({"run_id": "r1"}, "") if cmd[0] == "ask" else (None, "401 login expired"))
+    args = SimpleNamespace(scratch=str(tmp_path), cases=str(tmp_path / "ids.txt"), arm=["old="], reps=1, parallel=1,
+                           retries=0, timeout="60s", poll=0, project=None, seed=0)
+    with pytest.raises(ab.ABError, match="no successful status poll"):
+        ab.cmd_run(args)
+
+
+def test_unreadable_stray_keeps_its_slot_until_one_more_timeout(tmp_path, monkeypatch):
+    (tmp_path / "ids.txt").write_text("c1\nc2\n")
+    clock = [0.0]
+    monkeypatch.setattr(ab.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(ab.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + 40))
+    submits = []
+
+    def fake(cmd):
+        if cmd[0] == "ask":
+            submits.append(clock[0])
+            return {"run_id": f"r{len(submits) - 1}", "status": "running"}, ""
+        # r0: running until it times out (t>60), then every read fails (503) — never terminal, never confirmed.
+        return [({"run_id": i, "status": "error", "error": "503"} if clock[0] > 60 else {"run_id": i, "status": "running"})
+                if i == "r0" else {"run_id": i, "status": "done"} for i in cmd[3:]], ""
+
+    monkeypatch.setattr(ab, "rp_json", fake)
+    args = SimpleNamespace(scratch=str(tmp_path), cases=str(tmp_path / "ids.txt"), arm=["old="], reps=1, parallel=1,
+                           retries=0, timeout="60s", poll=0, project=None, seed=0)
+    assert ab.cmd_run(args) == 1
+    assert len(submits) == 2 and submits[1] >= 80 + 60   # r1 waited out r0's unreadable stray window

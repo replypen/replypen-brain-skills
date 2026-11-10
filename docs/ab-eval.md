@@ -65,7 +65,7 @@ null's CI, when a judge's swap agreement is < 70%, or when it caught < 80% of pl
 
 <details><summary>Why these numbers, what each knob costs</summary>
 
-- Chat replay ≈ 2-3 min wall clock; 4 in parallel. 20 cases × 2 arms = 40 replays ≈ 25 min.
+- Chat replay ≈ 2-3 min wall clock; 4 in flight (`--parallel`). 20 cases × 2 arms = 40 replays ≈ 25 min, one laptop process.
 - Judges are separate fresh sessions, one pack each: ~20-30 pairs per session works.
 - Null (kampadmin-support, 9 Nov 2026): within-arm action/outcome signatures stable 20/20; judge decisive
   2-18%, clear 0-1%, swap agreement 95-100%; null CI ≈ ±0.1 at 10 cases. Plants: a truncation that kept
@@ -81,7 +81,8 @@ null's CI, when a judge's swap agreement is < 70%, or when it caught < 80% of pl
 
 | Piece | Home |
 |---|---|
-| Replay, collect, gates, packs, plants, verdict | kit `ab.py` (public `rp ask --replay-run`, `rp run trace`) |
+| Replay, collect, gates, packs, plants, verdict | kit `ab.py`: batch `rp ask --replay-run a,b --no-wait`, `rp run wait --once` (≤ `--parallel` in flight, so live mail keeps workers), `rp run trace` |
+| Cost + tokens per replay | `ab.py collect` → `rp admin project run-usage` (human global admin only: unit economics never reach a customer surface); `metrics` prints median + total per arm |
 | Judge criteria, product context, strata | the brain's own notes (`_internal/`), pasted into the judge template |
 | Fixture cases with deterministic `expect` checks | brain `_internal/simulate/` ([brain-simulate](../skills/brain-simulate/SKILL.md#fixture-cases)) |
-| Server-side multi-rep A/B with collector, retention-safe case pinning | not yet: request it as a host feature |
+| Cases that outlive retention (pinned eval set) | not yet: needs a privacy decision (a pinned email case keeps its PII seed past the 14-day vault ceiling) |

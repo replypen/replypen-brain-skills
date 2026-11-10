@@ -7,8 +7,8 @@
 Method and decision rule: docs/ab-eval.md. Public `rp` only; every replay is `rp ask --replay-run` (a
 simulation: no action executes, nothing is placed). Real customer content stays in one gitignored scratch dir.
 
-    ab.py run     --scratch S --cases ids.txt --arm old= --arm 'new=--brain-ref dev/x' [--reps 2] [--parallel 3]
-    ab.py collect --scratch S                     # fetch each replay's trace (question, context, SQL errors)
+    ab.py run     --scratch S --cases ids.txt --arm old= --arm 'new=--brain-ref dev/x' [--reps 2] [--parallel 4]
+    ab.py collect --scratch S                     # each replay's trace (question, context, SQL errors) + cost/tokens (global admin)
     ab.py metrics --scratch S --a old --b new     # deterministic gates, within-arm vs across-arm
     ab.py pack    --scratch S --a old --b new     # S/cmp-old-new/: pack-1.md + pack-2.md (labels swapped), key.json
     ab.py verdict --scratch S --a old --b new [--null NULL_SCRATCH]
@@ -20,7 +20,6 @@ simulation: no action executes, nothing is placed). Real customer content stays 
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import hashlib
 import json
 import os
@@ -31,12 +30,14 @@ import shutil
 import statistics
 import subprocess
 import sys
+import time
 from collections import Counter, defaultdict
 from math import comb
 from pathlib import Path
 from typing import Any
 
 DONE = "done"
+TERMINAL = {"done", "failed", "error", "cancelled", "canceled", "blocked", "skipped"}
 # A real database error in a lib.db call's output; a doc that merely *mentions* "UndefinedTable" must not count.
 SQL_CALL = re.compile(r"lib\.db|from lib import db|db\.query")
 SQL_ERR = re.compile(r"psycopg[\w.]*\.errors\.\w+|ProgrammingError|UndefinedColumn|syntax error at or near|"
@@ -110,22 +111,29 @@ def load_cases(path: Path) -> list[tuple[str, str]]:
     return cases
 
 
-def replay(scratch: Path, case: str, stratum: str, arm: str, rep: int, flags: list[str],
-           project: list[str], timeout: str, retries: int) -> dict[str, Any]:
-    cmd = [cli(), "ask", "--replay-run", case, *flags, *project, "--timeout", timeout, "-o", "json", "--raw-output"]
-    rec: dict[str, Any] = {"case": case, "stratum": stratum, "arm": arm, "rep": rep, "flags": flags + project}
-    for attempt in range(1, retries + 2):
-        done = subprocess.run(cmd, capture_output=True, text=True)
-        try:
-            payload = json.loads(done.stdout)
-        except json.JSONDecodeError:
-            payload = {}
-        rec.update(attempts=attempt, run_id=payload.get("run_id"), status=payload.get("status") or "error",
-                   error=(payload.get("error") or ("" if done.returncode == 0 else done.stderr.strip()[-400:])))
-        if rec["status"] == DONE:
-            write_private(scratch / "runs" / f"{rec['run_id']}.json", json.dumps(payload, ensure_ascii=False))
-            break
-    return rec
+def rp_json(cmd: list[str]) -> tuple[Any, str]:
+    done = subprocess.run([cli(), *cmd, "-o", "json", "--raw-output"], capture_output=True, text=True)
+    try:
+        return json.loads(done.stdout), done.stderr.strip()[-400:]
+    except json.JSONDecodeError:
+        return None, (done.stderr or done.stdout).strip()[-400:]
+
+
+def submit(jobs: list[dict[str, Any]], flags: list[str]) -> None:
+    """One `rp ask --replay-run a,b,… --no-wait` for jobs sharing an arm's flags; fills run_id or error."""
+    rows, err = rp_json(["ask", "--replay-run", ",".join(j["case"] for j in jobs), *flags, "--no-wait"])
+    if isinstance(rows, dict) and len(jobs) == 1:   # one id is a plain ask: its 202 body, not a batch array
+        rows = [rows]
+    rows = rows if isinstance(rows, list) and len(rows) == len(jobs) else [{} for _ in jobs]
+    for job, row in zip(jobs, rows):
+        job["attempts"] = job.get("attempts", 0) + 1
+        job["run_id"], job["error"] = row.get("run_id"), row.get("error") or ("" if row.get("run_id") else err)
+        job["submitted"] = time.monotonic()
+
+
+def poll_status(body: dict[str, Any]) -> str:
+    """A run's status from `rp run wait --once`; "" when the CLI could not read it (unknown, not failed)."""
+    return "" if set(body) == {"run_id", "status", "error"} else body.get("status") or ""
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -139,23 +147,73 @@ def cmd_run(args: argparse.Namespace) -> int:
             raise ABError(f"arm {r['arm']!r} already ran with flags {r.get('flags')}; "
                           f"use a new arm name (or a new --scratch) for {arms[r['arm']] + project}")
     have = {(r["case"], r["arm"], r["rep"]) for r in done}
-    jobs = [(c, s, a, rep) for c, s in load_cases(Path(args.cases)) for a in arms for rep in range(args.reps)
-            if (c, a, rep) not in have]
-    random.Random(args.seed).shuffle(jobs)   # interleave arms in time: host load / data drift hit both alike
-    print(f"{len(jobs)} replays to run ({len(have)} already done)", flush=True)
-    with concurrent.futures.ThreadPoolExecutor(args.parallel) as pool, ledger.open("a", encoding="utf-8") as out:
-        futures = [pool.submit(replay, scratch, c, s, a, rep, arms[a], project, args.timeout, args.retries)
-                   for c, s, a, rep in jobs]
-        failed = 0
-        for fut in concurrent.futures.as_completed(futures):
-            rec = fut.result()
-            failed += rec["status"] != DONE
-            out.write(json.dumps(rec) + "\n")
+    queue = [{"case": c, "stratum": s, "arm": a, "rep": rep, "flags": arms[a] + project}
+             for c, s in load_cases(Path(args.cases)) for a in arms for rep in range(args.reps) if (c, a, rep) not in have]
+    random.Random(args.seed).shuffle(queue)   # interleave arms in time: host load / data drift hit both alike
+    print(f"{len(queue)} replays to run ({len(have)} already done), at most {args.parallel} in flight", flush=True)
+    timeout = parse_duration(args.timeout)
+    inflight: list[dict[str, Any]] = []
+    stray: dict[str, float] = {}   # timed out locally, maybe still running on the host: holds a slot until terminal
+    last_poll = time.monotonic()
+    failed = 0
+    with ledger.open("a", encoding="utf-8") as out:
+        def finish(job: dict[str, Any], status: str, error: str = "") -> None:
+            nonlocal failed
+            if status not in (DONE, "timeout") and job["attempts"] <= args.retries:
+                queue.append(job)   # a redeploy or worker crash: replay the same job again
+                return
+            failed += status != DONE
+            rec = {k: job[k] for k in ("case", "stratum", "arm", "rep", "flags", "attempts", "run_id")}
+            out.write(json.dumps({**rec, "status": status, "error": error}) + "\n")
             out.flush()
-            print(f"{rec['arm']:>8} rep{rec['rep']} {rec['case'][:8]} {rec['status']} {str(rec['error'])[:120]}", flush=True)
+            print(f"{job['arm']:>8} rep{job['rep']} {job['case'][:8]} {status} {error[:120]}", flush=True)
+
+        while queue or inflight:
+            # Fill free slots, one batch submit per arm (Replays queue behind live mail/chat on the host, but
+            # the box has few workers: the in-flight cap keeps slots free for real customers.)
+            free, batch = args.parallel - len(inflight) - len(stray), {}
+            while free > 0 and queue:
+                job = queue.pop(0)
+                batch.setdefault(job["arm"], []).append(job)
+                free -= 1
+            for arm, jobs in batch.items():
+                submit(jobs, jobs[0]["flags"])
+                for job in jobs:
+                    (inflight.append(job) if job["run_id"] else finish(job, "error", job["error"]))
+            if not inflight and not stray:
+                continue
+            time.sleep(args.poll)
+            bodies, err = rp_json(["run", "wait", "--once", *[j["run_id"] for j in inflight], *stray])
+            if not isinstance(bodies, list):
+                if time.monotonic() - last_poll > timeout:
+                    raise ABError(f"no successful status poll for {args.timeout}; rerun to resume: {err}")
+                print(f"poll failed (retrying): {err}", file=sys.stderr, flush=True)
+                continue
+            last_poll = time.monotonic()
+            by_id = {b.get("run_id"): b for b in bodies if isinstance(b, dict)}
+            now = time.monotonic()   # an unreadable stray frees its slot after one more --timeout
+            stray = {i: t for i, t in stray.items() if poll_status(by_id.get(i) or {}) not in TERMINAL and now - t < timeout}
+            for job in list(inflight):
+                body = by_id.get(job["run_id"]) or {}
+                status = poll_status(body)
+                if status == DONE:
+                    write_private(scratch / "runs" / f"{job['run_id']}.json", json.dumps(body, ensure_ascii=False))
+                elif status in ("", "queued", "running", "pending"):
+                    if time.monotonic() - job["submitted"] < timeout:
+                        continue
+                    stray[job["run_id"]] = time.monotonic()   # not retried: a second copy would only add host load
+                inflight.remove(job)
+                finish(job, status if status in TERMINAL else "timeout", body.get("error") or "")
     os.chmod(ledger, 0o600)
     print(f"{failed} replay(s) not done; rerun the same command to retry them" if failed else "all replays done")
     return 1 if failed else 0
+
+
+def parse_duration(text: str) -> float:
+    m = re.fullmatch(r"(\d+)([smh])", text.strip())
+    if not m:
+        raise ABError(f"--timeout wants e.g. 15m, got {text!r}")
+    return int(m.group(1)) * {"s": 1, "m": 60, "h": 3600}[m.group(2)]
 
 
 def done_runs(scratch: Path) -> list[dict[str, Any]]:
@@ -184,7 +242,29 @@ def cmd_collect(args: argparse.Namespace) -> int:
             continue
         write_private(path, got.stdout)
     print(f"traces collected; {missing} missing")
+    collect_usage(scratch, args.project)
     return 1 if missing else 0
+
+
+def collect_usage(scratch: Path, project: str | None) -> None:
+    """Cost + tokens per replay into usage.json. Global-admin only (our unit economics); others skip it."""
+    path = scratch / "usage.json"
+    usage = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    by_project: dict[str, list[str]] = defaultdict(list)
+    for r in done_runs(scratch):
+        if r["run_id"] in usage:
+            continue
+        run = next((x for x in read_jsonl(scratch / "traces" / f"{r['run_id']}.jsonl") if x.get("type") == "run"), {})
+        if project or run.get("project"):
+            by_project[project or run["project"]].append(r["run_id"])
+    for proj, ids in by_project.items():
+        for i in range(0, len(ids), 200):
+            got, err = rp_json(["admin", "project", "run-usage", proj, *ids[i:i + 200]])
+            if not isinstance(got, dict):
+                print(f"cost/tokens skipped ({err[-160:]}): needs a human global-admin `rp` login", file=sys.stderr)
+                return
+            usage.update({u["run_id"]: u for u in got.get("items") or []})
+    write_private(path, json.dumps(usage))
 
 
 def view(scratch: Path, r: dict[str, Any]) -> dict[str, Any]:
@@ -227,8 +307,10 @@ def view(scratch: Path, r: dict[str, Any]) -> dict[str, Any]:
 
 def by_case(scratch: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
     out: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    path = scratch / "usage.json"
+    usage = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     for r in sorted(done_runs(scratch), key=lambda x: (x["case"], x["arm"], x["rep"])):
-        out[r["case"]][r["arm"]].append(view(scratch, r))
+        out[r["case"]][r["arm"]].append({**view(scratch, r), "usage": usage.get(r["run_id"])})
     return out
 
 
@@ -249,11 +331,14 @@ def cmd_metrics(args: argparse.Namespace) -> int:
         print(f"excluded (an arm has no done replay): {len(missing)} case(s): {','.join(c[:8] for c in missing)}")
     print(f"{'metric':32} {args.a:>12} {args.b:>12}")
 
-    def col(f, how="median"):
+    def col(f, how="median", fmt=".0f"):
         vals = [[f(v) for c in cases.values() for v in c.get(a, []) if f(v) is not None] for a in arms]
         if how == "sum":
-            return [f"{sum(v):.0f}" for v in vals]
-        return [f"{statistics.median(v):.0f}" if v else "-" for v in vals]
+            return [f"{sum(v):{fmt}}" if v else "-" for v in vals]
+        return [f"{statistics.median(v):{fmt}}" if v else "-" for v in vals]
+
+    def use(key):
+        return lambda v: (v.get("usage") or {}).get(key)
 
     for name, f, how in [("replays", lambda v: 1, "sum"), ("system prompt chars", lambda v: v["sys_chars"], "median"),
                          ("bootstrap chars", lambda v: v["boot_chars"], "median"), ("bash calls", lambda v: v["bash"], "median"),
@@ -263,6 +348,16 @@ def cmd_metrics(args: argparse.Namespace) -> int:
                          ("no answer", lambda v: int(not v["answer"]), "sum")]:
         a, b = col(f, how)
         print(f"{name + ' (' + how + ')':32} {a:>12} {b:>12}")
+    # Cost/tokens only when `collect` could read them (global admin); internal unit economics, never customer copy.
+    if any(v.get("usage") for c in cases.values() for runs in c.values() for v in runs):
+        for name, f, how, fmt in [("cost usd", use("cost_usd"), "median", ".4f"), ("cost usd", use("cost_usd"), "sum", ".3f"),
+                                  ("prompt tokens", use("prompt_tokens"), "median", ".0f"),
+                                  ("completion tokens", use("completion_tokens"), "median", ".0f"),
+                                  ("total tokens", use("total_tokens"), "sum", ".0f")]:
+            a, b = col(f, how, fmt)
+            print(f"{name + ' (' + how + ')':32} {a:>12} {b:>12}")
+    else:
+        print("cost/tokens: not collected (`collect` needs a human global-admin login)")
     # A gate difference only means something when it exceeds what the same arm does twice.
     within = Counter()
     across = Counter()
@@ -525,7 +620,8 @@ def main(argv: list[str] | None = None) -> int:
             s.add_argument("--cases", required=True)
             s.add_argument("--arm", action="append", required=True, help="NAME=RP_ASK_FLAGS, repeatable")
             s.add_argument("--reps", type=int, default=1, help="replays per case per arm (re-run with more to extend)")
-            s.add_argument("--parallel", type=int, default=3)
+            s.add_argument("--parallel", type=int, default=4, help="max replays in flight (the box has few workers; keep slots for live mail)")
+            s.add_argument("--poll", type=float, default=15, help="seconds between status polls")
             s.add_argument("--retries", type=int, default=1)
             s.add_argument("--timeout", default="15m")
         if name == "pack":
