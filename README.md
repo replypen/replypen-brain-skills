@@ -26,7 +26,7 @@ Mailbox review of a ReplyPen Google mailbox lives in [`pjmuller/skills` `mailbox
 From a brain checkout:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.14.34/install.sh)
 SKILL="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}/skills/local-brain-work"
 uv run "$SKILL/scripts/brain_run.py" --brief
 uv run "$SKILL/scripts/brain_test.py" --live

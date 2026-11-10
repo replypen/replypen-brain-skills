@@ -170,14 +170,15 @@ if [ -n "$RELEASE" ]; then
     plugin.json .claude-plugin/marketplace.json
     .codex-plugin/plugin.json .agents/plugins/marketplace.json
     runtime/pyproject.toml install.sh
-    README.md docs/onboarding.md docs/migration-host.md
+    README.md docs/onboarding.md docs/migration-host.md skills/brain-dev-upgrade/SKILL.md
   )
   for f in "${FILES[@]}"; do
     [ -f "$ROOT/$f" ] || continue
     # Digit-bounded and never after '==': a bare 0.11.1 → 0.11.2 would also rewrite a dependency pin like
     # pdfplumber==0.11.10, and at kit v0.11.10 the exact pin itself matched (seen 2026-10-08 / 2026-10-12: the
     # coherence check then reports a phantom dependency edit and aborts the release).
-    grep -qF "$CUR" "$ROOT/$f" && run sed -i '' -E "s/(^|[^0-9.=])${CUR//./\\.}([^0-9]|$)/\\1$NEW\\2/g" "$ROOT/$f" || true
+    # MIN_VERIFYING_RELEASE lines name a fixed past release (install.sh), never the current one.
+    grep -qF "$CUR" "$ROOT/$f" && run sed -i '' -E "/MIN_VERIFYING_RELEASE/!s/(^|[^0-9.=])${CUR//./\\.}([^0-9]|$)/\\1$NEW\\2/g" "$ROOT/$f" || true
   done
 
   # 1b. lockfile: only when deps changed (--relock). Skill/doc releases keep lib identical → identical
@@ -248,7 +249,15 @@ if [ -n "$RELEASE" ]; then
       echo "error: remote tag v$NEW appeared during release; refusing to replace it" >&2
       exit 1
     fi
-    run git -C "$ROOT" tag -a -m "v$NEW" "v$NEW"   # annotated: repo config may force signed tags
+    run git -C "$ROOT" tag -s -m "v$NEW" "v$NEW"   # signed: installed kits run only pinned-key tags
+    # Every installed kit refuses a tag its pin rejects (scripts/kit_update.py verify_tag): never publish one.
+    if [ "$DRY" != 1 ] && ! python3 "$ROOT/scripts/kit_update.py" --verify-tag "v$NEW" "$ROOT" >/dev/null; then
+      git -C "$ROOT" tag -d "v$NEW" >/dev/null
+      echo "error: v$NEW is not signed by a key installed kits trust, so no tag was published; release commit" >&2
+      echo "       $(git -C "$ROOT" rev-parse HEAD) is already on main. Fix signing (RELEASING.md \"Signed releases\")," >&2
+      echo "       then: git tag -s -m v$NEW v$NEW <that sha> && python3 scripts/kit_update.py --verify-tag v$NEW && git push origin v$NEW" >&2
+      exit 1
+    fi
     # Include main in the atomic request so a normal concurrent advance rejects tag publication.
     run git -C "$ROOT" -c push.followTags=false push --atomic origin \
       HEAD:refs/heads/main "refs/tags/v$NEW"

@@ -148,7 +148,7 @@ Add a third dream plane:
     {
       "run_id": "...",              // synthetic feedback run when present
       "thread_id": "...",
-      "tenant": "de-kies",
+      "tenant": "sunny-dental",
       "category": "bulk|auto|blocked|...",
       "reason": "safe short reason",
       "deterministic": true,

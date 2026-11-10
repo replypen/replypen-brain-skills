@@ -108,7 +108,7 @@ def test_json_objects_reads_two_documents_from_one_stdout():
 def test_parse_action_lines_recovers_error_message():
     line = (
         'ACTION id=4bf15b8f run_id="19247e8a" action_id="prepare_appointment_cancellation" '
-        'status="failed" duration_ms=3375 params={"appointment_id":"Steven J. (10692742)"} '
+        'status="failed" duration_ms=3375 params={"appointment_id":"Tom J. (12345678)"} '
         'error_class="ActionError" error_message="de live oorspronkelijke reden verschilt van de cache"'
     )
     rows = fr.parse_action_lines("noise\n" + line + "\n")
@@ -116,30 +116,30 @@ def test_parse_action_lines_recovers_error_message():
     row = rows[0]
     assert row["status"] == "failed"
     assert row["error_message"].startswith("de live oorspronkelijke")
-    assert row["params"]["appointment_id"].startswith("Steven")
+    assert row["params"]["appointment_id"].startswith("Tom")
 
 
 # ------------------------------------------------------------------- privacy
 
 
 def test_privacy_reduces_names_and_drops_emails():
-    reduced = fr.privacy("Mail van Melissa Demuytere vanaf melissa@gmail.com over Ada Derammelaere")
-    assert "Melissa D." in reduced and "Ada D." in reduced
-    assert "@" not in reduced and "Demuytere" not in reduced
+    reduced = fr.privacy("Mail van Jan Peeters vanaf jan.peeters@example.com over An Janssens")
+    assert "Jan P." in reduced and "An J." in reduced
+    assert "@" not in reduced and "Peeters" not in reduced
 
 
 def test_name_reducer_handles_particles_and_three_word_names():
     # a capitalised particle belongs to the name, a lowercase one is the Dutch preposition
-    assert fr.reduce_names("Scan van patiënt Van Nuffelen Greet") == "Scan van patiënt Van N. G."
-    assert fr.reduce_names("Patiëntdocumenten van Molemans Bo") == "Patiëntdocumenten van Molemans B."
-    assert fr.reduce_names("Bevestiging recall bij Lies Van Genechten") == "Bevestiging recall bij Lies Van G."
+    assert fr.reduce_names("Scan van patiënt Van Damme Els") == "Scan van patiënt Van D. E."
+    assert fr.reduce_names("Patiëntdocumenten van Wouters Bo") == "Patiëntdocumenten van Wouters B."
+    assert fr.reduce_names("Bevestiging recall bij Lies Van Acker") == "Bevestiging recall bij Lies Van A."
 
 
 def test_name_reducer_leaves_dates_products_and_sentence_starts_alone():
     assert fr.reduce_names("Bevestiging mondonderzoek 22 September 2026").endswith("22 September 2026")
     assert "ClickDoc must contain" in fr.reduce_names("De actie faalde: ClickDoc must contain one label")
     # a name that opens the string has no left context to disambiguate — accepted miss
-    assert fr.reduce_names("Molemans Bo stuurde een mail") == "Molemans Bo stuurde een mail"
+    assert fr.reduce_names("Wouters Bo stuurde een mail") == "Wouters Bo stuurde een mail"
     # a run broken by punctuation does not swallow the next word
     assert fr.reduce_names("expected Dorien Vanbrabant: Mondonderzoek").endswith("Dorien V.: Mondonderzoek")
 
@@ -229,7 +229,7 @@ def test_human_outcome_ladder():
 
 def test_trace_header_allowlist_drops_the_bootstrap_prompt():
     header = {
-        "run_id": "r1", "tenant": "lbv", "trigger": "inbound", "bootstrap_turn": "x" * 5000,
+        "run_id": "r1", "tenant": "acmecamp", "trigger": "inbound", "bootstrap_turn": "x" * 5000,
         "system_prompt": "y" * 5000, "question": "z" * 500,
         "guards": {"final": {"outcome": "replied"}, "secret": 1},
         "grounding_sources": {"captured": True, "sources": [
@@ -241,7 +241,7 @@ def test_trace_header_allowlist_drops_the_bootstrap_prompt():
     }
     reduced = fr.reduce_trace_header(header)
     assert "bootstrap_turn" not in reduced and "system_prompt" not in reduced
-    assert reduced["tenant"] == "lbv" and reduced["run_url"].endswith("/r1")
+    assert reduced["tenant"] == "acmecamp" and reduced["run_url"].endswith("/r1")
     assert set(reduced["guards"]) == {"final"}
     assert fr.unmounted_sources(reduced) == ["pro-backup-backend"]
 
@@ -513,16 +513,16 @@ def test_language_code_reads_persona_prose_not_a_hardcoded_default():
 def test_owner_languages_resolve_tenant_then_project_then_english():
     rc = _StubRc({
         "get": _settings("Nederlands, altijd"),   # project call ends in "get"
-        "de-kies": _settings("Nederlands, altijd"),
-        "orthodusart": _settings("Français, toujours"),
+        "sunny-dental": _settings("Nederlands, altijd"),
+        "bright-smile": _settings("Français, toujours"),
     })
     project, by_tenant = fr.owner_languages(
-        rc, ["dentai"], {"dentai": ["de-kies", "orthodusart", "molaar"]}
+        rc, ["dentai"], {"dentai": ["sunny-dental", "bright-smile", "happy-molar"]}
     )
     assert project == "nl"
     # a tenant whose settings are unreadable inherits the project language, not a literal "nl"
-    assert by_tenant == {"de-kies": "nl", "orthodusart": "fr", "molaar": "nl"}
-    assert rc.coverage[-1].status == "partial" and "molaar" in (rc.coverage[-1].reason or "")
+    assert by_tenant == {"sunny-dental": "nl", "bright-smile": "fr", "happy-molar": "nl"}
+    assert rc.coverage[-1].status == "partial" and "happy-molar" in (rc.coverage[-1].reason or "")
 
     blind = _StubRc({})
     assert fr.owner_languages(blind, ["dentai"], {}) == ("en", {})
@@ -532,15 +532,15 @@ def test_owner_languages_resolve_tenant_then_project_then_english():
 def test_overlay_lang_is_an_explicit_override():
     rc = _StubRc({"get": _settings("Nederlands, altijd")})
     project, by_tenant = fr.owner_languages(
-        rc, ["dentai"], {"dentai": ["de-kies"]}, override="DE"
+        rc, ["dentai"], {"dentai": ["sunny-dental"]}, override="DE"
     )
-    assert (project, by_tenant) == ("de", {"de-kies": "de"})
+    assert (project, by_tenant) == ("de", {"sunny-dental": "de"})
     assert not rc.asked  # the override never calls the host
 
 
 def test_digest_names_the_owner_language_per_tenant():
     line = collect.owner_language_line(
-        {"owner_lang": "nl", "owner_lang_by_tenant": {"de-kies": "nl", "orthodusart": "fr"}}
+        {"owner_lang": "nl", "owner_lang_by_tenant": {"sunny-dental": "nl", "bright-smile": "fr"}}
     )
-    assert line.startswith("Owner language: nl (project)") and "orthodusart: fr" in line
-    assert "de-kies" not in line
+    assert line.startswith("Owner language: nl (project)") and "bright-smile: fr" in line
+    assert "sunny-dental" not in line

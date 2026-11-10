@@ -55,7 +55,7 @@ commit, then push/verify main before publishing the tag:
 | Dep lockfile (regen on any dep change) | `runtime/requirements.lock` | `uv pip compile runtime/pyproject.toml --universal --python-version 3.12 -o runtime/requirements.lock` |
 | Claude Code plugin | `plugin.json` + `.claude-plugin/marketplace.json` | `version` |
 | Codex plugin | `.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json` | `version` / `ref` |
-| Docs install snippets | `README.md`, `docs/onboarding.md`, `docs/migration-host.md`, `install.sh` | the `v0.1.0` literals |
+| Docs install snippets | `README.md`, `docs/onboarding.md`, `docs/migration-host.md`, `skills/brain-dev-upgrade/SKILL.md`, `install.sh` | the `v0.1.0` literals, incl. the curl URL `…/replypen-brain-skills/v0.1.0/install.sh` (never `main`; coherence-checked) |
 | **Prod (separate repo)** | `replypen/runtime/Dockerfile` | the `replypen-runtime @ git+…@vX.Y.Z` pin + workspace image tag — automated by step 3, manual fallback `replypen/scripts/bump-workspace-pin.py vX.Y.Z` |
 | **Prod lock copy (separate repo)** | `replypen/runtime/requirements.lock` | `cp runtime/requirements.lock ../replypen/runtime/requirements.lock` (lockstep copy; the bump script re-fetches it from the tag) |
 
@@ -71,13 +71,38 @@ uv run --no-project python skills/brain-git-sync/scripts/brain_git_sync.py \
   --verify-command 'SKIP_IMAGE=1 SKIP_PROD=1 ./check-release-coherence.sh' \
   --verify-command 'RP_TEST_MERMAID=1 ./scripts/test-skills.sh'   # + the runtime/ suite when RUNTIME_DIGEST moved
 test "$(git rev-parse origin/main)" = "$(git rev-parse HEAD)"
-git tag -a -m vX.Y.Z vX.Y.Z  # only after verified origin/main
+git tag -s -m vX.Y.Z vX.Y.Z  # only after verified origin/main; SSH-signed, see below
+python3 scripts/kit_update.py --verify-tag vX.Y.Z  # the check every installed kit runs
 git -c push.followTags=false push --atomic origin \
   HEAD:refs/heads/main refs/tags/vX.Y.Z  # main must still contain the tagged commit
 docker build -f docker/Dockerfile -t ghcr.io/replypen/workspace:vX.Y.Z . && docker push ghcr.io/replypen/workspace:vX.Y.Z
 ```
 
 Then re-point prod and follow [docs/migration-host.md](docs/migration-host.md).
+
+## Signed releases
+
+Every installed kit runs code only from a release tag SSH-signed by a key in `ALLOWED_SIGNERS`
+(`scripts/kit_update.py`, mirrored in `install.sh`; `check-release-coherence.sh` keeps them equal). The
+trust anchor is the installed copy, never the fetched release, and there is no env override: GitHub push
+or tag rights alone (a leaked token, a bot account) can no longer run code on brain machines. Pinned
+today: PJ's RSA key `SHA256:yaTYKWwRX2oyKCXbDgfKKY4p6bQDlTmcBVbcye8W7bw` (the pjmuller/skills
+`skills-refresh` pin).
+
+- **Releaser setup:** `git config --global gpg.format ssh`, `user.signingkey ~/.ssh/<key>.pub`,
+  `tag.gpgSign true`. `refresh-brains.sh --release` signs with `git tag -s` and verifies the tag against the
+  pin before publishing; an unverifiable tag is deleted locally and never pushed (the release commit is
+  already on main; the error prints the resume commands).
+- **Adding a releaser or rotating:** a release signed by a pinned key adds the new entry to both
+  `ALLOWED_SIGNERS` lines (entries joined by a literal `\n`). Only after every machine has applied that
+  release (`brains-upgrade` / the daily job) may the new key sign; drop a retired key in a later release.
+  A machine still on the old pin refuses the new key's tag and stays put until it re-installs.
+- **A tag nobody released** (job says `FAILED: … not signed by a pinned release key`): updates stay
+  blocked on purpose (the newest tag or nothing, never an older one). Delete that tag on GitHub, review
+  who could push it, rerun. Never weaken the check.
+- **Bootstrap:** the curl install of a pinned tag is trust on first use (an existing verified clone is
+  better); `install.sh` then verifies the tag it checks out. `MIN_VERIFYING_RELEASE` (v0.14.35, the first
+  verifying release) is the floor `install.sh` and the bootstrap accept.
 
 **Why one line:** the engine resolves `lib` from the sibling `runtime/` when present (offline,
 canonical bytes), else `replypen-runtime @ git+…@vX.Y.Z`. Both must be the same bytes prod's image

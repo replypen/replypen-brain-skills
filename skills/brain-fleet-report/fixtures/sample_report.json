@@ -123,8 +123,8 @@
     "per_axis": [
       {
         "axis": "tenant",
-        "key": "lbv",
-        "name": "Landelijke Bond Vakanties",
+        "key": "acmecamp",
+        "name": "Acme Camps",
         "mode": "live",
         "runs": 34,
         "counted": 26,
@@ -147,8 +147,8 @@
       },
       {
         "axis": "tenant",
-        "key": "yes_events",
-        "name": "YES Events",
+        "key": "sunny_events",
+        "name": "Sunny Events",
         "mode": "live",
         "runs": 17,
         "counted": 11,
@@ -171,8 +171,8 @@
       },
       {
         "axis": "tenant",
-        "key": "circolito",
-        "name": "Circolito",
+        "key": "circuskids",
+        "name": "Circus Kids",
         "mode": "watch",
         "runs": 8,
         "counted": 3,
@@ -195,8 +195,8 @@
       },
       {
         "axis": "tenant",
-        "key": "s_sport",
-        "name": "S-Sport Federatie",
+        "key": "acme_sport",
+        "name": "Acme Sport Federation",
         "mode": "watch",
         "runs": 4,
         "counted": 1,
@@ -286,7 +286,7 @@
       "per_axis": [
         {
           "axis": "tenant",
-          "key": "lbv",
+          "key": "acmecamp",
           "rows": [
             {
               "action_id": "update_record",
@@ -320,7 +320,7 @@
         },
         {
           "axis": "tenant",
-          "key": "yes_events",
+          "key": "sunny_events",
           "rows": [
             {
               "action_id": "update_record",
@@ -354,7 +354,7 @@
         },
         {
           "axis": "tenant",
-          "key": "circolito",
+          "key": "circuskids",
           "rows": [],
           "total": {
             "action_id": "total",
@@ -373,7 +373,7 @@
         },
         {
           "axis": "tenant",
-          "key": "s_sport",
+          "key": "acme_sport",
           "rows": [],
           "total": {
             "action_id": "total",
@@ -470,8 +470,8 @@
     },
     "owner_lang": "nl",
     "owner_lang_by_tenant": {
-      "yes_events": "nl",
-      "lbv": "fr"
+      "sunny_events": "nl",
+      "acmecamp": "fr"
     }
   },
   "findings": [
@@ -503,14 +503,14 @@
       "text_nl": "Sinds 2 september haalt de linkcontrole het niet meer: elke link die de agent nakijkt komt terug als 'ongeldig', ook als hij perfect werkt. Omdat de agent geleerd heeft om ongeldige links weg te laten, vertrekken er antwoorden zonder de inschrijvings- of loginlink die de ouder net vroeg. Dit raakte 14 gesprekken in drie dagen.",
       "evidence": {
         "run_ids": [
-          "c725536a",
-          "9e3fa0db",
-          "97986308"
+          "00000001",
+          "00000002",
+          "00000003"
         ],
         "run_urls": [
-          "https://app.replypen.com/runs/c725536a-845b-4966-bc80-1f62bdac5f8b?t=OIdtHCm1fMGritbRmzgsdX7Zz8txEFf2",
-          "https://app.replypen.com/runs/9e3fa0db-1f42-4c9a-9d7e-2b60ac5518c1",
-          "https://app.replypen.com/runs/97986308-4f31-4e77-b2b6-1c8f0a9d4471"
+          "https://app.replypen.com/runs/00000001-0000-4000-8000-000000000001?t=EXAMPLE_SHARE_TOKEN",
+          "https://app.replypen.com/runs/00000002-0000-4000-8000-000000000002",
+          "https://app.replypen.com/runs/00000003-0000-4000-8000-000000000003"
         ]
       },
       "root_cause": {
@@ -528,7 +528,7 @@
           }
         ],
         "run_refs": [
-          "https://app.replypen.com/runs/c725536a-845b-4966-bc80-1f62bdac5f8b"
+          "https://app.replypen.com/runs/00000001-0000-4000-8000-000000000001"
         ],
         "conclusion": "The fixture demonstrates a concrete failure in the reported workflow.",
         "repro": "Open the cited run and inspect its first failing step.",
@@ -537,7 +537,7 @@
       },
       "status": "new",
       "ask_nl": "Laat de reviewer de ontbrekende inschrijvingslink in deze concepten aanvullen.",
-      "ask_for": "Tobias",
+      "ask_for": "Lotte",
       "options": [
         {
           "label": "Gegevens invullen",
@@ -548,7 +548,7 @@
     },
     {
       "id": "F3",
-      "signature": "correction:uitpas-asserted-at-yes-events",
+      "signature": "correction:uitpas-asserted-at-sunny-events",
       "kind": "correction",
       "audience": "both",
       "members": [
@@ -556,7 +556,7 @@
       ],
       "scope": {
         "level": "tenant",
-        "tenant": "yes_events"
+        "tenant": "sunny_events"
       },
       "severity": "high",
       "impact": {
@@ -571,17 +571,17 @@
         "state": "recurring",
         "known_since": "2026-08-31"
       },
-      "title": "UiTPAS promised again at YES Events, five days after the same correction",
-      "text_en": "Two runs told a YES Events parent that a UiTPAS kansentarief can be entered during registration. The organiser does not use UiTPAS. The same fact was corrected by the reviewer on 08-31 (delta category factual) and logged again as feedback on 09-02. The agent grounds UiTPAS from /kb/knowledgeowl, which documents it as a platform capability; no tenant overlay says it is off, and a tenant journal entry asserts the opposite.",
-      "text_nl": "De agent beloofde twee ouders van YES Events opnieuw een UiTPAS-kansentarief, terwijl YES Events met een eigen sociaal tarief werkt. Dezelfde correctie werd op 31 augustus al door de reviewer doorgevoerd en op 2 september nog eens als feedback gemeld. De reden: het platformhandboek beschrijft UiTPAS als een algemene mogelijkheid en er staat nergens dat deze organisator ze niet gebruikt.",
+      "title": "UiTPAS promised again at Sunny Events, five days after the same correction",
+      "text_en": "Two runs told a Sunny Events parent that a UiTPAS kansentarief can be entered during registration. The organiser does not use UiTPAS. The same fact was corrected by the reviewer on 08-31 (delta category factual) and logged again as feedback on 09-02. The agent grounds UiTPAS from /kb/knowledgeowl, which documents it as a platform capability; no tenant overlay says it is off, and a tenant journal entry asserts the opposite.",
+      "text_nl": "De agent beloofde twee ouders van Sunny Events opnieuw een UiTPAS-kansentarief, terwijl Sunny Events met een eigen sociaal tarief werkt. Dezelfde correctie werd op 31 augustus al door de reviewer doorgevoerd en op 2 september nog eens als feedback gemeld. De reden: het platformhandboek beschrijft UiTPAS als een algemene mogelijkheid en er staat nergens dat deze organisator ze niet gebruikt.",
       "evidence": {
         "run_ids": [
-          "9142ee9e",
-          "9540b9d9"
+          "00000004",
+          "00000005"
         ],
         "run_urls": [
-          "https://app.replypen.com/runs/9142ee9e-a331-4c2d-9584-201bbf299ec5",
-          "https://app.replypen.com/runs/9540b9d9-6b28-4a10-9f36-7a2ce0f81b44"
+          "https://app.replypen.com/runs/00000004-0000-4000-8000-000000000004",
+          "https://app.replypen.com/runs/00000005-0000-4000-8000-000000000005"
         ]
       },
       "root_cause": {
@@ -599,7 +599,7 @@
           }
         ],
         "run_refs": [
-          "https://app.replypen.com/runs/9142ee9e-a331-4c2d-9584-201bbf299ec5"
+          "https://app.replypen.com/runs/00000004-0000-4000-8000-000000000004"
         ],
         "conclusion": "The fixture demonstrates a concrete failure in the reported workflow.",
         "repro": "Open the cited run and inspect its first failing step.",
@@ -607,8 +607,8 @@
         "done_when": "The regression case reproduces the failure before the change and passes after it."
       },
       "status": "new",
-      "ask_nl": "Bevestig dat YES Events geen UiTPAS gebruikt en verwijs ouders naar het eigen sociaal tarief.",
-      "ask_for": "Tobias",
+      "ask_nl": "Bevestig dat Sunny Events geen UiTPAS gebruikt en verwijs ouders naar het eigen sociaal tarief.",
+      "ask_for": "Lotte",
       "options": [
         {
           "label": "Gegevens invullen",
@@ -619,7 +619,7 @@
     },
     {
       "id": "F7",
-      "signature": "policy:lbv-refund-window-differs",
+      "signature": "policy:acmecamp-refund-window-differs",
       "kind": "policy_question",
       "audience": "owner",
       "members": [
@@ -627,7 +627,7 @@
       ],
       "scope": {
         "level": "tenant",
-        "tenant": "lbv"
+        "tenant": "acmecamp"
       },
       "severity": "high",
       "impact": {
@@ -641,14 +641,14 @@
         "context_count": 2,
         "state": "recurring"
       },
-      "title": "Refund window: platform says 14 days, LBV answers 7",
-      "text_nl": "Het platformhandboek zegt dat ouders tot 14 dagen voor de start kosteloos kunnen annuleren; de medewerkers van LBV antwoorden consequent 7 dagen en pasten dat deze week drie keer aan in een concept. Zolang wij niet weten welke regel klopt, blijft de agent de 14 dagen herhalen en moet iemand elk antwoord bijsturen.",
+      "title": "Refund window: platform says 14 days, Acme Camps answers 7",
+      "text_nl": "Het platformhandboek zegt dat ouders tot 14 dagen voor de start kosteloos kunnen annuleren; de medewerkers van Acme Camps antwoorden consequent 7 dagen en pasten dat deze week drie keer aan in een concept. Zolang wij niet weten welke regel klopt, blijft de agent de 14 dagen herhalen en moet iemand elk antwoord bijsturen.",
       "evidence": {
         "run_ids": [
-          "3ac91d55"
+          "00000006"
         ],
         "run_urls": [
-          "https://app.replypen.com/runs/3ac91d55-7e4c-4a6b-b1f0-92d7c0a5f318"
+          "https://app.replypen.com/runs/00000006-0000-4000-8000-000000000006"
         ]
       },
       "root_cause": {
@@ -656,8 +656,8 @@
         "confidence": "medium"
       },
       "status": "new",
-      "ask_nl": "Geldt voor LBV een kosteloze annulering tot zeven of veertien dagen vóór de start?",
-      "ask_for": "Tobias",
+      "ask_nl": "Geldt voor Acme Camps een kosteloze annulering tot zeven of veertien dagen vóór de start?",
+      "ask_for": "Lotte",
       "options": [
         {
           "label": "Seven days",
@@ -693,13 +693,13 @@
       "title": "The brain keeps selecting subscriptions.activity_name (UndefinedColumn)",
       "evidence": {
         "run_ids": [
-          "6c9f920c",
-          "8d6f2a21",
-          "d7c4594e"
+          "00000007",
+          "00000008",
+          "00000009"
         ],
         "run_urls": [
-          "https://app.replypen.com/runs/6c9f920c-f261-4b88-84f8-f4eb46bdc75d",
-          "https://app.replypen.com/runs/8d6f2a21-0a17-4d63-9c58-b2e6f1470d39"
+          "https://app.replypen.com/runs/00000007-0000-4000-8000-000000000007",
+          "https://app.replypen.com/runs/00000008-0000-4000-8000-000000000008"
         ]
       },
       "status": "unchanged",

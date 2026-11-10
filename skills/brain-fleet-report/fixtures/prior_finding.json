@@ -26,13 +26,13 @@
   "text_en": "Six failed queries in seven days select activity_name from subscriptions. The column exists on activities, not on subscriptions. The Guessed-to-real table in records-schema.md documents 'activities.name to activity_name', which reads as if the column is simply named activity_name and invites the wrong join.",
   "evidence": {
     "run_ids": [
-      "6c9f920c",
-      "8d6f2a21",
-      "d7c4594e"
+      "00000007",
+      "00000008",
+      "00000009"
     ],
     "run_urls": [
-      "https://app.replypen.com/runs/6c9f920c-f261-4b88-84f8-f4eb46bdc75d",
-      "https://app.replypen.com/runs/8d6f2a21-0a17-4d63-9c58-b2e6f1470d39"
+      "https://app.replypen.com/runs/00000007-0000-4000-8000-000000000007",
+      "https://app.replypen.com/runs/00000008-0000-4000-8000-000000000008"
     ]
   },
   "root_cause": {
@@ -50,7 +50,7 @@
       }
     ],
     "run_refs": [
-      "https://app.replypen.com/runs/6c9f920c-f261-4b88-84f8-f4eb46bdc75d"
+      "https://app.replypen.com/runs/00000007-0000-4000-8000-000000000007"
     ],
     "conclusion": "The fixture demonstrates a concrete failure in the reported workflow.",
     "repro": "Open the cited run and inspect its first failing step.",

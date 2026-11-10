@@ -286,7 +286,7 @@ the approval-sense of "sign-off" should pass. Low effort, removes the only frict
 
 ## P1 — Local IMAP harvest path must fail closed when tooling is absent
 
-**Observed (Orthodusart first-run check, 2026-07-09):** The design docs mention a future deep/local IMAP
+**Observed (a dental tenant's first-run check, 2026-07-09):** The design docs mention a future deep/local IMAP
 path (`rp project mailbox imap-env` + `scripts/local_imap_harvest.py`), but the installed `rp` command tree and
 brain-skill checkout did not expose either piece. Hosted `rp project mailbox harvest` exists, but IMAP may be
 capped to a shallow 100-ref smoke export and production auth was unavailable in the test session.

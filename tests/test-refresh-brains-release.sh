@@ -7,6 +7,28 @@ trap 'rm -rf "$TMP"' EXIT
 
 REMOTE="$TMP/origin.git"
 CHECKOUT="$TMP/kit"
+# Installed kits trust only pinned signing keys, and the release refuses to publish a tag they reject:
+# every fixture kit signs with a disposable key enrolled in its own kit_update.py / install.sh copies.
+ssh-keygen -q -t ed25519 -N '' -C release-test -f "$TMP/signing-key"
+SIGNER="release-test namespaces=\"git\" $(cut -d' ' -f1-2 "$TMP/signing-key.pub")"
+sign_release_tags() {  # repo: sign tags with the disposable key
+  git -C "$1" config gpg.format ssh
+  git -C "$1" config user.signingkey "$TMP/signing-key"
+  git -C "$1" config tag.gpgSign true
+}
+enroll_kit() {  # repo: working-tree kit_update.py + install.sh, pinned to the disposable key
+  mkdir -p "$1/scripts"
+  cp "$ROOT/scripts/kit_update.py" "$1/scripts/kit_update.py"
+  cp "$ROOT/install.sh" "$1/install.sh"
+  SIGNER="$SIGNER" python3 -c '
+import os, re, sys
+for p in sys.argv[1:]:
+    t, n = re.subn(r"(?m)^(ALLOWED_SIGNERS ?= ?)\x27.*\x27$", lambda m: m[1] + "\x27" + os.environ["SIGNER"] + "\x27", open(p).read())
+    assert n == 1, p
+    open(p, "w").write(t)
+' "$1/scripts/kit_update.py" "$1/install.sh"
+  sign_release_tags "$1"
+}
 mkdir -p "$TMP/brains"
 mkdir -p "$TMP/not-a-brain"
 git init -q --bare "$REMOTE"
@@ -26,8 +48,9 @@ mkdir -p "$CHECKOUT/skills/brain-git-sync/scripts" "$CHECKOUT/scripts"
 cp "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
   "$CHECKOUT/skills/brain-git-sync/scripts/brain_git_sync.py"
 cp "$ROOT/scripts/runtime_digest.py" "$CHECKOUT/scripts/runtime_digest.py"
+enroll_kit "$CHECKOUT"
 git -C "$CHECKOUT" add refresh-brains.sh skills/brain-git-sync/scripts/brain_git_sync.py \
-  scripts/runtime_digest.py
+  scripts/runtime_digest.py scripts/kit_update.py install.sh
 if ! git -C "$CHECKOUT" diff --cached --quiet; then
   git -C "$CHECKOUT" commit -q -m "test: install release sync primitive"
 fi
@@ -103,6 +126,7 @@ test "$(git --git-dir="$REMOTE" rev-parse "refs/tags/$tag^{commit}")" = "$releas
 git -C "$CHECKOUT" merge-base --is-ancestor "$peer_commit" "$released"
 test "$(cat "$CHECKOUT/peer-note.txt")" = "remote peer work"
 grep -q "verified origin/main == HEAD ($released)" "$TMP/release.out"
+git --git-dir="$REMOTE" cat-file tag "refs/tags/$tag" | grep -q -- '-----BEGIN SSH SIGNATURE-----'
 grep -q "Reconcile and publish release commit through brain-git-sync" "$TMP/release.out"
 
 # --no-push creates the next release commit locally but creates no tag and leaves remote refs untouched,
@@ -133,8 +157,8 @@ git clone -q "$RACE_REMOTE" "$RACE_PEER"
 for repo in "$RACE_CHECKOUT" "$RACE_PEER"; do
   git -C "$repo" config user.name "Release Race Test"
   git -C "$repo" config user.email "release-race@example.com"
-  git -C "$repo" config tag.gpgSign false
 done
+sign_release_tags "$RACE_CHECKOUT"
 cp "$REMOTE/hooks/pre-receive" "$RACE_REMOTE/hooks/pre-receive"
 chmod +x "$RACE_REMOTE/hooks/pre-receive"
 
@@ -193,15 +217,15 @@ git -C "$CL" switch -q -C main
 git -C "$CL" remote set-url origin "$CL_REMOTE"
 git -C "$CL" config user.name "Classify Test"
 git -C "$CL" config user.email "classify-test@example.com"
-git -C "$CL" config tag.gpgSign false
 git -C "$CL" config push.followTags false
 cp "$ROOT/refresh-brains.sh" "$CL/refresh-brains.sh"
 mkdir -p "$CL/scripts" "$CL/skills/brain-git-sync/scripts"
 cp "$ROOT/scripts/runtime_digest.py" "$CL/scripts/runtime_digest.py"
 cp "$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py" \
   "$CL/skills/brain-git-sync/scripts/brain_git_sync.py"
+enroll_kit "$CL"
 git -C "$CL" add refresh-brains.sh scripts/runtime_digest.py \
-  skills/brain-git-sync/scripts/brain_git_sync.py
+  skills/brain-git-sync/scripts/brain_git_sync.py scripts/kit_update.py install.sh
 git -C "$CL" diff --cached --quiet || git -C "$CL" commit -q -m "test: install classifier under test"
 git -C "$CL" push -q -u origin main
 
@@ -277,5 +301,23 @@ PY
 git -C "$CL" commit -q -am "runtime: add certifi dep"
 cl_release --relock
 test "$(cl_classify)" = 1
+
+# A tag signed by a key installed kits do not trust is never published (they would refuse it).
+ssh-keygen -q -t ed25519 -N '' -C intruder -f "$TMP/intruder-key"
+git -C "$CL" config user.signingkey "$TMP/intruder-key"
+echo "doc note 2" >>"$CL/README.md"
+git -C "$CL" commit -q -am "docs: note 2"
+if RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-image --no-prod-bump \
+    "$TMP/not-a-brain" >"$TMP/untrusted.out" 2>&1; then
+  echo "error: release with an unpinned signing key unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "is not signed by a key installed kits trust, so no tag was published" "$TMP/untrusted.out"
+git -C "$CL" fetch -q origin
+untrusted_tag="v$(git -C "$CL" show origin/main:skills/local-brain-work/scripts/brain_env.py | sed -nE 's/^VERSION = "([0-9.]+)".*/\1/p')"
+if git --git-dir="$CL_REMOTE" rev-parse -q --verify "refs/tags/$untrusted_tag" >/dev/null; then
+  echo "error: untrusted tag $untrusted_tag was published" >&2
+  exit 1
+fi
 
 echo "refresh-brains release tests passed"

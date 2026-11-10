@@ -72,7 +72,7 @@ def test_fixture_validates() -> None:
     sug, ev = load(OUT / "suggestions.json", EVIDENCE, articles_dir=ARTICLES)
     tiles = summary(ev, sug)
     assert tiles["scanned"] == 12 and tiles["recipe"] == 2 and tiles["missing"] == 1
-    assert tiles["per_tenant"] == [("lbv", 7, 6), ("heyo", 5, 4)]
+    assert tiles["per_tenant"] == [("acmecamp", 7, 6), ("happykids", 5, 4)]
     ranked = [s.id for _, s, _ in rank(sug.suggestions, sug.classification)]
     assert ranked[0] == "S3"                                   # partial 2 + missing 3 beats the rest
     scores = {s.id: sc for _, s, sc in rank(sug.suggestions, sug.classification)}

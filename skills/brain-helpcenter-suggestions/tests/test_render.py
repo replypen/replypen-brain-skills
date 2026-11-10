@@ -71,27 +71,27 @@ def _evidence() -> Evidence:
         Article(id="A24", home="brain", path="/brain/policies/annulatie.md", title="Annulatiebeleid"),
     ]
     convs = [
-        Conversation(id="hs:3438828375", url="https://secure.helpscout.net/conversation/3438828375",
+        Conversation(id="hs:1000000001", url="https://secure.helpscout.net/conversation/1000000001",
                      channel="email", created_at="2026-08-04T09:12:00Z", tenant="ibeauty",
                      subject="Cabine sluiten", customer="Els",
                      first_message="kan ik een cabine sluiten terwijl ze gebruikt wordt",
                      reply=Reply(text="Dag Els,\n\nJe sluit een cabine via Instellingen > Cabines. "
                                       "Lopende afspraken blijven staan, nieuwe boekingen zijn geblokkeerd.\n\n"
-                                      "Groeten,\nMarie-Lore",
-                                 by="Marie-Lore Dutilleux", provenance="human")),
-        Conversation(id="hs:3438363160", url="https://secure.helpscout.net/conversation/3438363160",
+                                      "Groeten,\nSofie",
+                                 by="Sofie Claes", provenance="human")),
+        Conversation(id="hs:1000000002", url="https://secure.helpscout.net/conversation/1000000002",
                      channel="email", created_at="2026-08-06T14:02:00Z", tenant="ibeauty",
-                     first_message="Nele boekt mijn twee cabines dubbel, hoe koppel ik een toestel aan een cabine?",
+                     first_message="Eva boekt mijn twee cabines dubbel, hoe koppel ik een toestel aan een cabine?",
                      later=[Turn(role="agent", text="Ik kijk het na.")],
-                     reply=Reply(text="Koppel het toestel via de cabinefiche.", by="Marie-Lore Dutilleux",
+                     reply=Reply(text="Koppel het toestel via de cabinefiche.", by="Sofie Claes",
                                  provenance="human")),
         Conversation(id="run:1a2b3c4d", url="https://app.replypen.example/runs/1a2b3c4d",
-                     channel="chat", created_at="2026-08-11T08:40:00Z", tenant="yes_events",
+                     channel="chat", created_at="2026-08-11T08:40:00Z", tenant="sunny_events",
                      first_message="maak een admin url die inschrijvingen filtert op deze week en locatie Mechelen",
                      reply=Reply(text="Hier is de link.", provenance="draft"),
                      linked_articles=["A23"]),
         Conversation(id="run:2b3c4d5e", url="https://app.replypen.example/runs/2b3c4d5e",
-                     channel="chat", created_at="2026-08-12T11:05:00Z", tenant="yes_events",
+                     channel="chat", created_at="2026-08-12T11:05:00Z", tenant="sunny_events",
                      first_message="rapport van de last-minute inschrijvingen, kan dat zelf?",
                      reply=Reply(text="Ja, via de filter.", provenance="draft")),
         Conversation(id="hs:3439000001", url="https://secure.helpscout.net/conversation/3439000001",
@@ -100,7 +100,7 @@ def _evidence() -> Evidence:
         Conversation(id="hs:3439000002", channel="email", created_at="2026-08-15T10:00:00Z",
                      tenant="ibeauty", first_message="ik vind niets over dubbele boekingen"),
         Conversation(id="hs:3439000003", channel="email", created_at="2026-08-16T10:00:00Z",
-                     tenant="yes_events", first_message="factuur van augustus klopt niet",
+                     tenant="sunny_events", first_message="factuur van augustus klopt niet",
                      noise=Noise(verdict="not_kb", reason="billing question, no article can answer it")),
         Conversation(id="hs:3439000004", channel="email", created_at="2026-08-17T10:00:00Z",
                      tenant="ibeauty", first_message="staat er ergens welke toestellen bij welke cabine horen?"),
@@ -125,8 +125,8 @@ def _evidence() -> Evidence:
 
 def _suggestions() -> Suggestions:
     classification = [
-        Classification(conversation_id="hs:3438828375", verdict="partial", topics=["cabine-sluiten"], article_ids=["A22"]),
-        Classification(conversation_id="hs:3438363160", verdict="missing", topics=["cabine-toestel-koppelen"], article_ids=["A22"]),
+        Classification(conversation_id="hs:1000000001", verdict="partial", topics=["cabine-sluiten"], article_ids=["A22"]),
+        Classification(conversation_id="hs:1000000002", verdict="missing", topics=["cabine-toestel-koppelen"], article_ids=["A22"]),
         Classification(conversation_id="run:1a2b3c4d", verdict="recipe", topics=["inschrijvingen-filteren"], article_ids=["A23"]),
         Classification(conversation_id="run:2b3c4d5e", verdict="recipe", topics=["inschrijvingen-filteren"]),
         Classification(conversation_id="hs:3439000001", verdict="wrong_title", topics=["annulatie"], article_ids=["A24"]),
@@ -159,9 +159,9 @@ def _suggestions() -> Suggestions:
                  "Lopende afspraken blijven staan, nieuwe boekingen worden geblokkeerd.\n",
             why="Het artikel zegt dat sluiten niet kan, terwijl de helpdesk het tegenovergestelde antwoordt. "
                 "Die twee spreken elkaar tegen.",
-            seed_reply="hs:3438828375",
+            seed_reply="hs:1000000001",
             evidence=[
-                Quote(conversation_id="hs:3438828375", quote="kan ik een cabine sluiten terwijl ze gebruikt wordt"),
+                Quote(conversation_id="hs:1000000001", quote="kan ik een cabine sluiten terwijl ze gebruikt wordt"),
                 Quote(conversation_id="hs:3439000002", quote="ik vind niets over dubbele boekingen"),
             ],
         ),
@@ -174,7 +174,7 @@ def _suggestions() -> Suggestions:
             why="Twee klanten boekten hetzelfde toestel dubbel omdat het artikel wel de toestellen noemt "
                 "maar niet uitlegt hoe je ze koppelt.",
             evidence=[
-                Quote(conversation_id="hs:3438363160", quote="hoe koppel ik een toestel aan een cabine?"),
+                Quote(conversation_id="hs:1000000002", quote="hoe koppel ik een toestel aan een cabine?"),
                 Quote(conversation_id="hs:3439000004",
                       quote="staat er ergens welke toestellen bij welke cabine horen?"),
             ],
@@ -195,7 +195,7 @@ def _suggestions() -> Suggestions:
             why="De woorden die klanten gebruiken staan niet in het artikel, dus de zoekfunctie vindt het niet.",
             evidence=[
                 Quote(conversation_id="hs:3439000002", quote="ik vind niets over dubbele boekingen"),
-                Quote(conversation_id="hs:3438363160", quote="Nele boekt mijn twee cabines dubbel"),
+                Quote(conversation_id="hs:1000000002", quote="Eva boekt mijn twee cabines dubbel"),
             ],
         ),
         Suggestion(
@@ -205,7 +205,7 @@ def _suggestions() -> Suggestions:
             why="Twee artikels behandelen hetzelfde onderwerp en spreken elkaar tegen over dubbele boekingen.",
             evidence=[
                 Quote(conversation_id="hs:3439000002", quote="ik vind niets over dubbele boekingen"),
-                Quote(conversation_id="hs:3438363160", quote="Nele boekt mijn twee cabines dubbel"),
+                Quote(conversation_id="hs:1000000002", quote="Eva boekt mijn twee cabines dubbel"),
             ],
         ),
         Suggestion(
@@ -358,7 +358,7 @@ def test_insert_without_article_body_still_renders(bundle):
 def test_badges_and_seed_reply_wording(html):
     assert '<span class="badge warn">contradiction</span>' in html
     assert '<span class="badge route">brain</span>' in html
-    assert "How Marie-Lore answered this in the ticket" in html
+    assert "How Sofie answered this in the ticket" in html
     assert "simulation" not in html.lower()
 
 
@@ -376,7 +376,7 @@ def test_markdown_view_holds_the_bot_block_in_a_template(html):
 
 def test_multi_tenant_adds_a_column(html):
     assert "<th>tenant</th>" in html
-    assert "yes_events" in html
+    assert "sunny_events" in html
 
 
 def test_no_em_dash_anywhere(html):

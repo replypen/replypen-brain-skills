@@ -5,7 +5,7 @@
  "session_id": "396553c7-0000-4000-8000-000000000000",
  "thread_id": "396553c7-0000-4000-8000-000000000000",
  "created_at": "2026-09-07T15:19:13Z",
- "tenant": "lbv",
+ "tenant": "acmecamp",
  "topic": null,
  "question": "User selected: doel=saved_filter; weergave=all_statuses",
  "draft": "Ik kan geen opgeslagen filterlijst rechtstreeks aanmaken vanuit deze chat. Je kunt wel in **Inschrijvingen** filteren op de drie periodes en daarna alle statussen meenemen.",

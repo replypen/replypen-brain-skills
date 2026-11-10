@@ -30,7 +30,7 @@
    "article_ids": [
     "A2"
    ],
-   "conversation_id": "hs:3438828375",
+   "conversation_id": "hs:1000000001",
    "topics": [
     "cabine-sluiten"
    ],
@@ -112,7 +112,7 @@
    "verdict": "answered"
   }
  ],
- "evidence_sha256": "707e83046d9df14e124fedc8e5763be1f4376772b72a1d6cf246786e652cf865",
+ "evidence_sha256": "0de31517f0f1154c8f826486526bcbd23d3f06460d31565196b45faeff902171",
  "headline": "Vier gaten kosten support elke week tijd: een gefilterde lijst inschrijvingen, het sluiten van een cabine, een dag volledig sluiten en twee cabine-artikels die elkaar tegenspreken.",
  "learnings": [
   {
@@ -167,7 +167,7 @@
      "quote": "kan ik een cabine sluiten terwijl er nog een afspraak in staat"
     },
     {
-     "conversation_id": "hs:3438828375",
+     "conversation_id": "hs:1000000001",
      "quote": "kan ik een cabine sluiten terwijl ze gebruikt wordt"
     }
    ],
@@ -177,7 +177,7 @@
    "id": "S2",
    "kind": "rewrite",
    "route": "kb",
-   "seed_reply": "hs:3438828375",
+   "seed_reply": "hs:1000000001",
    "target_articles": [
     "A2"
    ],

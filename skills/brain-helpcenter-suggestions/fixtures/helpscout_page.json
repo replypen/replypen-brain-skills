@@ -11,35 +11,35 @@
         "createdAt": "2026-09-02T09:00:00Z",
         "source": {"type": "beacon-v2", "via": "customer"},
         "tags": [],
-        "primaryCustomer": {"id": 1, "first": "SalonLies", "last": "", "email": "info@salonlies.be"},
+        "primaryCustomer": {"id": 1, "first": "SalonMieke", "last": "", "email": "info@salon-mieke.example.com"},
         "_embedded": {
           "threads": [
             {
               "id": "t3",
               "type": "message",
               "createdAt": "2026-09-02T09:12:00Z",
-              "createdBy": {"id": 9, "type": "user", "first": "Marie-Lore"},
-              "body": "<p>Dag Lies</p><p>Dat kan via Prijslijst &gt; Reminders.</p>"
+              "createdBy": {"id": 9, "type": "user", "first": "Sofie"},
+              "body": "<p>Dag Mieke</p><p>Dat kan via Prijslijst &gt; Reminders.</p>"
             },
             {
               "id": "t2",
               "type": "beaconchat",
               "createdAt": "2026-09-02T09:05:00Z",
-              "createdBy": {"id": 1, "type": "customer", "first": "SalonLies"},
-              "body": "Hoe pas ik de bevestigingsmail aan?<br><br>Met vriendelijke groeten<br>Lies"
+              "createdBy": {"id": 1, "type": "customer", "first": "SalonMieke"},
+              "body": "Hoe pas ik de bevestigingsmail aan?<br><br>Met vriendelijke groeten<br>Mieke"
             },
             {
               "id": "t1",
               "type": "note",
               "createdAt": "2026-09-02T09:04:00Z",
-              "createdBy": {"id": 8, "type": "user", "first": "Michel"},
+              "createdBy": {"id": 8, "type": "user", "first": "Tom"},
               "body": "<strong>Technical Information</strong><table><tr><td>IP</code></tr></table>"
             },
             {
               "id": "t4",
               "type": "lineitem",
               "createdAt": "2026-09-02T09:20:00Z",
-              "createdBy": {"id": 9, "type": "user", "first": "Marie-Lore"},
+              "createdBy": {"id": 9, "type": "user", "first": "Sofie"},
               "body": null
             }
           ]
@@ -62,7 +62,7 @@
               "type": "customer",
               "createdAt": "2026-09-03T14:00:00Z",
               "createdBy": {"id": 2, "type": "customer", "first": "Joris"},
-              "body": "Waar vind ik mijn cadeaubon terug in de webshop?\n\nOp 1 sep schreef Marie-Lore:\n> eerdere mail"
+              "body": "Waar vind ik mijn cadeaubon terug in de webshop?\n\nOp 1 sep schreef Sofie:\n> eerdere mail"
             }
           ]
         }

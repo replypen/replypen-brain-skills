@@ -271,10 +271,10 @@ def test_unchanged_cannot_widen_prior_scope(tmp_path, widen):
 def test_owner_language_resolution_has_no_dutch_fallback(sample):
     coverage = sample.coverage
     assert coverage.lang() == "nl"                 # project persona.language
-    assert coverage.lang("lbv") == "fr"            # tenant overrides the project
+    assert coverage.lang("acmecamp") == "fr"            # tenant overrides the project
     assert coverage.lang("unknown") == "nl"        # unknown tenant inherits the project
     bare = coverage.model_copy(update={"owner_lang": None, "owner_lang_by_tenant": {}})
-    assert bare.lang() == "en" and bare.lang("lbv") == "en"
+    assert bare.lang() == "en" and bare.lang("acmecamp") == "en"
 
 
 def test_owner_language_drives_the_prose_heuristics(sample):

@@ -1,10 +1,12 @@
-"""kit_update: an installed clone moves to the newest release tag (daily job + usage fallback); dev checkouts,
-offline, busy brains and failed checkouts/installs leave a usable kit; the daily job arms itself once."""
+"""kit_update: an installed clone moves to the newest SIGNED release tag (daily job + usage fallback); dev
+checkouts, offline, busy brains, unsigned tags and failed checkouts/installs leave a usable kit; the daily
+job arms itself once."""
 
 import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -44,10 +46,31 @@ def skill(repo, name):
     (repo / "skills" / name / "SKILL.md").write_text(f"# {name}\n")
 
 
-def release(dev, tag):
+def signer(tmp_path, name="release"):
+    """A disposable SSH signing key: (private key path, its allowed_signers line)."""
+    key = tmp_path / f"{name}-key"
+    if not key.exists():
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", name, "-f", str(key)], check=True)
+    return key, f'{name} namespaces="git" ' + " ".join(Path(f"{key}.pub").read_text().split()[:2])
+
+
+def enroll(path, line):
+    """Re-enroll a copied kit_update.py / install.sh on a test key: the real pin has no env override."""
+    text, n = re.subn(r"(?m)^(ALLOWED_SIGNERS ?= ?)'.*'$", lambda m: f"{m[1]}'{line}'", path.read_text())
+    text, k = re.subn(r'(?m)^(MIN_VERIFYING_RELEASE ?= ?)"v[0-9.]+"', r'\1"v0.0.1"', text)
+    assert n == k == 1, path
+    path.write_text(text)
+
+
+def sign_tags(repo, key):
+    for k, v in (("gpg.format", "ssh"), ("user.signingkey", str(key)), ("tag.gpgSign", "true")):
+        git(repo, "config", k, v)
+
+
+def release(dev, tag, *flags):
     git(dev, "add", ".")
     git(dev, "commit", "-qm", tag)
-    git(dev, "tag", tag)
+    git(dev, *flags, "tag", "-m", tag, tag)  # signed by the repo's key (sign_tags) unless flags override it
     git(dev, "push", "-q", "origin", "main", "--tags")
 
 
@@ -71,9 +94,13 @@ def setup(tmp_path):
     git(tmp_path, "clone", "-q", str(origin), str(dev))
     for k, v in (("user.email", "t@t"), ("user.name", "t")):
         git(dev, "config", k, v)
+    key, line = signer(tmp_path)
+    sign_tags(dev, key)
     (dev / "scripts").mkdir()
     shutil.copy(KIT_UPDATE, dev / "scripts" / "kit_update.py")
     shutil.copy(INSTALL, dev / "install.sh")
+    enroll(dev / "scripts" / "kit_update.py", line)
+    enroll(dev / "install.sh", line)
     (dev / ".gitignore").write_text("/.agents/schedules/\n")
     skill(dev, "local-brain-work")
     release(dev, "v0.1.9")
@@ -131,7 +158,7 @@ def test_dev_checkout_pin_and_opt_out_are_untouched(tmp_path):
     dev, clone, _ = setup(tmp_path)
     git(dev, "reset", "-q", "--hard", "v0.1.9")  # on a branch: someone's working tree
     assert run(dev, tmp_path) == ""
-    assert git(dev, "rev-parse", "HEAD") == git(dev, "rev-parse", "v0.1.9")
+    assert git(dev, "rev-parse", "HEAD") == git(dev, "rev-parse", "v0.1.9^{commit}")
     for extra in ({"RP_KIT_AUTOUPDATE": "0"}, {"RC_BRAIN_KIT_TAG": "v0.1.9"}, {"CI": "true"}):
         assert run(clone, tmp_path, **extra) == ""
     (clone / "install.sh").write_text("# local edit\n")  # dirty tracked file
@@ -182,7 +209,8 @@ def test_caller_restarts_on_the_new_release_after_a_tag_move(tmp_path):
         (dev / "scripts" / "caller.py").write_text(CALLER)
         git(dev, "add", ".")
         git(dev, "commit", "-qm", version)
-        git(dev, "tag", "v0.1.11" if version == "old" else "v0.1.12")
+        name = "v0.1.11" if version == "old" else "v0.1.12"
+        git(dev, "tag", "-m", name, name)
     git(dev, "push", "-q", "origin", "main", "--tags")
     git(clone, "fetch", "-q", "--tags")
     git(clone, "checkout", "-q", "v0.1.11")
@@ -300,11 +328,13 @@ def test_job_waits_for_a_held_lock_and_for_a_busy_brain(tmp_path):
     assert "no successful check for" in run(clone, tmp_path, "--job", code=1)
 
 
-def test_bootstrap_runs_the_newest_tags_updater_when_the_installed_one_is_broken(tmp_path):
+def test_bootstrap_runs_the_newest_verified_tags_updater_when_the_installed_apply_is_broken(tmp_path):
     dev, clone, _ = setup(tmp_path)
-    (dev / "scripts" / "kit_update.py").write_text("this is not python\n")
-    release(dev, "v0.1.11")  # a broken updater ships…
-    shutil.copy(KIT_UPDATE, dev / "scripts" / "kit_update.py")
+    good = (dev / "scripts" / "kit_update.py").read_text()
+    (dev / "scripts" / "kit_update.py").write_text(good.replace(
+        "def apply(job: bool = False) -> int:\n", "def apply(job: bool = False) -> int:\n    raise SystemExit('broken')\n"))
+    release(dev, "v0.1.11")  # a broken apply pass ships…
+    (dev / "scripts" / "kit_update.py").write_text(good)
     release(dev, "v0.1.12")  # …and its fix
     git(clone, "fetch", "-q", "--tags")
     git(clone, "checkout", "-q", "v0.1.11")
@@ -317,6 +347,60 @@ def test_bootstrap_runs_the_newest_tags_updater_when_the_installed_one_is_broken
     assert tag(clone) == "v0.1.12" and "status: updated" in done.stdout
 
 
+PWN = "import pathlib; pathlib.Path(__file__).resolve().parents[1].joinpath('PWNED').write_text('ran')\n"
+
+
+def test_unsigned_or_foreign_newest_tag_never_runs_and_keeps_the_installed_release(tmp_path):
+    """Push/tag rights alone (a leaked token, a bot) must not run code: the newest tag or nothing, fail closed."""
+    dev, clone, brain = setup(tmp_path)
+    run(clone, tmp_path, "--apply")
+    assert tag(clone) == "v0.1.10"
+    good = (dev / "scripts" / "kit_update.py").read_text()
+    (dev / "scripts" / "kit_update.py").write_text(PWN + good)  # executed by anything that runs it
+    release(dev, "v0.1.11", "-c", "tag.gpgSign=false")  # annotated, unsigned
+    for cmd in ("--bootstrap", "--job"):
+        out = run(clone, tmp_path, cmd, code=1)
+        assert "v0.1.11 not installed, kept v0.1.10: v0.1.11 is not an SSH-signed annotated tag" in out, out
+        assert "fix: release tags must be SSH-signed" in out and tag(clone) == "v0.1.10"
+    assert "running the installed updater" in run(clone, tmp_path, "--bootstrap", code=1)
+    assert "thread: KEEP OPEN" in run(clone, tmp_path, "--job", code=1)
+    (tmp_path / "cache").joinpath(next(p.name for p in (tmp_path / "cache").iterdir()
+                                       if p.name.startswith("tag-check"))).unlink()  # usage path due again
+    assert "could not check for a newer kit release" in run(clone, tmp_path, brain)
+
+    other, _ = signer(tmp_path, "intruder")  # well-formed SSH signature, key not pinned
+    git(dev, "tag", "-d", "v0.1.11")
+    git(dev, "push", "-q", "origin", ":refs/tags/v0.1.11")
+    git(clone, "tag", "-d", "v0.1.11")
+    skill(dev, "brain-intruder")
+    release(dev, "v0.1.12", "-c", f"user.signingkey={other}")
+    out = run(clone, tmp_path, "--bootstrap", code=1)
+    assert "v0.1.12 is not signed by a pinned release key" in out and tag(clone) == "v0.1.10"
+
+    # A genuine signed tag object republished under a newer name is a replay, not a release.
+    git(clone, "update-ref", "refs/tags/v0.1.99", git(clone, "rev-parse", "refs/tags/v0.1.10"))
+    done = subprocess.run([sys.executable, str(clone / "scripts" / "kit_update.py"), "--verify-tag", "v0.1.99"],
+                          capture_output=True, text=True, env=env(tmp_path))
+    assert done.returncode == 1 and "not an SSH-signed annotated tag named v0.1.99" in done.stderr
+    assert not (clone / "PWNED").exists() and not (tmp_path / "PWNED").exists()
+
+
+def test_install_sh_checks_out_only_signed_tags(tmp_path):
+    dev, clone, brain = setup(tmp_path)
+    skill(dev, "brain-unsigned")
+    release(dev, "v0.1.11", "-c", "tag.gpgSign=false")
+
+    def install(tag):
+        return subprocess.run(["bash", str(dev / "install.sh"), "--tag", tag, str(brain)], capture_output=True,
+                              text=True, env=env(tmp_path, RC_BRAIN_KIT=str(clone)))
+
+    done = install("v0.1.10")
+    assert done.returncode == 0 and tag(clone) == "v0.1.10", done.stdout + done.stderr
+    done = install("v0.1.11")
+    assert done.returncode == 1 and "v0.1.11 is not an SSH-signed annotated tag" in done.stderr
+    assert "stays at v0.1.10" in done.stderr and tag(clone) == "v0.1.10"
+
+
 def test_job_arms_once_and_respects_opt_outs(tmp_path):
     _, clone, brain = setup(tmp_path)
     fake = with_fake_schedule(tmp_path)
@@ -324,7 +408,7 @@ def test_job_arms_once_and_respects_opt_outs(tmp_path):
     adds = [c for c in schedule_calls(tmp_path) if c[0] == "add"]
     assert len(adds) == 1 and adds[0][adds[0].index("--at") + 1] == "06:45"
     pre = adds[0][adds[0].index("--pre-command") + 1]
-    assert str(clone) in pre and "--apply" in pre
+    assert str(clone) in pre and "--bootstrap" in pre
     run(clone, tmp_path, brain, **fake)
     run(clone, tmp_path, "--apply", **fake)
     assert len(schedule_calls(tmp_path)) == 1  # idempotent

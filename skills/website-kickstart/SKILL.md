@@ -90,7 +90,7 @@ laptop use the template's vendored `website-dev` skill (refresh: `pnpm dlx skill
 runbook (DentAI: `dentai/.agents/skills/practice-websites/SKILL.md`), then
 `rp … project repo set site live_url=https://www.<domain>` and `url:` in `_data/site.yml`; later reruns
 need `--live-url https://www.<domain>`, else they reset the mirror to workers.dev.
-**Before the DNS switch:** `scripts/turnstile_domain.sh <apex>` (wrangler login of info@b4bit.be). Skip it and the
+**Before the DNS switch:** `scripts/turnstile_domain.sh <apex>` (wrangler login of the Cloudflare account that owns the sites, e.g. `ops@example.com`). Skip it and the
 widget won't render on the new domain: the form can't be sent at all. `*.rootcause-sites.workers.dev` is covered already.
 Adopting an older site without the widget: sitekey + markup deployed first, then `form_challenge=turnstile`, never reversed.
 Both apex and `www` as Worker custom domains serve 200: add one zone **Single Redirect** for the non-canonical host

@@ -38,6 +38,16 @@ require_hit "plugin.json" "\"version\": \"$version\""
 require_hit ".codex-plugin/plugin.json" "\"version\": \"$version\""
 require_hit ".claude-plugin/marketplace.json" "\"version\": \"$version\""
 require_hit ".agents/plugins/marketplace.json" "\"ref\": \"$tag\""
+# Bootstrap snippets pin a release, never floating main.
+for f in README.md docs/onboarding.md skills/brain-dev-upgrade/SKILL.md; do
+  require_hit "$f" "replypen-brain-skills/$tag/install.sh"
+  if grep -qF "replypen-brain-skills/main/install.sh" "$ROOT/$f"; then err "$f still bootstraps from main"; fi
+done
+# One release-signing pin, two copies (install.sh runs before any clone exists).
+pin() { sed -nE "s/^ALLOWED_SIGNERS ?= ?'(.*)'$/\1/p" "$ROOT/$1"; }
+if [ -z "$(pin scripts/kit_update.py)" ] || [ "$(pin scripts/kit_update.py)" != "$(pin install.sh)" ]; then
+  err "ALLOWED_SIGNERS differs between scripts/kit_update.py and install.sh (or is missing)"
+fi
 
 if [ "$SKIP_IMAGE" = 1 ]; then
   echo "warning: skipped image manifest check for $IMAGE:$tag" >&2

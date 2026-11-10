@@ -111,7 +111,7 @@ before it gets a verdict. Write `classification.tsv`, run the validator, and you
 - `uncertain`: not decidable from the line and the digest. Classify, never suggest from it.
 
 **Pass 2, bodies for the clusters that matter.** Cluster by the product concept the answer hinges
-on, not by the symptom named ("Nele double-books my two cabines", "the reminder mail names the
+on, not by the symptom named ("Eva double-books my two cabines", "the reminder mail names the
 wrong toestel" and "can I close a ruimte in use" are one cluster). One suggestion per cluster; the
 slug goes in `topics[]` of every row it covers and in the suggestion's `topic`. Then:
 

@@ -6,8 +6,8 @@ The shared clone (`~/.replypen-brain-skills`) sits on whatever tag `install.sh` 
 managed pre-commit hook runs it under a bare `python3`.
 
 - **Daily job** (`brain-kit-refresh`, 06:45 local, t3-schedule: launchd on macOS, systemd user timer on
-  WSL). Its `--pre-command` (`_bootstrap`) fetches tags and runs THE NEWEST TAG's copy of this file with
-  `--apply`, so a release that fixes the updater lands even when the installed one is broken. `--apply`
+  WSL). Its `--pre-command` (`--bootstrap`) fetches tags and runs THE NEWEST VERIFIED TAG's copy of this
+  file with `--apply`, so a release that fixes the updater's apply pass lands on its own. `--apply`
   moves the clone, relinks every linked brain and installs the kit into unlinked brain checkouts it
   discovers. The job's cheap-model thread runs `--job`: same pass, then `thread: SETTLE` unless a failure
   needs the user. `install.sh` and the usage path arm the job (`_ensure_schedule`, idempotent).
@@ -19,6 +19,10 @@ Safety: one lock (`<clone>/.git/replypen-kit.lock`) around tag move, relink and 
 eligibility rechecked inside it. No tag move while another linked brain is mid git operation (commit,
 rebase, merge): agents work there. No relink of a brain mid-commit. A failed checkout restores the
 installed tag.
+
+Trust: only a release tag SSH-signed by a key in ALLOWED_SIGNERS (this installed file, never the fetched
+release; no env override) is checked out or executed (`verify_tag`). The newest tag failing that blocks
+the update, fail closed: the installed release keeps working and the run reports FAILED with the fix.
 
 No-op for a developer checkout (HEAD on a branch, a git worktree, dirty tracked files, HEAD not exactly at
 a release tag), an explicit `RC_BRAIN_KIT_TAG` pin, `CI`, and `RP_KIT_AUTOUPDATE=0`. Job opt-out:
@@ -36,6 +40,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -77,6 +82,44 @@ def _key(tag: str) -> tuple[int, int, int]:
 
 def _last(text: str, default: str) -> str:
     return (text.strip().splitlines() or [default])[-1]
+
+
+# --- release trust -------------------------------------------------------------------------------
+# allowed_signers line(s) of the release key(s); several = entries joined by a literal \n. Mirrored in
+# install.sh (check-release-coherence.sh keeps both byte-equal). Rotation: RELEASING.md "Signed releases".
+ALLOWED_SIGNERS = 'pjmuller namespaces="git" ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDlzBlNIEQq+VIuJRLVILwIikQ3B0uytO32FlNsNfT1GalT3yD+GB5cgSrXFmkz3updjSkTdSOkL45k3C3BZgvYfDvr1lKdaKLxhrL1WA0fux0R94DwGa+pYR1B4tox/5HD/01h8XyM9OXLVW9ZRJzMfDhIK+tk7a8VBX9A2NgbrQIFURzSbvjoSnVsbY/okj3QYuTwKjzC5Ah6PWh1LMyUqqF/TQKAozVeJiBhSOOpDTuVk/76BTCu/LsR9XIPtmb6jbRwE3HfeAZ0+CuigoZwy0eYZ2M3P0viGLIurygfIogMc+RMGChUlJcaXzKhA+t69xDt+5DYImSbCyo19ttZTZeQx8VYMK5MzC9pbSVfJgpLG+C4m22iJwRenH1ARjqAuctwIKUOa42LHxuu6fvdCMSmu+2F3vrDnUxdlFd8/nFEIDh74qhvVyobhWqMJKCqT5rBlBeALr9DdJ4cifhZdyEc8BtUdPvME1CTKGcOHAQad6smNmSLkcYSrYxCzK+hCki9Gz25gOOLbR6Hdl/Hf3TXWLIdtBsA3aj3GUmb9GchFTGLd0RN22VgOOQBtrsB+VvI4jndwIfEDTemqlWqI+zcscIJQhIxyLOktewjSpPFFFYMew5zjRk66MiG7rGtEDv7j4LmGabz5fls96XHLFApnMpZ59otjiIv5Tclfw=='
+MIN_VERIFYING_RELEASE = "v0.14.35"  # first release whose updater verifies: never run an older one
+FIX = ('fix: release tags must be SSH-signed by a key in ALLOWED_SIGNERS (scripts/kit_update.py; RELEASING.md '
+       '"Signed releases"). A tag nobody released → delete it on GitHub and tell the kit owner; never disable the check')
+
+
+class Untrusted(RuntimeError):
+    """A release tag this kit must not check out or execute."""
+
+
+def verify_tag(tag: str, repo: Path = ROOT) -> str:
+    """The commit `tag` names, once it is an annotated tag of exactly that name over a commit, SSH-signed by
+    a pinned key. Raises Untrusted: the caller keeps the installed release (fail closed, never bricks)."""
+    if not TAG.fullmatch(tag):
+        raise Untrusted(f"{tag!r} is not a release tag name")
+    m = re.search(r"(\d+)\.(\d+)", _git("--version", cwd=repo).stdout)
+    if not m or (int(m[1]), int(m[2])) < (2, 34) or not shutil.which("ssh-keygen"):
+        raise Untrusted("checking release signatures needs Git >= 2.34 and OpenSSH ssh-keygen: install or update them")
+    obj = _git("rev-parse", "-q", "--verify", f"refs/tags/{tag}", cwd=repo).stdout.strip()
+    body = _git("cat-file", "tag", obj, cwd=repo).stdout if obj else ""
+    head = body.split("\n", 3)
+    if (len(head) < 4 or head[1] != "type commit" or head[2] != f"tag {tag}"
+            or "-----BEGIN SSH SIGNATURE-----" not in body
+            or any(f"-----BEGIN {kind}-----" in body for kind in ("PGP SIGNATURE", "SIGNED MESSAGE"))):
+        raise Untrusted(f"{tag} is not an SSH-signed annotated tag named {tag}; {FIX}")
+    with tempfile.NamedTemporaryFile("w", prefix="replypen-kit-signers.") as trust:
+        trust.write(ALLOWED_SIGNERS + "\n")
+        trust.flush()
+        done = _git("-c", "gpg.format=ssh", "-c", "gpg.ssh.program=ssh-keygen", "-c", "gpg.minTrustLevel=fully",
+                    "-c", f"gpg.ssh.allowedSignersFile={trust.name}", "verify-tag", obj, cwd=repo, timeout=30)
+    if done.returncode:
+        raise Untrusted(f"{tag} is not signed by a pinned release key ({_last(done.stderr, 'verify-tag failed')}); {FIX}")
+    return _git("rev-parse", "--verify", f"{obj}^{{commit}}", cwd=repo).stdout.strip()
 
 
 def _clone_tag() -> str | None:
@@ -328,14 +371,20 @@ def _move(installed: str, skip: Path | None = None) -> tuple[str, str]:
             return "deferred", f"could not fetch {latest}; offline?"
     except (OSError, subprocess.SubprocessError) as exc:
         return "deferred", f"could not fetch {latest} ({exc}); offline?"
+    try:  # the newest tag or nothing: an older signed tag is never picked instead (fail closed)
+        commit = verify_tag(latest)
+    except Untrusted as exc:
+        return "failed", f"{latest} not installed, kept {installed}: {exc}"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "deferred", f"could not verify {latest} ({exc})"
     # Not a lock on the brains' own git operations (holding their index.lock would block commits if we
     # died): a commit starting in the sub-second checkout below still races; the quiet hour covers it.
     for brain in _brains():
         if brain != skip and _linked(brain) and (why := _busy(brain)):
             return "deferred", f"{latest} waits: {why} in progress in {brain}"
     try:
-        done = _git("checkout", "-q", latest, timeout=60)
-        if done.returncode or _git("describe", "--tags", "--exact-match").stdout.strip() != latest:
+        done = _git("checkout", "-q", commit, timeout=60)  # the verified commit, not the mutable ref
+        if done.returncode or _git("rev-parse", "HEAD").stdout.strip() != commit:
             _git("checkout", "-q", "-f", installed, timeout=60)  # tree was clean: restore the working tag
             return "failed", f"checkout {latest} failed, kept {installed}: {_last(done.stderr, 'unknown error')}"
     except (OSError, subprocess.SubprocessError) as exc:
@@ -346,13 +395,35 @@ def _move(installed: str, skip: Path | None = None) -> tuple[str, str]:
 
 # --- the daily job -------------------------------------------------------------------------------
 def _bootstrap() -> str:
-    """The job's pre-command: run the NEWEST TAG's updater, not the installed one (which may be broken)."""
-    k = shlex.quote(str(ROOT))
-    return (f'K={k}; J="$K/.git/replypen-kit-job.py"; '
-            'git -C "$K" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 fetch -q --tags origin 2>/dev/null; '
-            "T=$(git -C \"$K\" tag -l 'v*' --sort=-v:refname | head -n 1); "
-            'git -C "$K" show "${T}:scripts/kit_update.py" >"$J" 2>/dev/null || cp "$K/scripts/kit_update.py" "$J"; '
-            'RP_KIT_ROOT="$K" python3 "$J" --apply')
+    """The job's pre-command (t3-schedule runs it before T3 starts): `bootstrap`."""
+    return f"python3 {shlex.quote(str(ROOT / 'scripts' / 'kit_update.py'))} --bootstrap"
+
+
+def bootstrap() -> int:
+    """Run the NEWEST VERIFIED TAG's updater with `--apply` (a release may fix this one's apply pass), else
+    this one. The installed file verifies: a fetched updater runs only after this pin accepted its tag.
+    (Until v0.14.35 this was a shell line that ran the newest tag's updater unverified.)"""
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        _git("-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=30", "fetch", "-q", "--tags", "origin",
+             timeout=180)
+    installed = _clone_tag()
+    newest = max((t for t in _git("tag", "-l", "v*").stdout.split() if TAG.fullmatch(t)), key=_key, default=None)
+    job = ROOT / ".git" / "replypen-kit-job.py"
+    try:
+        floor = max(_key(MIN_VERIFYING_RELEASE), _key(installed or ""))
+        if not newest or _key(newest) < floor:  # downgrade guard: never an older, non-verifying updater
+            raise Untrusted(f"newest local tag {newest} is older than {installed or MIN_VERIFYING_RELEASE}")
+        commit = verify_tag(newest)
+        code = _git("show", f"{commit}:scripts/kit_update.py")
+        if code.returncode or not code.stdout:
+            raise Untrusted(f"{newest} ships no scripts/kit_update.py")
+        job.write_text(code.stdout)
+    except (Untrusted, OSError, subprocess.SubprocessError) as exc:
+        print(f"kit: bootstrap: running the installed updater ({exc})", file=sys.stderr)
+        return apply()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execve(sys.executable, [sys.executable, str(job), "--apply"], _env(RP_KIT_ROOT=str(ROOT)))
 
 
 def _job_prompt() -> str:
@@ -542,6 +613,8 @@ def maybe_update(brain: Path | str | None = None, *, reexec: bool = True) -> Non
 USAGE = """usage: kit_update.py [BRAIN]             usage fallback (what the hook and brain scripts call)
        kit_update.py --apply              timer pass: tag move, relink/install brains; exit 1 = failed
        kit_update.py --job                same, then the T3 job thread's `thread:` line
+       kit_update.py --bootstrap          the job's pre-command: --apply with the newest verified tag's updater
+       kit_update.py --verify-tag TAG [REPO]  check TAG against this file's signing pin; print its commit
        kit_update.py --schedule [--opt-in] arm/refresh the daily job (respects opt-outs unless --opt-in)
        kit_update.py --no-schedule        opt out: disarm the daily job and stay disarmed"""
 
@@ -549,6 +622,14 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     if args[:1] == ["--apply"]:
         sys.exit(apply())
+    if args[:1] == ["--bootstrap"]:
+        sys.exit(bootstrap())
+    if args[:1] == ["--verify-tag"] and len(args) in (2, 3):
+        try:
+            print(verify_tag(args[1], Path(args[2]).resolve() if len(args) == 3 else ROOT))
+        except Untrusted as exc:
+            sys.exit(f"kit: {exc}")
+        sys.exit(0)
     if args[:1] == ["--job"]:
         sys.exit(apply(job=True))
     if args[:1] == ["--schedule"]:

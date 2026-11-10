@@ -78,7 +78,7 @@ A change to any templated file (`projection.yaml`, `tenant.schema.json`, a markd
    when the change spans files). Do it against the SHA you are shipping (`--sha`), not an older channel.
 2. In the final report list, as clickable local paths: every source file you changed **and** its
    rendered twin(s) under `.replypen/output/brain-render-<tenant>/…`, naming the tenant and the branch
-   values that drove the render (e.g. "de-kies: latecancel_policy=active, free_count=1").
+   values that drove the render (e.g. "sunny-dental: latecancel_policy=active, free_count=1").
 3. Quote branch names that YAML 1.1 reads as booleans (`"off"`, `"on"`, `"yes"`, `"no"`): the Go
    compiler keeps them as strings, PyYAML previews do not.
 

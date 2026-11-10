@@ -14,7 +14,7 @@ English; titles, texts and quotes stay in the customer's language.
 conversation_id	verdict	topics	article_ids
 run:3de6cda0	recipe	inschrijvingen-filteren	A41
 run:7b1e02aa	answered	moni-plaats	A12,A13
-hs:3438363160	not_kb	-	-
+hs:1000000002	not_kb	-	-
 ```
 
 - Every `evidence.conversations[].id`, exactly once.
@@ -41,16 +41,16 @@ title: Cabines en toestellen koppelen
 target_articles: [A22]
 route: kb                            # kb | brain (really a brain fix; rendered with a badge)
 flags: [contradiction]               # optional, rewrite/merge only
-seed_reply: hs:3438828375            # optional; the conversation whose HUMAN reply seeds the text
+seed_reply: hs:1000000001            # optional; the conversation whose HUMAN reply seeds the text
 edit:                                # rewrite only, exactly one key, verbatim from raw/articles/A22.md
   old: |                             # block scalar: the text lines sit 4 spaces in (2 for edit, 2 more for old)
     Je kan een cabine niet sluiten terwijl ze in gebruik is.
   # after: "## Toestellen"           # single line: quote it, no block scalar needed
 evidence:
-  - conversation_id: hs:3438828375
+  - conversation_id: hs:1000000001
     quote: kan ik een cabine sluiten terwijl ze gebruikt wordt
-  - conversation_id: hs:3438363160
-    quote: Nele boekt mijn twee cabines dubbel
+  - conversation_id: hs:1000000002
+    quote: Eva boekt mijn twee cabines dubbel
 ---
 ## Why
 Twee salons dachten dat een cabine sluiten hun lopende afspraken zou wissen. Het artikel zegt

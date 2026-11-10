@@ -130,7 +130,7 @@ def one_line(text: Any, limit: int = 160) -> str:
 
 
 def short_name(full: str | None) -> str:
-    """`Sanny Paesmans` -> `Sanny P.`"""
+    """`Sofie Claes` -> `Sofie C.`"""
     parts = [p for p in re.split(r"\s+", (full or "").strip()) if p]
     if not parts:
         return ""
@@ -146,8 +146,8 @@ def strip_emails(text: Any, keep: Iterable[str] = ()) -> str:
     )
 
 
-# A person is a *run* of capitalised words, not a fixed pair: `Van Nuffelen Greet`, `Lies Van
-# Genechten`, `Molemans Bo`. Particles glue such a run together without being capitalised.
+# A person is a *run* of capitalised words, not a fixed pair: `Van Damme Els`, `Lies Van
+# Acker`, `Wouters Bo`. Particles glue such a run together without being capitalised.
 _PARTICLES = frozenset(
     "van de den der des ten ter te het du de la le von op in 't aan aux di da dos vande vanden".split()
 )
@@ -189,7 +189,7 @@ def _capitalised(core: str) -> bool:
 
 
 def reduce_names(text: Any) -> str:
-    """`Van Nuffelen Greet` -> `Van N. G.`; `Molemans Bo` -> `Molemans B.`.
+    """`Van Damme Els` -> `Van D. E.`; `Wouters Bo` -> `Wouters B.`.
 
     Heuristic, deliberately: any run of >=2 capitalised words (particles allowed inside) that does
     not start a sentence and contains no known non-name is collapsed to its first word plus the
@@ -210,7 +210,7 @@ def reduce_names(text: Any) -> str:
         return position == 0 or _tail(position).endswith((".", "!", "?"))
 
     def breaks_run(position: int) -> bool:
-        """`Dag Sanny, Dank u` is not a three-part name — any punctuation ends the run."""
+        """`Dag Sofie, Dank u` is not a three-part name — any punctuation ends the run."""
         return position == 0 or _tail(position).endswith((".", "!", "?", ",", ";", ":", "·", "|", "—"))
 
     def kind(position: int) -> str:
@@ -230,8 +230,8 @@ def reduce_names(text: Any) -> str:
             position += 1
             continue
         start = position
-        # `Van Nuffelen Greet`: a *capitalised* particle in front belongs to the name. A lowercase
-        # one is the Dutch preposition (`documenten van Molemans Bo`) — leave it alone.
+        # `Van Damme Els`: a *capitalised* particle in front belongs to the name. A lowercase
+        # one is the Dutch preposition (`documenten van Wouters Bo`) — leave it alone.
         if (start and kind(start - 1) == "particle" and not breaks_run(start)
                 and not sentence_start(start - 1)
                 and cores[index_of_word[start - 1]][:1].isupper()):

@@ -778,7 +778,7 @@ def delta_section(ev: dict[str, Any], tz) -> list[str]:
     """One line per real human edit, focus period first, with the tenant/channel it happened on.
 
     A delta only becomes actionable once you know *who* edited: `factual, sim 0.28` says nothing,
-    `de-kies · factual · sim 0.28` points at a tenant brain.
+    `sunny-dental · factual · sim 0.28` points at a tenant brain.
     """
     focus_iso = ev["window"]["focus"]
     axis_of = {run8(r.get("run_id")): r.get("axis_key") for r in ev["runs"]}

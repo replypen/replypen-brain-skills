@@ -245,17 +245,22 @@ ones) — but don't rely on the gates; release as you go.
 
 Installed clones follow releases on their own: `scripts/kit_update.py`. Primary: the daily
 `brain-kit-refresh` t3-schedule job (06:45; `install.sh` arms it, and so does the usage path on machines
-installed earlier) runs the newest tag's updater before T3 starts, relinks every brain (missing/stale
+installed earlier) runs the newest verified tag's updater before T3 starts, relinks every brain (missing/stale
 links, missing/outdated managed git hooks) and installs into unlinked brain checkouts; its cheap thread settles unless a
 failure needs the user. Fallback: the managed pre-commit hook, `brain_run.py`/`brain_test.py`,
 `brain_git_sync.py` (once a day). One lock in the clone's `.git`; no tag move while another brain is
 mid-commit/rebase. Never touches a clone on a branch. Opt out: `install.sh --no-schedule`.
 
-Local scripts don't wait for a release: analysis/report entry points (`usage.py`, the fleet-report,
+**Only signed release tags run.** `kit_update.verify_tag` (mirrored in `install.sh`) accepts a tag only
+when it is SSH-signed by a key pinned in `ALLOWED_SIGNERS`; nothing checks out or executes `main` or an
+unverified tag. An unverified newest tag blocks updates (fail closed, installed release keeps working,
+the job surfaces FAILED with the fix). Signing, rotation, adding a releaser: [RELEASING.md](RELEASING.md#signed-releases).
+
+Local scripts don't wait for the daily move: analysis/report entry points (`usage.py`, the fleet-report,
 harvest, helpcenter-suggestions, grounding-intake and source-routing collectors) call
-`scripts/kit_fresh.py` `ensure(__file__)` in their `__main__` block, which re-execs them from an
-`origin/main` snapshot when the installed clone is behind. A new entry point that reads production data
-adds the same 3 lines.
+`scripts/kit_fresh.py` `ensure(__file__)` in their `__main__` block, which re-execs them from a snapshot
+of the newest verified release tag when the installed clone is behind. A new entry point that reads
+production data adds the same 3 lines.
 
 One version line moves together:
 

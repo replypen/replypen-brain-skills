@@ -9,8 +9,8 @@ the local `projection.yaml`, and prints the choices prod will make before mounti
 view at `/brain`. It never writes compiled files into the brain tree. With `--write-summary`, it writes
 only debug artifacts under `.replypen/projection/<tenant>/`.
 
-    uv run brain_projection.py --tenant de-kies
-    uv run brain_projection.py --tenant de-kies --write-summary
+    uv run brain_projection.py --tenant sunny-dental
+    uv run brain_projection.py --tenant sunny-dental --write-summary
 """
 
 from __future__ import annotations

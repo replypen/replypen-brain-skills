@@ -50,10 +50,16 @@ developer path, not an end-user upgrade path — a Go copy earlier on `PATH` sha
    If `--migrate` is unknown even on the freshly installed cask, the required CLI release has not reached
    Homebrew yet — **stop**; never delete a binary by hand.
 
-3. **Upgrade the kit.** From inside a brain checkout, or pass the brain path from elsewhere. The
-   installer URL always tracks `main`, but it pins the shared kit clone to a *released tag*:
+3. **Upgrade the kit.** An existing clone updates itself to the newest *signed* release tag and relinks
+   every brain (it refuses a tag its signing pin rejects and keeps the installed release; the FAILED line
+   names the fix, never bypass it):
    ```bash
-   INSTALL=https://raw.githubusercontent.com/replypen/replypen-brain-skills/main/install.sh
+   python3 "${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}/scripts/kit_update.py" --apply
+   ```
+   No clone yet, or one too old to have `scripts/kit_update.py`: run the installer of a pinned release
+   from inside a brain checkout, or pass the brain path from elsewhere:
+   ```bash
+   INSTALL=https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.14.34/install.sh
    bash <(curl -fsSL $INSTALL) [~/code/replypen/replypen-brain-<project>]
    bash <(curl -fsSL $INSTALL) --latest-version   # check without installing
    ```

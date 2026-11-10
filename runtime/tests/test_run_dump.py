@@ -205,12 +205,12 @@ class RenderIndex(unittest.TestCase):
         }
         md = render_index(_bundle(
             brain_resolved="channel:stable @ abc1234",
-            tenant="de-kies",
+            tenant="sunny-dental",
             tenant_settings=json.dumps(settings),
         ))
         self.assertIn("## Projection inputs", md)
         self.assertIn("**Brain resolved:** `channel:stable @ abc1234`", md)
-        self.assertIn("**Tenant:** `de-kies`", md)
+        self.assertIn("**Tenant:** `sunny-dental`", md)
         self.assertIn("source `cli`", md)
         self.assertIn("synced_at `2026-06-22T00:00:00Z`", md)
         self.assertIn("version `sha256:abc`", md)
@@ -299,13 +299,13 @@ class EmitJsonl(unittest.TestCase):
         lines = list(emit_jsonl(_bundle(
             brain_ref="dev/x",
             brain_resolved="dev/x @ abc1234",
-            tenant="de-kies",
+            tenant="sunny-dental",
             tenant_settings=json.dumps(settings),
         )))
         header = json.loads(lines[0])
         self.assertEqual(header["brain_ref"], "dev/x")
         self.assertEqual(header["brain_resolved"], "dev/x @ abc1234")
-        self.assertEqual(header["tenant"], "de-kies")
+        self.assertEqual(header["tenant"], "sunny-dental")
         self.assertEqual(json.loads(header["tenant_settings"]), settings)
 
     def test_proposed_actions_in_header(self):

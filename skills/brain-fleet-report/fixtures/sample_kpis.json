@@ -109,8 +109,8 @@
   "per_axis": [
     {
       "axis": "tenant",
-      "key": "lbv",
-      "name": "Landelijke Bond Vakanties",
+      "key": "acmecamp",
+      "name": "Acme Camps",
       "mode": "live",
       "runs": 34,
       "counted": 26,
@@ -133,8 +133,8 @@
     },
     {
       "axis": "tenant",
-      "key": "yes_events",
-      "name": "YES Events",
+      "key": "sunny_events",
+      "name": "Sunny Events",
       "mode": "live",
       "runs": 17,
       "counted": 11,
@@ -157,8 +157,8 @@
     },
     {
       "axis": "tenant",
-      "key": "circolito",
-      "name": "Circolito",
+      "key": "circuskids",
+      "name": "Circus Kids",
       "mode": "watch",
       "runs": 8,
       "counted": 3,
@@ -181,8 +181,8 @@
     },
     {
       "axis": "tenant",
-      "key": "s_sport",
-      "name": "S-Sport Federatie",
+      "key": "acme_sport",
+      "name": "Acme Sport Federation",
       "mode": "watch",
       "runs": 4,
       "counted": 1,
@@ -272,7 +272,7 @@
     "per_axis": [
       {
         "axis": "tenant",
-        "key": "lbv",
+        "key": "acmecamp",
         "rows": [
           {
             "action_id": "update_record",
@@ -306,7 +306,7 @@
       },
       {
         "axis": "tenant",
-        "key": "yes_events",
+        "key": "sunny_events",
         "rows": [
           {
             "action_id": "update_record",
@@ -340,7 +340,7 @@
       },
       {
         "axis": "tenant",
-        "key": "circolito",
+        "key": "circuskids",
         "rows": [],
         "total": {
           "action_id": "total",
@@ -359,7 +359,7 @@
       },
       {
         "axis": "tenant",
-        "key": "s_sport",
+        "key": "acme_sport",
         "rows": [],
         "total": {
           "action_id": "total",

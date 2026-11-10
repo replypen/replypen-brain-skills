@@ -163,7 +163,7 @@ class RenderTest(unittest.TestCase):
     def page(self, **kw):
         diff = sdr.build_diff(self.item["proposed_body"], self.item["sent_body"])
         notes = {self.item["id"]: "brain over-personalised"}
-        return sdr.render([self.item], [diff], notes, "dentai / de-kies", ""), diff
+        return sdr.render([self.item], [diff], notes, "dentai / sunny-dental", ""), diff
 
     def test_html_escapes_customer_markup_and_keeps_the_conclusion(self):
         page, _ = self.page()
@@ -181,13 +181,13 @@ class RenderTest(unittest.TestCase):
     def test_html_links_the_run_when_the_payload_carries_a_url(self):
         item = dict(self.item, run_url="https://app.replypen.com/runs/eda3691b?t=tok")
         diff = sdr.build_diff(item["proposed_body"], item["sent_body"])
-        page = sdr.render([item], [diff], {}, "dentai / de-kies", "")
+        page = sdr.render([item], [diff], {}, "dentai / sunny-dental", "")
         self.assertIn('href="https://app.replypen.com/runs/eda3691b?t=tok"', page)
 
     def test_markdown_carries_ids_signals_and_word_level_markers(self):
         _, diff = self.page()
         md = sdr.render_markdown([self.item], [diff], {self.item["id"]: "misread intent"},
-                                 "dentai / de-kies", "top-level call", "out.html")
+                                 "dentai / sunny-dental", "top-level call", "out.html")
         self.assertIn("### d1e2f3a4", md)
         self.assertIn("run `eda3691b-7122-4f56-a3e1-b80913f830ef`", md)
         self.assertIn("confirm_dropped", md)

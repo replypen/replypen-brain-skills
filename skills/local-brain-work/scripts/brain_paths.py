@@ -20,7 +20,7 @@ run-hidden and tooling dirs are not scanned. Never FAILs (exit 1 only with --str
     uv run --no-project python brain_paths.py               # changed files vs origin/main
     uv run --no-project python brain_paths.py --all         # every scanned file
     uv run --no-project python brain_paths.py --local       # no rp call (brain_hygiene runs this)
-    uv run --no-project python brain_paths.py --all --tenants yes_events,lbv   # or --tenants all
+    uv run --no-project python brain_paths.py --all --tenants sunny_events,acmecamp   # or --tenants all
 """
 
 from __future__ import annotations

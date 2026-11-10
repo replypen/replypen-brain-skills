@@ -394,7 +394,7 @@ _TICKET_TITLE = re.compile(r"(?m)^#\s*Support Ticket:\s*(.+?)\s*$")
 _TICKET_SECTION = re.compile(r"(?m)^##\s+(.+?)\s*$")
 _TICKET_ROW = re.compile(r"(?m)^\s*[-*]\s*([^:]{1,40}):\s*(.*)$")
 # A discussion turn header: a short line with a date and (before or after it) the poster's name,
-# under any markdown decoration. `26/8 - Marjan`, `### 26/08/26 Koen`, `**Sylvie 27/08/2026**`.
+# under any markdown decoration. `26/8 - Sofie`, `### 26/08/26 Tom`, `**Eva 27/08/2026**`.
 # Most tickets have none at all, and then the discussion is one turn.
 _TICKET_NAME = r"[^\W\d_][\w.'-]*(?:\s+[^\W\d_][\w.'-]*)?"
 _TICKET_DATE = r"\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?"
@@ -417,7 +417,7 @@ def _ticket_meta(body: str) -> dict[str, str]:
 
 
 def _first_word(value: str) -> str:
-    """`low (Laag)` -> `low`; `Marjan (marjan@x.be) (is super admin)` -> `Marjan`."""
+    """`low (Laag)` -> `low`; `Sofie (sofie@x.be) (is super admin)` -> `Sofie`."""
     return (words(str(value or "").partition("(")[0]) or [""])[0]
 
 

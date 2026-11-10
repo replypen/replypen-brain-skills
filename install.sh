@@ -17,13 +17,17 @@
 # Do not also install this kit as a user/global Claude Code or Codex plugin; that creates a second,
 # project-agnostic discovery path and makes Brain Dev appear in unrelated repos.
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/main/install.sh) [BRAIN_DIR]
+#   bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.14.34/install.sh) [BRAIN_DIR]
 #   RC_BRAIN_KIT=~/src/kit RC_BRAIN_KIT_TAG=v0.14.34 ./install.sh ~/code/replypen/replypen-brain-foo
 #   ./install.sh --latest-version
 #
 # With t3-schedule on PATH it also arms the daily kit refresh job (scripts/kit_update.py; opt out with
 # --no-schedule, which sticks). It writes two managed git hooks, pre-commit and pre-push (opt out with
 # --no-hooks, which sticks and removes them).
+#
+# Trust: the shared clone only ever checks out a release tag SSH-signed by a key in ALLOWED_SIGNERS
+# below (same check as scripts/kit_update.py verify_tag; no env override). The curl line itself is trust
+# on first use: prefer running install.sh from an existing, verified clone.
 set -euo pipefail
 
 KIT="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}"
@@ -36,6 +40,9 @@ REPO="https://github.com/replypen/replypen-brain-skills"
 LATEST_TAG_ENDPOINT="https://api.github.com/repos/replypen/replypen-brain-skills/git/matching-refs/tags/v"
 KIT_OVERRIDE="${RC_BRAIN_KIT+x}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Mirror of scripts/kit_update.py (check-release-coherence.sh keeps both byte-equal); RELEASING.md "Signed releases".
+ALLOWED_SIGNERS='pjmuller namespaces="git" ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDlzBlNIEQq+VIuJRLVILwIikQ3B0uytO32FlNsNfT1GalT3yD+GB5cgSrXFmkz3updjSkTdSOkL45k3C3BZgvYfDvr1lKdaKLxhrL1WA0fux0R94DwGa+pYR1B4tox/5HD/01h8XyM9OXLVW9ZRJzMfDhIK+tk7a8VBX9A2NgbrQIFURzSbvjoSnVsbY/okj3QYuTwKjzC5Ah6PWh1LMyUqqF/TQKAozVeJiBhSOOpDTuVk/76BTCu/LsR9XIPtmb6jbRwE3HfeAZ0+CuigoZwy0eYZ2M3P0viGLIurygfIogMc+RMGChUlJcaXzKhA+t69xDt+5DYImSbCyo19ttZTZeQx8VYMK5MzC9pbSVfJgpLG+C4m22iJwRenH1ARjqAuctwIKUOa42LHxuu6fvdCMSmu+2F3vrDnUxdlFd8/nFEIDh74qhvVyobhWqMJKCqT5rBlBeALr9DdJ4cifhZdyEc8BtUdPvME1CTKGcOHAQad6smNmSLkcYSrYxCzK+hCki9Gz25gOOLbR6Hdl/Hf3TXWLIdtBsA3aj3GUmb9GchFTGLd0RN22VgOOQBtrsB+VvI4jndwIfEDTemqlWqI+zcscIJQhIxyLOktewjSpPFFFYMew5zjRk66MiG7rGtEDv7j4LmGabz5fls96XHLFApnMpZ59otjiIv5Tclfw=='
+MIN_VERIFYING_RELEASE="v0.14.35"  # older releases ship an updater that runs unverified tags
 
 usage() {
   cat <<EOF
@@ -82,6 +89,37 @@ def version_key(tag):
 
 print(max(tags, key=version_key))
 PY
+}
+
+# verified_commit TAG: print the commit of TAG in $KIT once it is an annotated tag of exactly that name,
+# SSH-signed by a pinned key (scripts/kit_update.py verify_tag); else explain on stderr and fail.
+verified_commit() {
+  local tag="$1" obj body trust major minor out
+  local fix='fix: release tags must be SSH-signed by a key in ALLOWED_SIGNERS (RELEASING.md "Signed releases"); a tag nobody released -> delete it on GitHub and tell the kit owner; never disable the check'
+  if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "error: $tag is not a release tag name" >&2; return 1; fi
+  if [ "$(printf '%s\n%s\n' "${tag#v}" "${MIN_VERIFYING_RELEASE#v}" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" != "${MIN_VERIFYING_RELEASE#v}" ]; then
+    echo "error: $tag predates signed kit updates; install $MIN_VERIFYING_RELEASE or newer" >&2; return 1
+  fi
+  read -r major minor < <(git --version | sed -E 's/[^0-9]*([0-9]+)\.([0-9]+).*/\1 \2/')
+  if [ "$major" -lt 2 ] || { [ "$major" = 2 ] && [ "$minor" -lt 34 ]; } || ! command -v ssh-keygen >/dev/null; then
+    echo "error: checking release signatures needs Git >= 2.34 and OpenSSH ssh-keygen: install or update them" >&2; return 1
+  fi
+  obj="$(git -C "$KIT" rev-parse -q --verify "refs/tags/$tag")" || { echo "error: tag $tag not found in $KIT" >&2; return 1; }
+  body="$(git -C "$KIT" cat-file tag "$obj" 2>/dev/null)" || body=""
+  if [ "$(printf '%s\n' "$body" | sed -n 2p)" != "type commit" ] || [ "$(printf '%s\n' "$body" | sed -n 3p)" != "tag $tag" ] ||
+     [[ "$body" != *'-----BEGIN SSH SIGNATURE-----'* || "$body" == *'-----BEGIN PGP SIGNATURE-----'* ||
+        "$body" == *'-----BEGIN SIGNED MESSAGE-----'* ]]; then
+    echo "error: $tag is not an SSH-signed annotated tag named $tag; $fix" >&2; return 1
+  fi
+  trust="$(mktemp)"
+  printf '%b\n' "$ALLOWED_SIGNERS" >"$trust"
+  if ! out="$(git -C "$KIT" -c gpg.format=ssh -c gpg.ssh.program=ssh-keygen -c gpg.minTrustLevel=fully \
+      -c gpg.ssh.allowedSignersFile="$trust" verify-tag "$obj" 2>&1)"; then
+    rm -f "$trust"
+    echo "error: $tag is not signed by a pinned release key ($(printf '%s\n' "$out" | tail -n 1)); $fix" >&2; return 1
+  fi
+  rm -f "$trust"
+  git -C "$KIT" rev-parse --verify "$obj^{commit}"
 }
 
 # Managed git hooks: thin marked wrappers in git's common hooks dir (linked worktrees share it); the gate
@@ -240,22 +278,24 @@ elif [ -d "$KIT/.git" ]; then
       exit 1
     fi
   fi
-  git -C "$KIT" checkout -q "$TAG" || {
-    echo "error: tag $TAG not found in $KIT" >&2
+  COMMIT="$(verified_commit "$TAG")" || {
+    echo "error: $KIT stays at $(git -C "$KIT" describe --tags --always 2>/dev/null || echo '?')" >&2; exit 1; }
+  git -C "$KIT" checkout -q "$COMMIT" || {
+    echo "error: could not check out $TAG in $KIT" >&2
     exit 1
   }
-  INSTALLED_TAG="$(git -C "$KIT" describe --tags --exact-match 2>/dev/null || true)"
-  if [ "$INSTALLED_TAG" != "$TAG" ]; then
-    echo "error: expected $KIT to be at $TAG, got ${INSTALLED_TAG:-non-tag checkout}" >&2
+  if [ "$(git -C "$KIT" rev-parse HEAD)" != "$COMMIT" ]; then
+    echo "error: expected $KIT to be at $TAG ($COMMIT)" >&2
     exit 1
   fi
 elif [ -d "$KIT/skills" ]; then
   echo "kit: using existing non-git kit at $KIT"
 else
   echo "kit: cloning $REPO@$TAG -> $KIT"
-  git clone -q "$REPO" "$KIT"
-  git -C "$KIT" checkout -q "$TAG" || {
-    echo "error: tag $TAG not found in $KIT" >&2
+  git clone -q --no-checkout "$REPO" "$KIT"  # nothing on disk until the tag is verified
+  COMMIT="$(verified_commit "$TAG")" || { rm -rf "$KIT"; echo "error: removed the unverified clone $KIT" >&2; exit 1; }
+  git -C "$KIT" checkout -q "$COMMIT" || {
+    echo "error: could not check out $TAG in $KIT" >&2
     exit 1
   }
   INSTALLED_TAG="$(git -C "$KIT" describe --tags --exact-match 2>/dev/null || true)"

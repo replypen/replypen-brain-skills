@@ -32,13 +32,13 @@ def test_raw_page_shape():
     chat = convs[0]
     assert chat["channel"] == "chat"
     assert chat["url"] == "https://secure.helpscout.net/conversation/111/11/"
-    assert chat["customer"] == "SalonLies"
+    assert chat["customer"] == "SalonMieke"
     # beaconchat is the customer, note/lineitem are dropped, html became text
     assert chat["first_message"] == "Hoe pas ik de bevestigingsmail aan?"
     assert chat["first_raw"] is None and chat["noise"] is None and chat["tenant"] is None
     assert "Technical Information" not in json.dumps(chat)
-    assert chat["reply"] == {"text": "Dag Lies\nDat kan via Prijslijst > Reminders.",
-                             "by": "Marie-Lore", "provenance": "human"}
+    assert chat["reply"] == {"text": "Dag Mieke\nDat kan via Prijslijst > Reminders.",
+                             "by": "Sofie", "provenance": "human"}
     assert chat["later"] == [] and chat["truncated"] is False
 
 
@@ -59,19 +59,19 @@ def test_signature_and_email_stripped():
     assert corpus.strip_quoted_and_signature(
         "Vraag?\nMet vriendelijke groeten\nLies") == "Vraag?"
     assert corpus.strip_quoted_and_signature("Vraag?\n> oud\nmeer") == "Vraag?"
-    assert corpus.clean("mail me op lies@salon.be", 100) == "mail me op [e-mail]"
+    assert corpus.clean("mail me op mieke@salon.example.com", 100) == "mail me op [e-mail]"
 
 
 DUMP = """##### C1 | email | via=beacon-v2 | tags=[] | subj=None | 2026-09-01T09:00 -> closed 2026-09-01T09:39
 [customer|LouLouGlow] Hoe kan ik de bevestigingsmail aanpassen voor mijn klanten?
-[message|Michel] Dat kan via de prijslijst.
+[message|Tom] Dat kan via de prijslijst.
 [customer|LouLouGlow] gevonden, dank
 
 ##### C2 | chat | via=beacon-v2 | tags=[boekingen] | subj=Re: agenda | 2026-09-02T11:27 -> active
 [customer|Davy] Kan ik de agenda openzetten tot december?
 Tweede regel van dezelfde vraag.
-[note|Marie-Lore] @michel doe jij?
-[message|Marie-Lore] Ja, via Instellingen.
+[note|Sofie] @tom doe jij?
+[message|Sofie] Ja, via Instellingen.
 
 ##### C3 | email | via=beacon-v2 | tags=[] | subj=None | 2026-09-03T08:00 -> active
 [customer|Ann] Nog geen antwoord gekregen.
@@ -109,7 +109,7 @@ def test_trace_agent_by_mailbox_domain():
 
 CHAT_HEADER = {
     "run_id": "7dca3d0a-0000-4000-8000-000000000000",
-    "created_at": "2026-09-03T11:44:56Z", "tenant": "yes_events", "topic": None,
+    "created_at": "2026-09-03T11:44:56Z", "tenant": "sunny_events", "topic": None,
     "question": "dank je", "draft": "",
     "prior_messages": [
         {"sender": "6a995d491a5dd2cd1ca240c3", "is_inbound": True, "body": "Monitoren"},
@@ -130,7 +130,7 @@ CHAT_HEADER = {
 
 def test_chat_boilerplate_and_question_turn():
     conv = corpus.trace_conversation(CHAT_HEADER, frozenset())
-    assert conv["tenant"] == "yes_events"
+    assert conv["tenant"] == "sunny_events"
     # the bot greeting, the bare "Hey !" and the flow prompt are gone, the salutation too
     assert "Yumi" not in json.dumps(conv) and "Hallo" not in json.dumps(conv)
     assert conv["first_message"] == "worden er in Rumst geen kampen meer georganiseerd?"
@@ -199,7 +199,7 @@ def test_link_articles_by_url_and_id():
 
 
 def test_tsv_and_digest_tiers():
-    evidence = {"project": "demo", "tenant": "yes_events", "window": {"days": 8},
+    evidence = {"project": "demo", "tenant": "sunny_events", "window": {"days": 8},
                 "source": "email_runs", "coverage": [], "kb": {"status": "complete", "root": "/kb"},
                 "conversations": [corpus.trace_conversation(CHAT_HEADER)],
                 "articles": [{"id": "A1", "home": "kb", "title": "Feestdagen", "path": "/kb/a.md",
@@ -208,11 +208,11 @@ def test_tsv_and_digest_tiers():
     convs_tsv, articles_tsv = corpus.write_tsvs(evidence)
     assert convs_tsv.splitlines()[0].split("\t") == [
         "id", "date", "tenant", "ch", "first", "turns", "reply", "linked", "noise"]
-    assert convs_tsv.splitlines()[1].split("\t")[2] == "yes_events"
+    assert convs_tsv.splitlines()[1].split("\t")[2] == "sunny_events"
     assert articles_tsv.splitlines()[0].split("\t")[3] == "collection_id"
     assert articles_tsv.splitlines()[1].split("\t")[4] == "customer"
     digest = corpus.write_digest(evidence)
-    assert "demo / yes_events" in digest and "[customer|opener] Monitoren" in digest
+    assert "demo / sunny_events" in digest and "[customer|opener] Monitoren" in digest
 
 
 def test_tsv_lines_stay_readable_whole():
@@ -238,7 +238,7 @@ def chat_header() -> dict:
 def test_chat_roles_and_clarifier_fold():
     """Chat turns carry no sender: inbound is the customer, outbound is us, the reply is a draft."""
     conv = corpus.trace_conversation(chat_header())
-    assert conv["channel"] == "chat" and conv["tenant"] == "lbv"
+    assert conv["channel"] == "chat" and conv["tenant"] == "acmecamp"
     assert conv["id"] == "run:3de6cda0" and conv["url"] == "https://app.example/runs/3de6cda0"
     assert conv["first_message"].startswith("ik moet voor de verzekeraar een lijst")
     assert conv["reply"]["provenance"] == "draft" and conv["reply"]["by"] is None
@@ -288,9 +288,9 @@ def test_ticket_normaliser():
 
 def test_ticket_turn_header_variants():
     """Real tickets decorate the header and put the name on either side of the date."""
-    assert corpus._ticket_turns("**Sylvie 27/08/2026**\nHallo, dit is de vraag.") == [
+    assert corpus._ticket_turns("**Eva 27/08/2026**\nHallo, dit is de vraag.") == [
         "Hallo, dit is de vraag."]
-    assert corpus._ticket_turns("### Lies 28/08\neen vraag\n\n2/9 - Lies\nen een tweede") == [
+    assert corpus._ticket_turns("### Mieke 28/08\neen vraag\n\n2/9 - Mieke\nen een tweede") == [
         "een vraag", "en een tweede"]
     # prose that merely mentions a date is not a header
     assert corpus._ticket_turns("Ik kom op 26/08 langs bij jullie kantoor.") == [
@@ -477,7 +477,7 @@ def fake_workspace(monkeypatch, index_text=INDEX_ARTIFACT, bodies=BODIES_ARTIFAC
 
 def test_inventory_tenant_scope_paths_and_bodies(monkeypatch, tmp_path):
     seen = fake_workspace(monkeypatch)
-    articles, kb = collect.inventory(tmp_path, tmp_path, "yes_events")
+    articles, kb = collect.inventory(tmp_path, tmp_path, "sunny_events")
     assert kb["root"] == "/kb/tenant/intercom" and kb["status"] == "complete"
     assert kb["scope"] == "tenant" and kb["provider"] == "intercom"
     assert kb["base_url"] == "https://faq.example.be"
@@ -495,7 +495,7 @@ def test_inventory_tenant_scope_paths_and_bodies(monkeypatch, tmp_path):
     assert body.startswith("---\ntitle: Gaat het kamp") and "officiele feestdag" in body
     # --tenant rides on every console call, and only on console calls
     console_calls = [a for a in seen if a[:3] == ["rp", "dev", "console"]]
-    assert console_calls and all(a[3:5] == ["--tenant", "yes_events"] for a in console_calls)
+    assert console_calls and all(a[3:5] == ["--tenant", "sunny_events"] for a in console_calls)
     assert not any("fleet" in a or "trace" in a for a in seen)
 
 
@@ -510,10 +510,10 @@ def test_inventory_project_scope_skips_tenant_kbs(monkeypatch, tmp_path):
 
 def test_kb_scope_decided_by_the_mount():
     both = ["/kb/knowledgeowl/INDEX.md", "/kb/tenant/intercom/INDEX.md"]
-    assert collect.kb_scope(both, "yes_events") == ("tenant", ["/kb/tenant/intercom/INDEX.md"])
+    assert collect.kb_scope(both, "sunny_events") == ("tenant", ["/kb/tenant/intercom/INDEX.md"])
     assert collect.kb_scope(both, None) == ("project", ["/kb/knowledgeowl/INDEX.md"])
     # a tenant asking for a help centre that is only mounted project-wide still gets the project one
-    assert collect.kb_scope(["/kb/knowledgeowl/INDEX.md"], "lbv")[0] == "project"
+    assert collect.kb_scope(["/kb/knowledgeowl/INDEX.md"], "acmecamp")[0] == "project"
     with pytest.raises(SystemExit) as exc:  # tenant KBs only, no --tenant: no single help centre
         collect.kb_scope(["/kb/tenant/intercom/INDEX.md"], None)
     assert exc.value.code == 2
@@ -525,22 +525,22 @@ def test_console_tenant_is_inferred_when_the_project_refuses_tenantless_calls(mo
                                                                          "/kb/knowledgeowl"),
                           bodies=BODIES_ARTIFACT.replace("/kb/tenant/intercom", "/kb/knowledgeowl"),
                           find_stderr="403 TENANT_REQUIRED: this project requires a tenant")
-    _, kb = collect.inventory(tmp_path, tmp_path, None, "lbv")
-    assert kb["scope"] == "project" and "console scoped to tenant lbv" in kb["reason"]
+    _, kb = collect.inventory(tmp_path, tmp_path, None, "acmecamp")
+    assert kb["scope"] == "project" and "console scoped to tenant acmecamp" in kb["reason"]
     assert kb["status"] == "complete"  # an inferred tenant is a note, not missing coverage
-    assert ["rp", "dev", "console", "--tenant", "lbv"] == seen[1][:5]
+    assert ["rp", "dev", "console", "--tenant", "acmecamp"] == seen[1][:5]
 
 
 def test_empty_inventory_is_a_hard_exit(monkeypatch, tmp_path):
     fake_workspace(monkeypatch, index_text="@@ /kb/tenant/intercom/INDEX.md\n# empty\n")
     with pytest.raises(SystemExit) as exc:
-        collect.inventory(tmp_path, tmp_path, "yes_events")
+        collect.inventory(tmp_path, tmp_path, "sunny_events")
     assert exc.value.code == 2
 
 
 def test_partial_inventory_needs_a_real_file_count(monkeypatch, tmp_path):
     fake_workspace(monkeypatch, count=9)
-    _, kb = collect.inventory(tmp_path, tmp_path, "yes_events")
+    _, kb = collect.inventory(tmp_path, tmp_path, "sunny_events")
     assert kb["status"] == "partial" and "2 indexed vs 9 .md on disk" in kb["reason"]
 
 
