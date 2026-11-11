@@ -113,7 +113,9 @@ compatible upgrades; their transitive tail (botocore, urllib3, certifi, …) wou
 could differ. `runtime/requirements.lock` (universal, Python 3.12) freezes the **full** closure. uv
 mode installs from it (`--with-requirements`) and the workspace image constrains to it
 (`docker/Dockerfile`, `-c …/requirements.lock`) — same closure both ends. Regenerate it whenever you
-change a dependency, in the same commit. Prod (`replypen/runtime/Dockerfile`) constrains to a
+change a dependency, in the same commit. `--relock` keeps every existing pin that still satisfies
+`pyproject.toml` (uv's lock preference), so it upgrades nothing by itself: to force a security bump of a
+transitive dep, add its floor to `pyproject.toml` (as `certifi>=2026.10.23`) and relock. Prod (`replypen/runtime/Dockerfile`) constrains to a
 **lockstep COPY** of this file at `replypen/runtime/requirements.lock` (vendored, not fetched
 from the tag, so its build is hermetic and can't break when a tag predates the lock) — re-copy it
 there in the same release so prod's box matches byte-for-byte.

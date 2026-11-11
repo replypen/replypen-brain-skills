@@ -182,7 +182,8 @@ if [ -n "$RELEASE" ]; then
   done
 
   # 1b. lockfile: only when deps changed (--relock). Skill/doc releases keep lib identical → identical
-  #     lock → the image is re-tagged, not rebuilt (see 1d).
+  #     lock → the image is re-tagged, not rebuilt (see 1d). uv keeps every existing lock pin that still
+  #     satisfies pyproject.toml: to force a (transitive) upgrade, raise its floor there first.
   if [ "$RELOCK" = 1 ]; then
     say "Regenerate requirements.lock (deps changed)"
     run uv pip compile "$ROOT/runtime/pyproject.toml" --universal --python-version 3.12 \

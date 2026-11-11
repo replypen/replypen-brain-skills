@@ -24,6 +24,9 @@ dependencies = [
     "stripe==11.4.1",
     "boto3==1.35.92",
     "requests>=2.32.3,<3",
+    # Security floor on requests' CA bundle (transitive, so a relock would otherwise keep the old pin):
+    # 2026.10.23 drops the emSign roots behind the compromised eMudhra intermediates (GHSA-6q48-6c7w-9gw2).
+    "certifi>=2026.10.23",
     "markdownify==1.2.2",
     "posthog==7.19.2",
     "pyyaml==6.0.3",
