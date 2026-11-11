@@ -63,6 +63,16 @@ done
 run() { echo "  + $*"; [ "$DRY" = 1 ] || "$@"; }   # echo every mutating step; skip it on --dry-run
 say() { echo; echo "▸ $*"; }
 
+# installed_kit_tag: the release tag this machine's installed kit ($KIT) sits on, when it is a clean detached
+# release checkout (the one its own fail-closed updates verified); else nothing. Its kit_update.py pin is the trust
+# anchor for "would installed kits accept this tag": never a pin read from this tree or an unverified local tag.
+installed_kit_tag() {
+  [ -d "$KIT/.git" ] || return 0
+  ! git -C "$KIT" symbolic-ref -q HEAD >/dev/null || return 0
+  git -C "$KIT" diff --quiet HEAD 2>/dev/null || return 0
+  git -C "$KIT" tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true
+}
+
 # The single content-based digest of runtime/ at a working tree or ref (version literals canonicalized).
 runtime_digest() { uv run --no-project python "$ROOT/scripts/runtime_digest.py" "$@" --root "$ROOT"; }
 
@@ -250,13 +260,23 @@ if [ -n "$RELEASE" ]; then
       echo "error: remote tag v$NEW appeared during release; refusing to replace it" >&2
       exit 1
     fi
-    run git -C "$ROOT" tag -s -m "v$NEW" "v$NEW"   # signed: installed kits run only pinned-key tags
+    # RP_KIT_SIGNING_KEY scopes SSH signing to this tag (a releaser who GPG-signs commits keeps that config).
+    SIGN=(); [ -z "${RP_KIT_SIGNING_KEY:-}" ] || SIGN=(-c gpg.format=ssh -c "user.signingkey=$RP_KIT_SIGNING_KEY")
+    run git -C "$ROOT" ${SIGN[@]+"${SIGN[@]}"} tag -s -m "v$NEW" "v$NEW"   # signed: installed kits run only pinned-key tags
     # Every installed kit refuses a tag its pin rejects (scripts/kit_update.py verify_tag): never publish one.
-    if [ "$DRY" != 1 ] && ! python3 "$ROOT/scripts/kit_update.py" --verify-tag "v$NEW" "$ROOT" >/dev/null; then
+    # Installed kits verify with the pin of the release they run, not this tree's: check this tree's pin and this
+    # machine's installed kit's, so a release that adds a signer can never also be the first one signed by it, and
+    # a new key signs only once its releaser's own kit trusts it (RELEASING.md "Adding a releaser").
+    INSTALLED="$([ "$DRY" = 1 ] || installed_kit_tag)"
+    if [ "$DRY" != 1 ] && { [ -z "$INSTALLED" ] || ! python3 "$ROOT/scripts/kit_update.py" --verify-tag "v$NEW" "$ROOT" >/dev/null ||
+         ! python3 "$KIT/scripts/kit_update.py" --verify-tag "v$NEW" "$ROOT" >/dev/null; }; then
       git -C "$ROOT" tag -d "v$NEW" >/dev/null
-      echo "error: v$NEW is not signed by a key installed kits trust, so no tag was published; release commit" >&2
-      echo "       $(git -C "$ROOT" rev-parse HEAD) is already on main. Fix signing (RELEASING.md \"Signed releases\")," >&2
-      echo "       then: git tag -s -m v$NEW v$NEW <that sha> && python3 scripts/kit_update.py --verify-tag v$NEW && git push origin v$NEW" >&2
+      [ -n "$INSTALLED" ] || echo "error: no installed kit on a clean release tag at $KIT (install.sh) to check trust against" >&2
+      echo "error: v$NEW is not signed by a key installed kits trust (this tree's pin and $KIT ${INSTALLED:-?}'s)," >&2
+      echo "       so no tag was published; release commit $(git -C "$ROOT" rev-parse HEAD) is already on main." >&2
+      echo "       Fix signing (RELEASING.md \"Signed releases\"), then: git tag -s -m v$NEW v$NEW <that sha> &&" >&2
+      echo "       python3 scripts/kit_update.py --verify-tag v$NEW && python3 $KIT/scripts/kit_update.py --verify-tag v$NEW . &&" >&2
+      echo "       git push origin v$NEW" >&2
       exit 1
     fi
     # Include main in the atomic request so a normal concurrent advance rejects tag publication.

@@ -89,16 +89,30 @@ or tag rights alone (a leaked token, a bot account) can no longer run code on br
 today: PJ's RSA key `SHA256:yaTYKWwRX2oyKCXbDgfKKY4p6bQDlTmcBVbcye8W7bw` (the pjmuller/skills
 `skills-refresh` pin).
 
-- **Releaser setup:** `git config --global gpg.format ssh`, `user.signingkey ~/.ssh/<key>.pub`,
-  `tag.gpgSign true`. `refresh-brains.sh --release` signs with `git tag -s` and verifies the tag against the
-  pin before publishing; an unverifiable tag is deleted locally and never pushed (the release commit is
-  already on main; the error prints the resume commands).
-- **Adding a releaser or rotating:** a release signed by a pinned key adds the new entry to both
-  `ALLOWED_SIGNERS` lines (entries joined by a literal `\n`). Only after every machine has applied that
-  release (`brains-upgrade` / the daily job) may the new key sign; drop a retired key in a later release.
-  A machine still on the old pin refuses the new key's tag and stays put until it re-installs.
+- **Releaser setup:** either `git config --global gpg.format ssh`, `user.signingkey ~/.ssh/<key>.pub`,
+  `tag.gpgSign true`, or (keeps GPG commit signing) `export RP_KIT_SIGNING_KEY=~/.ssh/<key>.pub`, which
+  `refresh-brains.sh` applies to the tag only. It signs with `git tag -s` and verifies the tag against **both**
+  this tree's pin and the releaser's installed kit's (`~/.replypen-brain-skills` on a clean release tag: what
+  installed kits run) before publishing; an unverifiable tag is deleted locally and never pushed (the release
+  commit is already on main; the error prints the resume commands).
+- **Adding a releaser** (`scripts/release_signer.py`, no step edits or publishes by itself):
+  1. Kit owner: `python3 scripts/release_signer.py challenge --login <github>` → one line, valid 14 days.
+  2. Candidate: dedicated key (`ssh-keygen -t ed25519 -f ~/.ssh/replypen_kit_release`, passphrase), registered
+     on GitHub **as a signing key** (`gh ssh-key add ~/.ssh/replypen_kit_release.pub --type signing`; needs
+     `gh auth refresh -s admin:ssh_signing_key`), then `printf '%s\n' '<line>' > c.txt && ssh-keygen -Y sign
+     -n replypen-kit-enroll -f ~/.ssh/replypen_kit_release c.txt`; returns `c.txt.sig`.
+  3. Kit owner: `release_signer.py verify --login <github> --challenge '<line>' --signature c.txt.sig` (GitHub id
+     matches, exactly one of the account's GitHub signing keys verifies) → append the printed entry to both
+     `ALLOWED_SIGNERS` lines, joined by a literal single-backslash `\n`; release it signed by a pinned key.
+  4. Adoption gate, not a timer: the new key signs only once every machine known to run the kit reports the
+     transition release or newer (`git -C ~/.replypen-brain-skills describe --tags`). The publisher check refuses
+     a release signed by the key it introduces, and any new-key release before the releaser's own kit trusts
+     it. A machine that missed the transition refuses the new key's tags and stays put; recover with `K=~/.replypen-brain-skills; git -C $K checkout -q "$(python3 $K/scripts/kit_update.py
+     --verify-tag <transition tag>)"` (its old pin verifies the transition release), then it updates normally.
+  5. Retiring a key: drop it in a later release once no tag still needs it.
 - **A tag nobody released** (job says `FAILED: … not signed by a pinned release key`): updates stay
-  blocked on purpose (the newest tag or nothing, never an older one). Delete that tag on GitHub, review
+  blocked on purpose (the newest tag or nothing, never an older one). First rule out a missed releaser
+  transition (step 4 above: the newest tag verifies with a newer kit's pin). Otherwise delete that tag on GitHub, review
   who could push it, rerun. Never weaken the check.
 - **Bootstrap:** the curl install of a pinned tag is trust on first use (an existing verified clone is
   better); `install.sh` then verifies the tag it checks out. `MIN_VERIFYING_RELEASE` (v0.14.35, the first

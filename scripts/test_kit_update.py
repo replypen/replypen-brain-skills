@@ -385,6 +385,50 @@ def test_unsigned_or_foreign_newest_tag_never_runs_and_keeps_the_installed_relea
     assert not (clone / "PWNED").exists() and not (tmp_path / "PWNED").exists()
 
 
+def test_signer_transition_adds_a_releaser_without_widening_trust(tmp_path):
+    """RELEASING.md "Adding a releaser": a release signed by the pinned key adds a second ALLOWED_SIGNERS entry
+    (literal \\n join, both verifiers); updated clones then accept the new key, a clone on the old pin and any
+    unpinned key are refused."""
+    dev, clone, brain = setup(tmp_path)
+    run(clone, tmp_path, "--apply")
+    stale = tmp_path / "stale"  # a machine that never applied the transition release
+    git(tmp_path, "clone", "-q", str(tmp_path / "origin.git"), str(stale))
+    git(stale, "checkout", "-q", "v0.1.10")
+    key_a, line_a = signer(tmp_path)
+    key_b, line_b = signer(tmp_path, "alexey")
+    for f in ("scripts/kit_update.py", "install.sh"):
+        enroll(dev / f, line_a + "\\n" + line_b)
+    release(dev, "v0.1.11")  # signed by the already-pinned key A
+    run(clone, tmp_path, "--apply")
+    assert tag(clone) == "v0.1.11"
+
+    skill(dev, "brain-from-b")
+    release(dev, "v0.1.12", "-c", f"user.signingkey={key_b}")
+    run(clone, tmp_path, "--apply")
+    assert tag(clone) == "v0.1.12"  # Python verifier: the second entry is honoured
+    git(stale, "fetch", "-q", "--tags")
+    out = run(stale, tmp_path, "--verify-tag", "v0.1.12", code=1)
+    assert "not signed by a pinned release key" in out  # old pin: B is not trusted yet
+    run(stale, tmp_path, "--apply", code=1)
+    assert tag(stale) == "v0.1.10"  # stays put: never an older tag on its own
+    commit = run(stale, tmp_path, "--verify-tag", "v0.1.11").strip()  # documented recovery: the old pin
+    git(stale, "checkout", "-q", commit)                                # verifies the transition release
+    run(stale, tmp_path, "--apply")
+    assert tag(stale) == "v0.1.12"
+    done = subprocess.run(["bash", str(dev / "install.sh"), "--tag", "v0.1.12", str(brain)], capture_output=True,
+                          text=True, env=env(tmp_path, RC_BRAIN_KIT=str(clone)))
+    assert done.returncode == 0, done.stdout + done.stderr  # install.sh verifier: %b expands the join
+
+    other, _ = signer(tmp_path, "intruder")
+    skill(dev, "brain-intruder")
+    release(dev, "v0.1.13", "-c", f"user.signingkey={other}")
+    assert "not signed by a pinned release key" in run(clone, tmp_path, "--bootstrap", code=1)
+    done = subprocess.run(["bash", str(dev / "install.sh"), "--tag", "v0.1.13", str(brain)], capture_output=True,
+                          text=True, env=env(tmp_path, RC_BRAIN_KIT=str(clone)))
+    assert done.returncode == 1 and "not signed by a pinned release key" in done.stderr
+    assert tag(clone) == "v0.1.12"
+
+
 def test_install_sh_checks_out_only_signed_tags(tmp_path):
     dev, clone, brain = setup(tmp_path)
     skill(dev, "brain-unsigned")

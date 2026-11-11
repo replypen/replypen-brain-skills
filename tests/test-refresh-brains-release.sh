@@ -29,6 +29,19 @@ for p in sys.argv[1:]:
 ' "$1/scripts/kit_update.py" "$1/install.sh"
   sign_release_tags "$1"
 }
+# The clone inherits real release tags whose kit_update.py pins the real key: re-sign the current version's tag
+# over the enrolled commit, publish it, and install a kit on it.
+resign_prev_tag() {  # repo
+  local v
+  v="$(sed -nE 's/^VERSION = "([0-9.]+)".*/\1/p' "$1/skills/local-brain-work/scripts/brain_env.py")"
+  git -C "$1" -c gpg.format=ssh -c user.signingkey="$TMP/signing-key" tag -f -s -m "v$v" "v$v" >/dev/null
+  git -C "$1" -c push.followTags=false push -q -f origin "refs/tags/v$v"
+  # The release checks new tags against this machine's installed kit: one on that tag, pinned to the test key.
+  rm -rf "$TMP/installed-kit"
+  git clone -q "$(git -C "$1" remote get-url origin)" "$TMP/installed-kit"
+  git -C "$TMP/installed-kit" checkout -q "v$v"
+  export RC_BRAIN_KIT="$TMP/installed-kit"
+}
 mkdir -p "$TMP/brains"
 mkdir -p "$TMP/not-a-brain"
 git init -q --bare "$REMOTE"
@@ -55,6 +68,7 @@ if ! git -C "$CHECKOUT" diff --cached --quiet; then
   git -C "$CHECKOUT" commit -q -m "test: install release sync primitive"
 fi
 git -C "$CHECKOUT" -c push.followTags=false push -q origin main
+resign_prev_tag "$CHECKOUT"
 
 # Reject a version tag unless main already points at the tag's commit. This makes publication order
 # observable rather than merely checking that both refs eventually converge.
@@ -78,6 +92,7 @@ chmod +x "$REMOTE/hooks/pre-receive"
 
 # A release from any other branch must fail before changing files or remote refs.
 git -C "$CHECKOUT" switch -q -c release-test
+tags_before="$(git --git-dir="$REMOTE" tag -l 'v*')"
 before="$(git -C "$CHECKOUT" rev-parse HEAD)"
 if RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --no-image --no-prod-bump \
     "$TMP/not-a-brain" >"$TMP/non-main.out" 2>&1; then
@@ -86,7 +101,7 @@ if RC_BRAINS_ROOT="$TMP/brains" "$CHECKOUT/refresh-brains.sh" --release patch --
 fi
 grep -q "releases must be cut from main" "$TMP/non-main.out"
 test "$(git --git-dir="$REMOTE" rev-parse refs/heads/main)" = "$before"
-test -z "$(git --git-dir="$REMOTE" tag -l 'v*')"
+test "$(git --git-dir="$REMOTE" tag -l 'v*')" = "$tags_before"  # only the fixture's published previous release
 
 # A normal publish updates main before exposing the tag, and both resolve to the release commit.
 git -C "$CHECKOUT" switch -q main
@@ -228,6 +243,7 @@ git -C "$CL" add refresh-brains.sh scripts/runtime_digest.py \
   skills/brain-git-sync/scripts/brain_git_sync.py scripts/kit_update.py install.sh
 git -C "$CL" diff --cached --quiet || git -C "$CL" commit -q -m "test: install classifier under test"
 git -C "$CL" push -q -u origin main
+resign_prev_tag "$CL"
 
 # A larger dotted number containing the next version is not a release literal (for example RFC
 # 9110 section 10.2.3 must not block a v0.2.3 release).
@@ -312,12 +328,51 @@ if RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-ima
   echo "error: release with an unpinned signing key unexpectedly succeeded" >&2
   exit 1
 fi
-grep -q "is not signed by a key installed kits trust, so no tag was published" "$TMP/untrusted.out"
+grep -q "is not signed by a key installed kits trust (this tree.s pin" "$TMP/untrusted.out"
 git -C "$CL" fetch -q origin
 untrusted_tag="v$(git -C "$CL" show origin/main:skills/local-brain-work/scripts/brain_env.py | sed -nE 's/^VERSION = "([0-9.]+)".*/\1/p')"
 if git --git-dir="$CL_REMOTE" rev-parse -q --verify "refs/tags/$untrusted_tag" >/dev/null; then
   echo "error: untrusted tag $untrusted_tag was published" >&2
   exit 1
 fi
+
+# A release that pins a new key may not also be signed by it: installed kits still run the previous pin.
+python3 - "$CL/scripts/kit_update.py" "$CL/install.sh" "$(cut -d' ' -f1-2 "$TMP/intruder-key.pub")" <<'PY'
+import re, sys
+line = 'newcomer namespaces="git" ' + sys.argv[3]
+for p in sys.argv[1:3]:
+    t, n = re.subn(r"(?m)^(ALLOWED_SIGNERS ?= ?')(.*)'$", lambda m: m[1] + m[2] + "\\n" + line + "'", open(p).read())
+    assert n == 1, p
+    open(p, "w").write(t)
+PY
+git -C "$CL" commit -q -am "kit: pin a second release signer"
+# Local tags installed kits never ran must not stand in for the previous release: unsigned, or signed by the
+# newcomer under the new pin but never published.
+git -C "$CL" -c tag.gpgSign=false tag -a -m v0.98.0 v0.98.0
+git -C "$CL" tag -s -m v0.97.0 v0.97.0
+if RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-image --no-prod-bump \
+    "$TMP/not-a-brain" >"$TMP/newcomer.out" 2>&1; then
+  echo "error: a release signed by the key it introduces unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "this tree's pin and .*installed-kit v[0-9.]*'s)," "$TMP/newcomer.out"
+git -C "$CL" tag -d v0.98.0 v0.97.0 >/dev/null
+# The same tree signed by the already-pinned key publishes; once the installed kit has applied it (the daily
+# update), the next release may use the new key.
+git -C "$CL" config user.signingkey "$TMP/signing-key"
+RC_BRAINS_ROOT="$TMP/brains" "$CL/refresh-brains.sh" --release patch --no-image --no-prod-bump "$TMP/not-a-brain" >/dev/null
+echo "doc note 3a" >>"$CL/README.md"
+git -C "$CL" commit -q -am "docs: note 3a"
+if RP_KIT_SIGNING_KEY="$TMP/intruder-key" RC_BRAINS_ROOT="$TMP/brains" \
+    "$CL/refresh-brains.sh" --release patch --no-image --no-prod-bump "$TMP/not-a-brain" >"$TMP/early.out" 2>&1; then
+  echo "error: the new key signed before the installed kit trusted it" >&2
+  exit 1
+fi
+git -C "$RC_BRAIN_KIT" fetch -q --tags origin
+git -C "$RC_BRAIN_KIT" checkout -q "$(git -C "$RC_BRAIN_KIT" tag --sort=-v:refname | head -n 1)"
+echo "doc note 3" >>"$CL/README.md"
+git -C "$CL" commit -q -am "docs: note 3"
+RP_KIT_SIGNING_KEY="$TMP/intruder-key" RC_BRAINS_ROOT="$TMP/brains" \
+  "$CL/refresh-brains.sh" --release patch --no-image --no-prod-bump "$TMP/not-a-brain" >/dev/null
 
 echo "refresh-brains release tests passed"
