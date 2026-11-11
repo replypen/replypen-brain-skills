@@ -26,7 +26,7 @@ Mailbox review of a ReplyPen Google mailbox lives in [`pjmuller/skills` `mailbox
 From a brain checkout:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.14.36/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.15.0/install.sh)
 SKILL="${RC_BRAIN_KIT:-$HOME/.replypen-brain-skills}/skills/local-brain-work"
 uv run "$SKILL/scripts/brain_run.py" --brief
 uv run "$SKILL/scripts/brain_test.py" --live
@@ -166,11 +166,11 @@ CLI equivalents: `python -m lib.db --stats accounts --db ruby --format json` and
 ## Single Version Line
 
 The plugin versions, `replypen-runtime` pin, workspace image tag, and production runtime pin move
-together; see [RELEASING.md](RELEASING.md). Current line: **`v0.14.36`**.
+together; see [RELEASING.md](RELEASING.md). Current line: **`v0.15.0`**.
 
 - Runtime pin:
-  `replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.14.36#subdirectory=runtime`
-- Workspace image: `ghcr.io/replypen/workspace:v0.14.36`
+  `replypen-runtime @ git+https://github.com/replypen/replypen-brain-skills@v0.15.0#subdirectory=runtime`
+- Workspace image: `ghcr.io/replypen/workspace:v0.15.0`
 
 Check coherence:
 
