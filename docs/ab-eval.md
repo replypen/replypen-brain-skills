@@ -85,4 +85,4 @@ null's CI, when a judge's swap agreement is < 70%, or when it caught < 80% of pl
 | Cost + tokens per replay | `ab.py collect` → `rp admin project run-usage` (human global admin only: unit economics never reach a customer surface); `metrics` prints median + total per arm |
 | Judge criteria, product context, strata | the brain's own notes (`_internal/`), pasted into the judge template |
 | Fixture cases with deterministic `expect` checks | brain `_internal/simulate/` ([brain-simulate](../skills/brain-simulate/SKILL.md#fixture-cases)) |
-| Cases that outlive retention (pinned eval set) | not yet: needs a privacy decision (a pinned email case keeps its PII seed past the 14-day vault ceiling) |
+| Cases that outlive retention | **none, by decision (PJ, Nov 2026)**: pinning would keep patient-name dictionaries past the 14-day vault ceiling we promise. Draw fresh cases each round (masked email replays ≤ 14 d, others ≤ 28 d); a case worth keeping forever becomes a PII-free fixture case in the brain |
