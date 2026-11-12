@@ -62,6 +62,9 @@ DEPLOY_SECRET, ACCOUNT_VAR = "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"
 # Self-service only: org-level Actions variables an org owner sets once (see SKILL.md).
 SUBDOMAIN_VAR, SITEKEY_VAR = "CLOUDFLARE_WORKERS_SUBDOMAIN", "REPLYPEN_TURNSTILE_SITEKEY"
 FLEET_SITEKEY = "0x4AAAAAAFlC2YxmVg2JbUFF"  # "ReplyPen website forms", as site-template ships it
+# Self-service: ReplyPen-managed hosting account per customer GitHub org (ids only, no secrets).
+HOSTING_FILE = Path(__file__).resolve().parents[1] / "hosting.json"
+HOSTING = json.loads(HOSTING_FILE.read_text()) if HOSTING_FILE.exists() else {}
 POLL_SECONDS = 10
 DEPLOY_POLLS = 72  # 12 min: build + deploy jobs, plus queueing behind a push-triggered run
 LIVE_POLLS = 12  # 2 min
@@ -128,6 +131,7 @@ class Kickstart:
         self.run = run
         self.sleep = sleep
         env = os.environ if env is None else env
+        self.env = env
         self.cf_token = env.get("CF_SITES_USER_TOKEN", "")
         self.deploy_token = env.get("CF_SITES_DEPLOY_TOKEN", "")
         self.gh_pat = env.get("GH_SITE_PROVISIONING_PAT", "")
@@ -411,29 +415,48 @@ class Kickstart:
         return detail + (f" @ {self.s['head_sha'][:8]}" if self.s["head_sha"] else "")
 
     def load_org_settings(self):
-        """Self-service: the org owner's one-time hosting setup, read through the new repo (any collaborator
-        may list the org variables/secrets shared with it; repo-level ones win). Missing pieces stop the run
-        with the exact owner instruction, before any deploy."""
-        variables = {}
+        """Self-service: the org's hosting account (ReplyPen-managed, one per customer) comes from hosting.json
+        next to this skill, keyed by GitHub org (not secret); repo- or org-level Actions variables override it
+        (org-level ones reach private repos on paid GitHub plans only). The deploy token: GitHub Free cannot
+        share an org secret with private repos, so the member's own copy of the customer's deploy token
+        (env var named in hosting.json, customer-scoped: it can touch this customer's sites only) is set as the
+        repo secret here, via stdin. Missing pieces stop the run before any deploy."""
+        org = HOSTING.get(self.a.org, {})
+        variables = {ACCOUNT_VAR: org.get("account_id", ""), SUBDOMAIN_VAR: org.get("workers_subdomain", ""),
+                     SITEKEY_VAR: org.get("turnstile_sitekey", "")}
+        repo_vars = set()
         for path in ("actions/organization-variables", "actions/variables"):
             data = self.gh("GET", f"/repos/{self.full_name}/{path}?per_page=100") or {}
-            variables |= {v["name"]: v.get("value", "") for v in data.get("variables", [])}
+            found = {v["name"]: v.get("value", "") for v in data.get("variables", []) if v.get("value")}
+            variables |= found
+            if path == "actions/variables":
+                repo_vars = set(found)
         secrets = set()
         for path in ("actions/organization-secrets", "actions/secrets"):
             data = self.gh("GET", f"/repos/{self.full_name}/{path}?per_page=100") or {}
             secrets |= {s["name"] for s in data.get("secrets", [])}
-        # The widget is required: no site goes live with an unguarded contact form.
-        missing = [n for n in (ACCOUNT_VAR, SUBDOMAIN_VAR, SITEKEY_VAR) if not variables.get(n, "").strip()]
-        missing += [DEPLOY_SECRET] if DEPLOY_SECRET not in secrets else []
-        if missing:
-            raise StepFailed(
-                f"{self.a.org} lacks the one-time hosting setup ({', '.join(missing)}): an owner of {self.a.org} "
-                f"sets the org Actions variables {ACCOUNT_VAR}, {SUBDOMAIN_VAR}, {SITEKEY_VAR} and the org secret "
-                f"{DEPLOY_SECRET} (website-kickstart SKILL.md § One-time org setup), then rerun this command")
         account, subdomain = variables[ACCOUNT_VAR].strip(), variables[SUBDOMAIN_VAR].strip()
+        if not account or not subdomain:
+            raise StepFailed(f"no ReplyPen hosting account for GitHub org {self.a.org}: ReplyPen adds it to "
+                             f"website-kickstart hosting.json (SKILL.md § One-time setup); ask ReplyPen, then rerun")
         if not re.fullmatch(r"[0-9a-f]{32}", account) or not SLUG.fullmatch(subdomain):
-            raise StepFailed(f"org variables look wrong: {ACCOUNT_VAR}={account!r}, {SUBDOMAIN_VAR}={subdomain!r}")
-        self.sitekey = variables[SITEKEY_VAR].strip()
+            raise StepFailed(f"hosting settings look wrong: {ACCOUNT_VAR}={account!r}, {SUBDOMAIN_VAR}={subdomain!r}")
+        repo = ["--repo", self.full_name]
+        # A token in the env is (re)set every run, so a rotated token converges on rerun; without one an
+        # existing repo secret is reused (a teammate continuing a site needs none).
+        env_name = org.get("deploy_token_env", "SITES_DEPLOY_TOKEN")
+        token = self.env.get(env_name, "")
+        if len(token) >= 20:
+            self.secrets.append(token)
+            self.act(["gh", "secret", "set", DEPLOY_SECRET, *repo], stdin=token,
+                     shown=f"gh secret set {DEPLOY_SECRET} --repo {self.full_name} < ${env_name}")
+        elif DEPLOY_SECRET not in secrets:
+            raise StepFailed(f"{env_name} is not set on this machine: it holds the {self.a.org} sites deploy "
+                             "token (ask ReplyPen; store it in your env, never in a file in a repo), then rerun")
+        if ACCOUNT_VAR not in repo_vars:  # the deploy job reads vars.CLOUDFLARE_ACCOUNT_ID
+            self.act(["gh", "variable", "set", ACCOUNT_VAR, "--body", account, *repo])
+        # Optional: another widget than the fleet one. Never "none": no site goes live with an unguarded form.
+        self.sitekey = variables.get(SITEKEY_VAR, "").strip() or FLEET_SITEKEY
         self.set_hosting(account, subdomain)
         self.s["hosting"] = f"account {account}, *.{subdomain}.workers.dev, widget {self.sitekey}"
 

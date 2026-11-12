@@ -35,15 +35,17 @@ summary (repo, URLs, deploy run, screenshots in `--out`, default `~/Downloads`) 
 
 ## Self-service (customer team members, own logins)
 
-**Intent:** a customer's own people provision, build and publish their tenants' sites, and later move one
-to the tenant's domain, with no ReplyPen operator in the loop. The boundary is the customer's own
-**Cloudflare account** (Workers tokens are account-wide, so a separate account is what keeps one customer
-from touching another's sites) and its own **GitHub org**. Within one customer, all its tenant sites share
-that boundary; that matches its team already being admin over all its tenants in ReplyPen.
+**Intent:** a customer's own people (KampAdmin: Tobias, Astrid) provision, build and publish their tenants'
+sites and later move one to the tenant's domain, with no ReplyPen operator per site. Hosting stays a
+ReplyPen-managed service: one **Cloudflare account per customer** under ReplyPen's login ("ReplyPen Sites -
+<Customer>"), because Workers tokens are account-wide: whoever can edit a site's workflow can read its deploy
+secret, so the account is what keeps one customer off another's sites. Nobody at the customer gets a
+Cloudflare login. Repos live in the customer's own GitHub org.
 
-**Who can run it:** a member of the GitHub org (members may create repos; the creator becomes repo admin),
-read access to `replypen/site-template`, and ReplyPen project admin on the tenant's project
-(`rp --project <p> project member ls`: `admin: true`). No Cloudflare or operator token on the laptop.
+**Who can run it:** a member of the GitHub org (members create repos; the creator is repo admin), read on
+`replypen/site-template`, project admin in ReplyPen (`rp --project <p> project member ls` → `admin: true`),
+and the customer's deploy token in their env (name in `hosting.json`, e.g. `KA_SITES_DEPLOY_TOKEN`).
+KampAdmin sites always attach to **`kampadmin-support`** tenants (where its admins edit sites in chat).
 
 ```bash
 git -C ~/code/replypen/replypen-brain-skills pull --no-rebase -q || gh repo clone replypen/replypen-brain-skills ~/code/replypen/replypen-brain-skills
@@ -51,57 +53,45 @@ KS=~/code/replypen/replypen-brain-skills/skills/website-kickstart/scripts/kickst
 uv run -q $KS <org> <slug> --self-service --project <rp project> --tenant <rp tenant> --name "<Naam op de site>"
 ```
 
-It creates `<org>/site-<slug>` from the template, reads the org's hosting settings through it, fills the
-placeholders (workers.dev URL, the org's widget sitekey), deploys main, registers the tenant's `role=website`
-mirror (+ `turnstile_sitekey`), proves it with an exact-sha mirror refresh and clones it to
-`~/code/<org>/site-<slug>` (`--clone-to` overrides). Rerunnable. After that the site repo's own `AGENTS.md`
-and vendored `website-dev` skill drive build, look, preview and publish (branch → preview URL in the deploy
-log → merge to `main` after the site owner's OK = live). Stops with the exact owner instruction when:
+It creates `<org>/site-<slug>` from the template, sets the repo's deploy secret from your env token (stdin
+only; GitHub Free cannot share org secrets with private repos) and account variable, fills the placeholders,
+deploys main to `https://site-<slug>.<subdomain>.workers.dev`, registers the tenant's `role=website` mirror,
+proves it with an exact-sha mirror refresh and clones to `~/code/<org>/site-<slug>`. Rerunnable; a teammate
+can continue a site someone else started. Then the repo's `AGENTS.md` + vendored `website-dev` skill (with
+its SEO/GEO reference) drive build, look, preview, publish. Stops with the fix when:
 
-| Message | Fix (once per org, by an owner) |
+| Message | Fix |
 |---|---|
-| `lacks the one-time hosting setup (…)` | [§ One-time org setup](#one-time-org-setup-owners-once-per-customer) |
-| mirror refresh `ReplyPen's GitHub App cannot read <org>/site-…` | org owner: App `replypen` → All repositories (or add the repo) at the printed URL, rerun |
+| `<ENV> is not set on this machine` | get the customer's deploy token from ReplyPen into your env |
+| `no ReplyPen hosting account for GitHub org …` | ReplyPen adds the org to `hosting.json` ([one-time setup](#one-time-setup-replypen-once-per-customer)) |
+| mirror refresh `ReplyPen's GitHub App cannot read <org>/site-…` | org owner: App `replypen` → All repositories, rerun |
 | `already serves a site, so Worker … is taken` | pick another slug |
-| `Not Found` on `site-template/generate` | ask ReplyPen for read access on `replypen/site-template` |
+| `Not Found` on `site-template/generate` | ask ReplyPen for read on `replypen/site-template` |
 
-### One-time org setup (owners, once per customer)
+### One-time setup (ReplyPen, once per customer)
 
-1. **Cloudflare** (someone of the customer, own login): create account "<Customer> Sites"; Workers & Pages →
-   claim the `workers.dev` subdomain; invite the team as members (Administrator, or Workers + DNS + Turnstile).
-   Create an **account API token**: Workers Scripts Edit + Account Settings Read, nothing else. Create a
-   Turnstile widget "<Customer> website forms" (managed) with hostname `<subdomain>.workers.dev`.
-2. **GitHub org** (owner): Actions **org secret** `CLOUDFLARE_API_TOKEN` = that token, and **org variables**
-   `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, `REPLYPEN_TURNSTILE_SITEKEY` (the widget's public
-   sitekey), all with repository access "Private repositories". ReplyPen App installation → **All
-   repositories** (or add each site repo). Team members who must create sites are org **members**, not
-   outside collaborators.
-3. **ReplyPen** (operator, once): the widget's secret into the box env `TURNSTILE_WIDGET_SECRETS`
-   (`{"<sitekey>":"<secret>"}`, replypen devops; promote), and read on `replypen/site-template` for the
-   team's GitHub handles. Optional: the account's token in `CF_SITE_LOGS_TOKENS` (chat reads the site's 404s).
-
-Without step 3's secret a site whose mirror names that sitekey fails closed: its form says "try again
-later". Without the widget variable the run stops: no site goes live with an unguarded form. A teammate (or
-your other laptop) can rerun the same command on a site someone else started; it continues from there.
+The KampAdmin instance (done 2026-11-12); another customer repeats the same three steps:
+1. Cloudflare account "ReplyPen Sites - KampAdmin" (`5a6eb40e…`, b4bit login; dashboard-only), workers.dev
+   subdomain `kampadmin-sites`, SaaS zone `kampsites.be` (Cloudflare for SaaS; enabling needs a payment
+   method on the account), fleet widget lists `kampadmin-sites.workers.dev`.
+2. Scoped user tokens (`~/.config/mise-env/replypen/kampadmin-sites.env`): deploy (Workers Scripts Edit +
+   Account Settings Read, this account only) for the members; host (SSL/Certificates + Workers Routes + DNS,
+   zone `kampsites.be` only) and fleet-widget edit for the box env `CF_SITES_HOSTING`.
+3. `hosting.json` entry for the GitHub org; App `replypen` on All repositories; site creators are org members.
 
 ### Moving a site to the tenant's own domain (after the tenant agrees)
 
-All in the customer's Cloudflare account; ReplyPen is not needed. Read the project's own runbook first when
-it has one (DentAI: `practice-websites`), and keep its cutover-preflight rule: export the old zone, copy
-every mail record (MX/SPF/DKIM/DMARC, verification TXT), keep a rollback.
-1. Add the domain as a zone in the customer's account (Cloudflare imports existing records: compare them
-   with the old DNS host, mail records 1:1). Cloudflare shows two nameservers.
-2. Widget first: `TURNSTILE_ACCOUNT=<account> TURNSTILE_SITEKEY=<org sitekey> scripts/turnstile_domain.sh <apex>`
-   (or dashboard → Turnstile → widget → Hostnames). Skip it and the form cannot be sent on the new domain.
-3. The tenant (or whoever holds the registrar login) switches the domain's nameservers to those two. Wait
-   until the zone is Active.
-4. Worker → Settings → Domains & Routes: add `www.<domain>` and `<domain>` as Custom Domains; one zone
-   Single Redirect for the non-canonical host (301, path + query kept).
-5. In the site repo: `url:` in `_data/site.yml` = `https://www.<domain>`, via branch + merge. Then
-   `rp --project <p> --tenant <t> project repo set site live_url=https://www.<domain>`; later kickstart reruns
-   need `--live-url https://www.<domain>`.
-6. Verify: `curl -s https://www.<domain>/replypen-revision.json` names main's head sha; a test form post
-   arrives in the tenant's inbox; mail still flows.
+No nameserver move, no mail risk: the tenant keeps its DNS where it is (Cloudflare for SaaS custom hostname).
+```bash
+rp --project kampadmin-support --tenant <t> project site domain add www.<domain>   # prints the one DNS record
+rp --project kampadmin-support --tenant <t> project site domain add www.<domain>   # rerun until live: true
+```
+1. The tenant (or whoever has its DNS login) adds `www CNAME sites.kampsites.be` (DNS only, not proxied, if
+   that DNS is on Cloudflare) and forwards the bare domain to `https://www.<domain>` at its registrar.
+2. Rerun `add`: certificate, route and form bot check follow; once `https://www.<domain>` serves the site's
+   current revision, ReplyPen's live address moves to it.
+3. Set `url:` in `_data/site.yml` to `https://www.<domain>` (branch + merge, or ask the chat). Later kickstart
+   reruns need `--live-url https://www.<domain>`. Undo: `project site domain rm www.<domain>`.
 
 ## Deploy pipeline
 

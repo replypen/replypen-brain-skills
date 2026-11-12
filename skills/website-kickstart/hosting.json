@@ -1,0 +1,9 @@
+{
+  "kampadmin": {
+    "account_name": "ReplyPen Sites - KampAdmin",
+    "account_id": "5a6eb40e4085115aaafd81e76455fb01",
+    "workers_subdomain": "kampadmin-sites",
+    "deploy_token_env": "KA_SITES_DEPLOY_TOKEN",
+    "replypen_project": "kampadmin-support"
+  }
+}

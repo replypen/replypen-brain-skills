@@ -96,7 +96,7 @@ class World:
                 continue
             repo = self.repos[self.redirects.get(run["repo"], run["repo"])]
             armed = ((ks.DEPLOY_SECRET in repo["secrets"] or ks.DEPLOY_SECRET in self.org_secrets)
-                     and (repo["vars"].get(ks.ACCOUNT_VAR) == ACC or bool(self.org_vars.get(ks.ACCOUNT_VAR))))
+                     and bool(repo["vars"].get(ks.ACCOUNT_VAR) or self.org_vars.get(ks.ACCOUNT_VAR)))
             outcome = self.deploy_outcomes.pop(0) if self.deploy_outcomes else "success"
             run |= {"status": "completed", "conclusion": outcome if armed else "failure"}
             if run["conclusion"] == "success":
@@ -359,15 +359,22 @@ class KickstartTest(unittest.TestCase):
 
     KA_ACC = "c" * 32
 
-    def org_setup(self, sitekey="0x4AAAAkampadmin"):
-        self.world.org_admin_reads = False  # a plain org member
-        self.world.org_vars = {ks.ACCOUNT_VAR: self.KA_ACC, ks.SUBDOMAIN_VAR: "kampadmin-sites"} | (
-            {ks.SITEKEY_VAR: sitekey} if sitekey else {})
-        self.world.org_secrets = {ks.DEPLOY_SECRET}
+    KA_TOKEN = "ka-deploy-token-0123456789abcdef"
 
-    def self_service(self, *extra):
+    def org_setup(self, sitekey="0x4AAAAkampadmin"):
+        """GitHub Free: no org secret/variable reaches a private repo; the hosting account comes from
+        hosting.json and the member's own deploy token from their env."""
+        self.world.org_admin_reads = False  # a plain org member
+        self.hosting = {"account_id": self.KA_ACC, "workers_subdomain": "kampadmin-sites",
+                        "deploy_token_env": "KA_SITES_DEPLOY_TOKEN"} | ({"turnstile_sitekey": sitekey} if sitekey else {})
+        patcher = unittest.mock.patch.dict(ks.HOSTING, {"kampadmin": self.hosting}, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def self_service(self, *extra, env=None):
         clone = Path(self.tmp.name, "code", "site-test")
-        return clone, self.kick("kampadmin", "--self-service", "--clone-to", str(clone), *extra, env={})
+        env = {"KA_SITES_DEPLOY_TOKEN": self.KA_TOKEN} if env is None else env
+        return clone, self.kick("kampadmin", "--self-service", "--clone-to", str(clone), *extra, env=env)
 
     def test_self_service_uses_org_settings_and_no_operator_token(self):
         self.org_setup()
@@ -375,10 +382,16 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.names(writes), [
             "POST /repos/replypen/site-template/generate",
-            "cmd git push",  # no App edit, no secret/variable write: the org owner did those once
+            "cmd gh secret set",  # the member's own customer-scoped token, on stdin
+            "cmd gh variable set",
+            "cmd git push",  # no App edit: the org owner selected All repositories once
             "cmd rp repo add",
             "cmd rp dev mirror",
         ])
+        repo = self.world.repos["kampadmin/site-test"]
+        self.assertEqual((repo["secrets"], repo["vars"]), ({ks.DEPLOY_SECRET: self.KA_TOKEN}, {ks.ACCOUNT_VAR: self.KA_ACC}))
+        self.assertNotIn(self.KA_TOKEN, out)
+        self.assertFalse(any(self.KA_TOKEN in " ".join(c) for c in self.world.argv), "token in argv")
         site = self.world.repos["kampadmin/site-test"]["files"]["_data/site.yml"]
         self.assertIn('turnstile_sitekey: "0x4AAAAkampadmin"', site)
         mirror = self.world.rc_repos[0]
@@ -393,13 +406,16 @@ class KickstartTest(unittest.TestCase):
         self.assertIn(f"updated {clone}", out)
         self.assertNotIn("POST /repos/replypen/site-template/generate", self.names(writes))
 
-    def test_self_service_without_org_setup_stops_before_any_deploy(self):
+    def test_self_service_without_token_or_hosting_stops_before_any_deploy(self):
         self.org_setup()
-        self.world.org_secrets = set()
-        _, (code, out, writes) = self.self_service()
+        _, (code, out, writes) = self.self_service(env={})
         self.assertEqual(code, 1)
-        self.assertIn("one-time hosting setup (CLOUDFLARE_API_TOKEN)", out)
+        self.assertIn("KA_SITES_DEPLOY_TOKEN is not set", out)
         self.assertEqual(self.names(writes), ["POST /repos/replypen/site-template/generate"])
+        ks.HOSTING.clear()
+        _, (code, out, _) = self.self_service()
+        self.assertEqual(code, 1)
+        self.assertIn("no ReplyPen hosting account for GitHub org kampadmin", out)
 
     def test_self_service_refuses_a_worker_already_serving_in_the_account(self):
         self.org_setup()
@@ -425,17 +441,18 @@ class KickstartTest(unittest.TestCase):
     def test_self_service_mirror_follows_the_rendered_widget_not_a_changed_org_variable(self):
         self.org_setup()
         self.self_service()
-        self.world.org_vars[ks.SITEKEY_VAR] = "0x4AAAAnewwidget"
+        self.hosting["turnstile_sitekey"] = "0x4AAAAnewwidget"
         _, (code, out, _) = self.self_service()
         self.assertEqual(code, 0, out)
         self.assertEqual(self.world.rc_repos[0]["turnstile_sitekey"], "0x4AAAAkampadmin")
 
-    def test_self_service_org_without_widget_stops_no_unguarded_form(self):
+    def test_self_service_org_without_widget_uses_the_fleet_widget(self):
         self.org_setup(sitekey="")
-        _, (code, out, writes) = self.self_service()
-        self.assertEqual(code, 1)
-        self.assertIn("REPLYPEN_TURNSTILE_SITEKEY", out)
-        self.assertNotIn("cmd git push", self.names(writes))
+        _, (code, out, _) = self.self_service()
+        self.assertEqual(code, 0, out)
+        site = self.world.repos["kampadmin/site-test"]["files"]["_data/site.yml"]
+        self.assertIn(f'turnstile_sitekey: "{ks.FLEET_SITEKEY}"', site)
+        self.assertEqual((self.world.rc_repos[0]["form_challenge"], self.world.rc_repos[0]["turnstile_sitekey"]), ("turnstile", ""))
 
     def test_self_service_teammate_on_another_machine_continues(self):
         self.org_setup()
