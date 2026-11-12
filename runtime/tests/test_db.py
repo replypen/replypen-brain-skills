@@ -1036,3 +1036,30 @@ def test_long_lists_are_capped(masked, monkeypatch, recwarn):
     db.query("select custom_attributes from people")
     (note,) = _notes(recwarn)
     assert "k24" in note and "k25" not in note and "(+5 more)" in note
+
+
+def test_policy_read_never_reenters_itself(monkeypatch):
+    """A nested query during the policy read (timeout diagnostics) must not read the policy again."""
+    monkeypatch.setenv("KA_DSN", "postgresql://ka")
+    monkeypatch.setenv("RC_DB_MASKED_FIELDS_SQL", json.dumps({"KA_DSN": "SELECT * FROM masked_policy"}))
+    db._MASKED_CACHE.clear()
+    reads = []
+
+    def query(sql, params=None, db=None, **kw):
+        reads.append(kw)
+        assert kw.get("_timeout_hint_stats") is False
+        rows = db_mod._masked_rows("KA_DSN", "SELECT * FROM masked_policy")  # re-entry while in progress
+        assert rows is None
+        raise RuntimeError("canceling statement due to statement timeout")
+
+    db_mod = db
+    monkeypatch.setattr(db, "query", query)
+    assert db._masked_rows("KA_DSN", "SELECT * FROM masked_policy") is None
+    assert len(reads) == 1
+    db._MASKED_CACHE.clear()
+
+
+def test_comma_join_and_only_still_name_the_masked_table(masked, recwarn):
+    db.query("select p.id, r.custom_attributes from activities p, ONLY custom_1_records r")
+    (note,) = _notes(recwarn)
+    assert "schrik_van" in note

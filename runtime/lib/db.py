@@ -792,15 +792,18 @@ _MASKED_LIST_CAP = 25  # keys named per table/column; the rest are counted
 
 def _masked_rows(env_name: str, sql: str) -> list | None:
     if env_name not in _MASKED_CACHE:
+        _MASKED_CACHE[env_name] = None  # in-progress guard: a nested query (timeout diagnostics) never re-reads
         try:
-            _MASKED_CACHE[env_name] = query(sql, db=env_name, _masked_notes=False)
+            _MASKED_CACHE[env_name] = query(sql, db=env_name, _masked_notes=False, _timeout_hint_stats=False)
         except Exception:  # noqa: BLE001 - a notice must never break the caller's query
             _MASKED_CACHE[env_name] = None
     return _MASKED_CACHE[env_name]
 
 
-def _masked_field_notes(dsn: str, tables) -> list[str]:
-    """``data-scoping: masked …`` lines for the referenced tables; [] when nothing is masked there."""
+def _masked_field_notes(dsn: str, table: str | None = None, sql_text: str | None = None) -> list[str]:
+    """``data-scoping: masked …`` lines for `table`, or for every listed table named as a word in `sql_text`
+    (a word match, not a FROM parse: comma joins, ONLY, CTE bodies all count; over-matching only adds a
+    note). [] when nothing is masked there."""
     import json
 
     env_name = _env_name_for_dsn(dsn) or ""
@@ -808,19 +811,27 @@ def _masked_field_notes(dsn: str, tables) -> list[str]:
         sql = (json.loads(os.environ.get("RC_DB_MASKED_FIELDS_SQL") or "{}") or {}).get(env_name)
     except (ValueError, TypeError, AttributeError):
         return []
-    wanted = {_norm_table(t) for t in tables if t}
-    if not sql or not wanted:
+    if not sql or not (table or sql_text):
         return []
     rows = _masked_rows(env_name, sql)
     if rows is None:
+        if _MASKED_CACHE.get(("warned", env_name)):
+            return []  # said once this process; repeating it on every query is noise
+        _MASKED_CACHE[("warned", env_name)] = True
         return [
             "data-scoping: this project masks some values per tenant, and the list of masked fields could "
             "not be read: a value missing here may be masked, not empty. Never report it as empty or 'no'."
         ]
+    words = set(re.findall(r"[a-z_][a-z0-9_$]*", (sql_text or "").lower()))
+
+    def wanted(t: str) -> bool:
+        n = _norm_table(t)
+        return n == _norm_table(table) if table else n in words
+
     groups: dict = {}
     for r in rows:
         t = str(r.get("table_name") or "")
-        if _norm_table(t) not in wanted:
+        if not wanted(t):
             continue
         key = str(r.get("key") or "")
         label = r.get("label")
@@ -1373,7 +1384,7 @@ def query(
     timeout_ms = _effective_timeout_ms(timeout_ms)
     dsn = _resolve_dsn(db)
     if _masked_notes and os.environ.get("RC_DB_MASKED_FIELDS_SQL") and not _is_mysql_dsn(dsn):
-        for note in _masked_field_notes(dsn, [t for _, t in _referenced_tables(sql)]):
+        for note in _masked_field_notes(dsn, sql_text=sql):
             warnings.warn(note, stacklevel=2)
     emap = _excluded_columns().get(_env_name_for_dsn(dsn) or "", {})
     sql, dropped = _strip_excluded(sql, emap)
@@ -1692,7 +1703,7 @@ def columns(table: str, schema: str | None = None, db: str | None = None) -> "Co
         )
     _warn_hidden_column_notes(_excluded_map_for_db(db), table=table)
     if os.environ.get("RC_DB_MASKED_FIELDS_SQL") and not _engine_is_mysql(db):
-        for note in _masked_field_notes(_resolve_dsn(db), [table]):
+        for note in _masked_field_notes(_resolve_dsn(db), table=table):
             warnings.warn(note, stacklevel=2)
     return ColumnList(
         Column(r["column_name"], r["data_type"], table=table) for r in rows
