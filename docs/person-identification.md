@@ -64,3 +64,9 @@ them.
   behaviour tests over pins of exact wording; phrase pins freeze yesterday's text.
 - Get a review from a different model family on the diff: it catches a dropped rule faster than a
   fixture run does.
+- Already principle-based? Audit before rewriting: read the traces of the recent drafts and sort
+  them into solid / nobody needed / thin pick / asked who. A sudden drop to zero stops can hide
+  over-answering; on KampAdmin the thin picks were all "which child or booking inside one family".
+- With PII masking, names reach drafts and notes as stable value tokens (`⟦pii:firstname:<hash>⟧`):
+  check a greeting against the token, and a tie-break against the booking id the note links, not
+  against words (a good note names the excluded cousin's booking to say it was left out).
