@@ -87,7 +87,8 @@ the model needs to decide, nothing else:
   ordering or pairing rules, stated once on the action where the choice is made; hard stops; how to read
   the result (what counts as success, what an uncertain result means, what to do next, whether to retry);
   anything the draft must quote.
-- **Move out** to the `script.py` docstring or `actions/<id>/README.md` (still `cat`-able on demand):
+- **Move out** to the `script.py` docstring (still `cat`-able on demand; no `actions/<id>/README.md`:
+  every run's tree lists it and it only restates the manifest, so `brain_hygiene.py` fails it):
   API routes, status codes, token minting, idempotency and cache internals, marker formats the script
   enforces itself, "headless version of …".
 - **Params:** one line each; enum, pattern and format already render, so don't restate them.

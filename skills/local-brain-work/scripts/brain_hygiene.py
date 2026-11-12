@@ -102,6 +102,7 @@ import triage_cases  # noqa: E402
 CONFLICT_RE = re.compile(r"^(<{7}|\|{7}|>{7})(?: |$)")
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")  # replypen internal/projection
 ABS_PATH_RE = re.compile(r"/Users/[A-Za-z0-9._-]+")
+ACTION_README_RE = re.compile(r"^actions/[^/]+/README\.md$", re.I)
 MANIFEST_COPY_RE = re.compile(r"^\s*(display_name|customer_[a-z_]+)\s*:(.*)$")
 DEFAULT_VALUE_RE = re.compile(r"\bdefault:\s*(\"(?:[^\"\\]|\\.)*\"|'(?:[^']|'')*'|[^#,}]*)")
 DEFAULT_TEMPLATED_GLOBS = ["**/*.md"]  # replypen internal/projection DefaultTemplatedGlobs
@@ -716,7 +717,7 @@ def _action_size_notices(text: str, rel: str) -> list[bs.Finding]:
     if (n := size(manifest.get("description"))) > ACTION_DESCRIPTION_NOTICE:
         out.append(bs.Finding("hygiene", f"action-size: description is {n} chars (aim ≤ {ACTION_DESCRIPTION_NOTICE}); "
                               "it rides every model turn, so keep decision text and move internals to "
-                              "script.py or README.md (docs/actions.md)", path=rel, severity="NOTICE"))
+                              "the script.py docstring (docs/actions.md)", path=rel, severity="NOTICE"))
     for p in manifest.get("params") or []:
         if isinstance(p, dict) and (n := size(p.get("description"))) > ACTION_PARAM_DESCRIPTION_NOTICE:
             out.append(bs.Finding("hygiene", f"action-size: param `{p.get('name')}` description is {n} chars "
@@ -866,6 +867,11 @@ def check(root: Path, files: list[str] | None = None, base: str | None = None, *
         for lineno, line in enumerate(text.splitlines(), start=1):
             if m := ABS_PATH_RE.search(line):
                 add("abs-path", f"absolute laptop path {m.group(0)!r}", rel, lineno)
+        if ACTION_README_RE.match(rel):
+            add("action-readme", "an action README sits in every run's tree but only restates the "
+                                 "manifest (the action tool renders it every turn); move internals to the "
+                                 "script.py docstring, run guidance to a described PLAYBOOK.md, then delete it",
+                rel)
         if rel.endswith(".md"):
             for lineno, line in enumerate(bs.code_free_lines(text), start=1):
                 if m := TOOL_MARKUP_RE.search(line):

@@ -91,6 +91,20 @@ def test_each_failure_is_rejected(tmp_path: Path, rule: str) -> None:
     assert rule in rules(root)
 
 
+def test_action_readme_fails_unless_run_hidden(tmp_path: Path) -> None:
+    root = make_brain(tmp_path, {
+        "actions/refund/manifest.yaml": "id: refund\ndescription: Refund.\n",
+        "actions/refund/README.md": "# refund\n",
+        "actions/refund/PLAYBOOK.md": "---\ndescription: d\n---\nrules\n",
+        "actions/README.md": "# registry\n",
+    })
+    assert [f.path for f in brain_hygiene.check(root) if f.message.startswith("action-readme")] == \
+        ["actions/refund/README.md"]
+    (root / ".replypenignore").write_text("actions/*/README.md\n")
+    git(root, "add", "-A")
+    assert "action-readme" not in rules(root)
+
+
 def test_action_size_notices_without_blocking(tmp_path: Path) -> None:
     pytest.importorskip("yaml")
     manifest = (f"id: refund\ndescription: >-\n  {'word ' * 200}\nparams:\n  - name: invoice\n"
