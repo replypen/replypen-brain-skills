@@ -5,5 +5,12 @@
     "workers_subdomain": "kampadmin-sites",
     "deploy_token_env": "KA_SITES_DEPLOY_TOKEN",
     "replypen_project": "kampadmin-support"
+  },
+  "dentai-org": {
+    "account_name": "ReplyPen Sites - DentAI",
+    "account_id": "e2f2851cfdbb9b61bc20ff891c012970",
+    "workers_subdomain": "dentai-sites",
+    "deploy_token_env": "DA_SITES_DEPLOY_TOKEN",
+    "replypen_project": "dentai"
   }
 }
