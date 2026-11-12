@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from types import SimpleNamespace
 
@@ -904,3 +905,134 @@ def test_cli_list_shows_hidden_tables(scoped_env, capsys):
     out = capsys.readouterr().out
     assert "APP_DSN" in out
     assert "hidden for this requester (app): form_fields" in out
+
+# --- RC_DB_MASKED_FIELDS_SQL: per-tenant masked values are named, never read as empty -----------------
+
+_ROWS = [
+    {"table_name": "custom_1_records", "column_name": "custom_attributes", "key": "schrik_van", "label": "Zorgen over"},
+    {"table_name": "people", "column_name": "custom_attributes", "key": "allergie", "label": "Allergieën"},
+]
+
+
+class _MaskedCursor:
+    description = None
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql, params=None):
+        self.conn.executed.append(sql)
+
+    def fetchall(self):
+        return []
+
+
+class _MaskedConn:
+    read_only = False
+    info = SimpleNamespace(server_version=160004)
+
+    def __init__(self):
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def cursor(self):
+        return _MaskedCursor(self)
+
+
+@pytest.fixture
+def masked(monkeypatch):
+    conn = _MaskedConn()
+    monkeypatch.setitem(sys.modules, "psycopg", SimpleNamespace(connect=lambda *a, **k: conn))
+    monkeypatch.delenv("PG_DSN", raising=False)
+    monkeypatch.setenv("KA_DSN", "postgresql://ka")
+    monkeypatch.setenv("RC_DB_MASKED_FIELDS_SQL", json.dumps({"KA_DSN": "SELECT * FROM masked_policy"}))
+    db._MASKED_CACHE.clear()
+    calls = []
+
+    def rows(env_name, sql):
+        calls.append((env_name, sql))
+        return _ROWS
+
+    monkeypatch.setattr(db, "_masked_rows", rows)
+    yield SimpleNamespace(conn=conn, calls=calls)
+    db._MASKED_CACHE.clear()
+
+
+def _notes(recwarn):
+    return [str(w.message) for w in recwarn if "data-scoping: masked" in str(w.message) or "masks some" in str(w.message)]
+
+
+def test_query_touching_a_masked_table_names_key_and_label(masked, recwarn):
+    db.query("select id, custom_attributes from custom_1_records order by created_at desc limit 3")
+    (note,) = _notes(recwarn)
+    assert 'custom_1_records.custom_attributes: schrik_van ("Zorgen over")' in note
+    assert "allergie" not in note  # another table's mask is not this query's business
+    assert "Never report them as empty" in note
+
+
+def test_query_on_unmasked_table_is_silent(masked, recwarn):
+    db.query("select id from activities")
+    assert _notes(recwarn) == []
+
+
+def test_columns_names_the_masked_fields(masked, recwarn):
+    db.columns("people")
+    (note,) = _notes(recwarn)
+    assert 'allergie ("Allergieën")' in note
+
+
+def test_no_env_runs_no_policy_query(masked, monkeypatch, recwarn):
+    monkeypatch.delenv("RC_DB_MASKED_FIELDS_SQL")
+    db.query("select custom_attributes from people")
+    assert masked.calls == [] and _notes(recwarn) == []
+
+
+def test_unreadable_policy_says_missing_may_be_masked(monkeypatch, recwarn):
+    conn = _MaskedConn()
+    monkeypatch.setitem(sys.modules, "psycopg", SimpleNamespace(connect=lambda *a, **k: conn))
+    monkeypatch.delenv("PG_DSN", raising=False)
+    monkeypatch.setenv("KA_DSN", "postgresql://ka")
+    monkeypatch.setenv("RC_DB_MASKED_FIELDS_SQL", json.dumps({"KA_DSN": "SELECT * FROM masked_policy"}))
+    db._MASKED_CACHE.clear()
+    real_query = db.query
+
+    def query(sql, params=None, db=None, **kw):
+        if "masked_policy" in sql:
+            raise RuntimeError("relation hidden")
+        return real_query(sql, params, db=db, **kw)
+
+    monkeypatch.setattr(db, "query", query)
+    real_query("select custom_attributes from people")
+    real_query("select custom_attributes from people")  # cached failure: no second policy attempt
+    notes = _notes(recwarn)
+    assert notes and "may be masked, not empty" in notes[0]
+    db._MASKED_CACHE.clear()
+
+
+def test_policy_rows_are_read_once_per_process(monkeypatch):
+    seen = []
+    monkeypatch.setattr(db, "query", lambda sql, db=None, **kw: seen.append(sql) or _ROWS)
+    db._MASKED_CACHE.clear()
+    assert db._masked_rows("KA_DSN", "SELECT 1") == _ROWS
+    assert db._masked_rows("KA_DSN", "SELECT 1") == _ROWS
+    assert seen == ["SELECT 1"]
+    db._MASKED_CACHE.clear()
+
+
+def test_long_lists_are_capped(masked, monkeypatch, recwarn):
+    many = [{"table_name": "people", "column_name": "custom_attributes", "key": f"k{i:02}", "label": None} for i in range(30)]
+    monkeypatch.setattr(db, "_masked_rows", lambda *a: many)
+    db.query("select custom_attributes from people")
+    (note,) = _notes(recwarn)
+    assert "k24" in note and "k25" not in note and "(+5 more)" in note

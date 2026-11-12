@@ -25,6 +25,12 @@ subclass carrying ``.table``/``.db``) instead of a bare ``UndefinedTable``, so a
 the permission boundary; a name in neither list is reported as genuinely absent. As with every other
 host-injected map this is best-effort — absent or malformed metadata changes nothing.
 
+Masked VALUES (a per-tenant, change-any-time mask, e.g. a jsonb key a column_expr strips while a live
+flag is on) come from ``RC_DB_MASKED_FIELDS_SQL`` (JSON: DSN env name → one SELECT over this run's own
+views returning ``table_name, column_name, key, label``). `columns` and every `query` touching a listed
+table print one ``data-scoping: masked …`` warning naming them: a masked value is unknown, never empty.
+The list is read once per process, so a flag flipped mid-run shows from the next python invocation.
+
 Array columns hydrate to real Python lists (``enum[]`` included — see `query`), so
 ``row["roles"]`` is a ``list``, never the raw ``"{parent,child}"`` literal.
 
@@ -780,6 +786,59 @@ def _warn_hidden_column_notes(emap: dict, table: str | None = None, pattern: str
         warnings.warn(note, stacklevel=2)
 
 
+_MASKED_CACHE: dict = {}  # DSN env name → rows of its masked_fields_sql, or None when the read failed
+_MASKED_LIST_CAP = 25  # keys named per table/column; the rest are counted
+
+
+def _masked_rows(env_name: str, sql: str) -> list | None:
+    if env_name not in _MASKED_CACHE:
+        try:
+            _MASKED_CACHE[env_name] = query(sql, db=env_name, _masked_notes=False)
+        except Exception:  # noqa: BLE001 - a notice must never break the caller's query
+            _MASKED_CACHE[env_name] = None
+    return _MASKED_CACHE[env_name]
+
+
+def _masked_field_notes(dsn: str, tables) -> list[str]:
+    """``data-scoping: masked …`` lines for the referenced tables; [] when nothing is masked there."""
+    import json
+
+    env_name = _env_name_for_dsn(dsn) or ""
+    try:
+        sql = (json.loads(os.environ.get("RC_DB_MASKED_FIELDS_SQL") or "{}") or {}).get(env_name)
+    except (ValueError, TypeError, AttributeError):
+        return []
+    wanted = {_norm_table(t) for t in tables if t}
+    if not sql or not wanted:
+        return []
+    rows = _masked_rows(env_name, sql)
+    if rows is None:
+        return [
+            "data-scoping: this project masks some values per tenant, and the list of masked fields could "
+            "not be read: a value missing here may be masked, not empty. Never report it as empty or 'no'."
+        ]
+    groups: dict = {}
+    for r in rows:
+        t = str(r.get("table_name") or "")
+        if _norm_table(t) not in wanted:
+            continue
+        key = str(r.get("key") or "")
+        label = r.get("label")
+        item = f'{key} ("{label}")' if label and label != key else key
+        groups.setdefault(f"{t}.{r.get('column_name') or '?'}", []).append(item)
+    notes = []
+    for target, items in sorted(groups.items()):
+        items = sorted(set(items))
+        shown = ", ".join(items[:_MASKED_LIST_CAP])
+        more = f" (+{len(items) - _MASKED_LIST_CAP} more)" if len(items) > _MASKED_LIST_CAP else ""
+        notes.append(
+            f"data-scoping: masked for this run in {target}: {shown}{more}. Their value AND whether they are "
+            "filled in are unknown to you (removed or NULLed by the project's policy). Never report them as "
+            "empty, missing, 0 or 'no': say you cannot see them."
+        )
+    return notes
+
+
 def _is_hidden(emap: dict, table: str, col: str) -> bool:
     """Does the scope_manifest hide ``col`` on ``table``? True iff it's in the table's exclude list,
     or (whitelist mode) NOT in the table's include list. The whitelist case is why we can't enumerate
@@ -1275,6 +1334,7 @@ def query(
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
     *,
     _timeout_hint_stats: bool = True,
+    _masked_notes: bool = True,
 ) -> list[dict]:
     """Run a read-only SELECT and return rows as a list of dicts.
 
@@ -1305,10 +1365,16 @@ def query(
     that column is dropped, the trimmed query runs, and a warning names what was dropped — so one extra
     field doesn't fail the whole query. A column that ISN'T manifest-hidden (a typo) is left in and
     raises with a scoping-aware hint (`_undefined_hint`) rather than being silently swallowed.
+
+    Masked values: a query touching a table with per-tenant masked fields (``RC_DB_MASKED_FIELDS_SQL``)
+    warns once with their names, before it runs, so an absent key never reads as "not filled in".
     """
     _reject_multi_statement(sql)
     timeout_ms = _effective_timeout_ms(timeout_ms)
     dsn = _resolve_dsn(db)
+    if _masked_notes and os.environ.get("RC_DB_MASKED_FIELDS_SQL") and not _is_mysql_dsn(dsn):
+        for note in _masked_field_notes(dsn, [t for _, t in _referenced_tables(sql)]):
+            warnings.warn(note, stacklevel=2)
     emap = _excluded_columns().get(_env_name_for_dsn(dsn) or "", {})
     sql, dropped = _strip_excluded(sql, emap)
     if dropped:
@@ -1625,6 +1691,9 @@ def columns(table: str, schema: str | None = None, db: str | None = None) -> "Co
             db=db,
         )
     _warn_hidden_column_notes(_excluded_map_for_db(db), table=table)
+    if os.environ.get("RC_DB_MASKED_FIELDS_SQL") and not _engine_is_mysql(db):
+        for note in _masked_field_notes(_resolve_dsn(db), [table]):
+            warnings.warn(note, stacklevel=2)
     return ColumnList(
         Column(r["column_name"], r["data_type"], table=table) for r in rows
     )
