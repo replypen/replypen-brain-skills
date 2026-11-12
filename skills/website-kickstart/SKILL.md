@@ -1,7 +1,11 @@
 ---
 name: website-kickstart
-description: Provision a new chat-editable public website for a tenant in one deterministic command — GitHub repo from replypen/site-template, ReplyPen App access, GitHub Actions deploy to a Cloudflare Worker (production + branch previews), ReplyPen role=website mirror, Browser Rendering screenshots. Also adopts an existing site repo (--adopt) and tears down a throwaway (--teardown). Use for "maak een website voor deze praktijk", "new practice site", moving a site repo onto the standard deploy.
+description: Provision a new chat-editable public website for a tenant in one deterministic command — GitHub repo from replypen/site-template, ReplyPen App access, GitHub Actions deploy to a Cloudflare Worker (production + branch previews), ReplyPen role=website mirror, Browser Rendering screenshots. Also adopts an existing site repo (--adopt) and tears down a throwaway (--teardown). Customer team members (e.g. KampAdmin's Tobias/Astrid) run it themselves with --self-service on their own gh + rp logins, then move a site to the customer's domain. Use for "maak een website voor deze praktijk/dit kamp", "new tenant site", "zet de website op het eigen domein", moving a site repo onto the standard deploy.
 ---
+
+> [!IMPORTANT]
+> **Not the operator?** You are a customer team member (KampAdmin, …) with your own `gh` and `rp` logins:
+> use [§ Self-service](#self-service-customer-team-members-own-logins). Everything below it is the operator path.
 
 # website-kickstart — zero-click site provisioning
 
@@ -11,7 +15,8 @@ rerun after a failure continues where it stopped.
 
 **North star: no site goes live with an unguarded contact form.** Every form is bot-checked by default
 (Cloudflare Turnstile, one fleet widget, verified by ReplyPen before any mail goes out); the only human step
-is adding a custom domain to the widget. Contract and limits: replypen `.agents/skills/features/website-forms.md`. Operator laptop only (Cloudflare + GitHub admin creds).
+is adding a custom domain to the widget. Contract and limits: replypen `.agents/skills/features/website-forms.md`. The command below is the
+operator path (Cloudflare + GitHub admin creds, shared "Rootcause Sites" account).
 
 ```bash
 KS=~/code/replypen/replypen-brain-skills/skills/website-kickstart/scripts/kickstart_site.py
@@ -27,6 +32,76 @@ tenant-less mailbox. Never invent a tenant just to host a site.
 Repo + Worker = `site-<slug>`; live `https://site-<slug>.rootcause-sites.workers.dev`, previews
 `https://<branch>-site-<slug>.rootcause-sites.workers.dev`. Output: `✓/✗ step — detail` per step, then a
 summary (repo, URLs, deploy run, screenshots in `--out`, default `~/Downloads`) and a chat sentence to try. ~3 min.
+
+## Self-service (customer team members, own logins)
+
+**Intent:** a customer's own people provision, build and publish their tenants' sites, and later move one
+to the tenant's domain, with no ReplyPen operator in the loop. The boundary is the customer's own
+**Cloudflare account** (Workers tokens are account-wide, so a separate account is what keeps one customer
+from touching another's sites) and its own **GitHub org**. Within one customer, all its tenant sites share
+that boundary; that matches its team already being admin over all its tenants in ReplyPen.
+
+**Who can run it:** a member of the GitHub org (members may create repos; the creator becomes repo admin),
+read access to `replypen/site-template`, and ReplyPen project admin on the tenant's project
+(`rp --project <p> project member ls`: `admin: true`). No Cloudflare or operator token on the laptop.
+
+```bash
+git -C ~/code/replypen/replypen-brain-skills pull --no-rebase -q || gh repo clone replypen/replypen-brain-skills ~/code/replypen/replypen-brain-skills
+KS=~/code/replypen/replypen-brain-skills/skills/website-kickstart/scripts/kickstart_site.py
+uv run -q $KS <org> <slug> --self-service --project <rp project> --tenant <rp tenant> --name "<Naam op de site>"
+```
+
+It creates `<org>/site-<slug>` from the template, reads the org's hosting settings through it, fills the
+placeholders (workers.dev URL, the org's widget sitekey), deploys main, registers the tenant's `role=website`
+mirror (+ `turnstile_sitekey`), proves it with an exact-sha mirror refresh and clones it to
+`~/code/<org>/site-<slug>` (`--clone-to` overrides). Rerunnable. After that the site repo's own `AGENTS.md`
+and vendored `website-dev` skill drive build, look, preview and publish (branch → preview URL in the deploy
+log → merge to `main` after the site owner's OK = live). Stops with the exact owner instruction when:
+
+| Message | Fix (once per org, by an owner) |
+|---|---|
+| `lacks the one-time hosting setup (…)` | [§ One-time org setup](#one-time-org-setup-owners-once-per-customer) |
+| mirror refresh `ReplyPen's GitHub App cannot read <org>/site-…` | org owner: App `replypen` → All repositories (or add the repo) at the printed URL, rerun |
+| `already serves a site, so Worker … is taken` | pick another slug |
+| `Not Found` on `site-template/generate` | ask ReplyPen for read access on `replypen/site-template` |
+
+### One-time org setup (owners, once per customer)
+
+1. **Cloudflare** (someone of the customer, own login): create account "<Customer> Sites"; Workers & Pages →
+   claim the `workers.dev` subdomain; invite the team as members (Administrator, or Workers + DNS + Turnstile).
+   Create an **account API token**: Workers Scripts Edit + Account Settings Read, nothing else. Create a
+   Turnstile widget "<Customer> website forms" (managed) with hostname `<subdomain>.workers.dev`.
+2. **GitHub org** (owner): Actions **org secret** `CLOUDFLARE_API_TOKEN` = that token, and **org variables**
+   `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, `REPLYPEN_TURNSTILE_SITEKEY` (the widget's public
+   sitekey), all with repository access "Private repositories". ReplyPen App installation → **All
+   repositories** (or add each site repo). Team members who must create sites are org **members**, not
+   outside collaborators.
+3. **ReplyPen** (operator, once): the widget's secret into the box env `TURNSTILE_WIDGET_SECRETS`
+   (`{"<sitekey>":"<secret>"}`, replypen devops; promote), and read on `replypen/site-template` for the
+   team's GitHub handles. Optional: the account's token in `CF_SITE_LOGS_TOKENS` (chat reads the site's 404s).
+
+Without step 3's secret a site whose mirror names that sitekey fails closed: its form says "try again
+later". Without the widget variable the run stops: no site goes live with an unguarded form. A teammate (or
+your other laptop) can rerun the same command on a site someone else started; it continues from there.
+
+### Moving a site to the tenant's own domain (after the tenant agrees)
+
+All in the customer's Cloudflare account; ReplyPen is not needed. Read the project's own runbook first when
+it has one (DentAI: `practice-websites`), and keep its cutover-preflight rule: export the old zone, copy
+every mail record (MX/SPF/DKIM/DMARC, verification TXT), keep a rollback.
+1. Add the domain as a zone in the customer's account (Cloudflare imports existing records: compare them
+   with the old DNS host, mail records 1:1). Cloudflare shows two nameservers.
+2. Widget first: `TURNSTILE_ACCOUNT=<account> TURNSTILE_SITEKEY=<org sitekey> scripts/turnstile_domain.sh <apex>`
+   (or dashboard → Turnstile → widget → Hostnames). Skip it and the form cannot be sent on the new domain.
+3. The tenant (or whoever holds the registrar login) switches the domain's nameservers to those two. Wait
+   until the zone is Active.
+4. Worker → Settings → Domains & Routes: add `www.<domain>` and `<domain>` as Custom Domains; one zone
+   Single Redirect for the non-canonical host (301, path + query kept).
+5. In the site repo: `url:` in `_data/site.yml` = `https://www.<domain>`, via branch + merge. Then
+   `rp --project <p> --tenant <t> project repo set site live_url=https://www.<domain>`; later kickstart reruns
+   need `--live-url https://www.<domain>`.
+6. Verify: `curl -s https://www.<domain>/replypen-revision.json` names main's head sha; a test form post
+   arrives in the tenant's inbox; mail still flows.
 
 ## Deploy pipeline
 

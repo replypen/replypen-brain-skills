@@ -55,6 +55,8 @@ class World:
         self.deploy_outcomes = []
         self.push_delay = self.dispatch_delay = 0
         self.rc_repos = []
+        self.org_vars, self.org_secrets = {}, set()  # org-level Actions settings shared with every repo
+        self.org_admin_reads = True  # False: a plain org member (403 on the org's installations)
         self.redirects = {}  # old full_name -> new (GitHub keeps answering renamed repos)
         self.fail_once = set()  # (method, path prefix) answered 503 once
         self.writes = []
@@ -93,7 +95,8 @@ class World:
                 run |= {"ticks": run["ticks"] - 1, "status": "in_progress"}
                 continue
             repo = self.repos[self.redirects.get(run["repo"], run["repo"])]
-            armed = ks.DEPLOY_SECRET in repo["secrets"] and repo["vars"].get(ks.ACCOUNT_VAR) == ACC
+            armed = ((ks.DEPLOY_SECRET in repo["secrets"] or ks.DEPLOY_SECRET in self.org_secrets)
+                     and (repo["vars"].get(ks.ACCOUNT_VAR) == ACC or bool(self.org_vars.get(ks.ACCOUNT_VAR))))
             outcome = self.deploy_outcomes.pop(0) if self.deploy_outcomes else "success"
             run |= {"status": "completed", "conclusion": outcome if armed else "failure"}
             if run["conclusion"] == "success":
@@ -194,9 +197,17 @@ class World:
                 return js({}, 202)
             self.advance_runs()
             return js({"head_sha": run["sha"], "event": run["event"]} | check(run))
+        if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/actions/(organization-)?(variables|secrets)", path):
+            repo, org = self.repos[m.group(1)], bool(m.group(2))
+            if m.group(3) == "variables":
+                vs = self.org_vars if org else repo["vars"]
+                return js({"variables": [{"name": k, "value": v} for k, v in vs.items()]})
+            return js({"secrets": [{"name": n} for n in (self.org_secrets if org else repo["secrets"])]})
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/actions/secrets/(\w+)", path):
             secrets = self.repos[m.group(1)]["secrets"]
             return (204, b"") if secrets.pop(m.group(2), None) else js({"message": "Not Found"}, 404)
+        if re.fullmatch(r"/orgs/[^/]+/installations", path) and not self.org_admin_reads:
+            return js({"message": "You must be an organization owner"}, 403)
         if re.fullmatch(r"/orgs/[^/]+/installations", path):
             return js({"installations": [
                 {"id": 99, "app_slug": "other-app", "app_id": 1, "repository_selection": "all"},
@@ -239,9 +250,12 @@ class World:
                 (target / rel).parent.mkdir(parents=True, exist_ok=True)
                 (target / rel).write_text(text)
             target.joinpath(".origin").write_text(cmd[3])
+            target.joinpath(".git").mkdir(exist_ok=True)
             return ""
         if cmd[0] == "git":
             root = Path(cmd[2])
+            if cmd[3:5] == ["remote", "get-url"]:
+                return f"https://github.com/{root.joinpath('.origin').read_text()}.git\n"
             if "push" in cmd:
                 name = root.joinpath(".origin").read_text()
                 repo = self.repos[name]
@@ -340,6 +354,104 @@ class KickstartTest(unittest.TestCase):
         self.assertIn(f"/replypen-revision.json = {repo['sha'][:8]}", out)
         self.assertIn("deploy run  https://github.com/dentai-org/site-test/actions/runs/", out)
         self.assertIn("Pas op de website", out)
+
+    # ---- self-service: a colleague's own gh + rp logins, no operator token on the machine ----
+
+    KA_ACC = "c" * 32
+
+    def org_setup(self, sitekey="0x4AAAAkampadmin"):
+        self.world.org_admin_reads = False  # a plain org member
+        self.world.org_vars = {ks.ACCOUNT_VAR: self.KA_ACC, ks.SUBDOMAIN_VAR: "kampadmin-sites"} | (
+            {ks.SITEKEY_VAR: sitekey} if sitekey else {})
+        self.world.org_secrets = {ks.DEPLOY_SECRET}
+
+    def self_service(self, *extra):
+        clone = Path(self.tmp.name, "code", "site-test")
+        return clone, self.kick("kampadmin", "--self-service", "--clone-to", str(clone), *extra, env={})
+
+    def test_self_service_uses_org_settings_and_no_operator_token(self):
+        self.org_setup()
+        clone, (code, out, writes) = self.self_service()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.names(writes), [
+            "POST /repos/replypen/site-template/generate",
+            "cmd git push",  # no App edit, no secret/variable write: the org owner did those once
+            "cmd rp repo add",
+            "cmd rp dev mirror",
+        ])
+        site = self.world.repos["kampadmin/site-test"]["files"]["_data/site.yml"]
+        self.assertIn('turnstile_sitekey: "0x4AAAAkampadmin"', site)
+        mirror = self.world.rc_repos[0]
+        self.assertEqual(mirror["live_url"], "https://site-test.kampadmin-sites.workers.dev")
+        self.assertEqual(mirror["preview_url_template"], "https://{branch}-site-test.kampadmin-sites.workers.dev")
+        self.assertEqual((mirror["form_challenge"], mirror["turnstile_sitekey"]), ("turnstile", "0x4AAAAkampadmin"))
+        self.assertTrue(clone.joinpath("wrangler.jsonc").exists())
+        self.assertIn("skipped (no Browser Rendering token", out)
+        self.assertTrue(Path(self.tmp.name, "state", f"{self.KA_ACC}-site-test.json").exists())
+        _, (code, out, writes) = self.self_service()  # rerun: done steps stay done, checkout fast-forwarded
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"updated {clone}", out)
+        self.assertNotIn("POST /repos/replypen/site-template/generate", self.names(writes))
+
+    def test_self_service_without_org_setup_stops_before_any_deploy(self):
+        self.org_setup()
+        self.world.org_secrets = set()
+        _, (code, out, writes) = self.self_service()
+        self.assertEqual(code, 1)
+        self.assertIn("one-time hosting setup (CLOUDFLARE_API_TOKEN)", out)
+        self.assertEqual(self.names(writes), ["POST /repos/replypen/site-template/generate"])
+
+    def test_self_service_refuses_a_worker_already_serving_in_the_account(self):
+        self.org_setup()
+        self.world.scripts["site-test"] = "tag"
+        self.world.live["site-test"] = ("kampadmin/site-other", "a" * 40)
+        self.world.repos["kampadmin/site-other"] = {"files": dict(TEMPLATE_FILES)}
+        _, (code, out, writes) = self.self_service()
+        self.assertEqual(code, 1)
+        self.assertIn("already serves a site", out)
+        self.assertNotIn("cmd git push", self.names(writes))
+
+    def test_self_service_rerun_after_a_refused_worker_still_refuses(self):
+        self.org_setup()
+        self.world.scripts["site-test"] = "tag"
+        self.world.live["site-test"] = ("kampadmin/site-other", "a" * 40)
+        self.world.repos["kampadmin/site-other"] = {"files": dict(TEMPLATE_FILES)}
+        self.self_service()
+        _, (code, out, writes) = self.self_service()  # the repo exists now, placeholders still unfilled
+        self.assertEqual(code, 1)
+        self.assertIn("already serves a site", out)
+        self.assertNotIn("cmd git push", self.names(writes))
+
+    def test_self_service_mirror_follows_the_rendered_widget_not_a_changed_org_variable(self):
+        self.org_setup()
+        self.self_service()
+        self.world.org_vars[ks.SITEKEY_VAR] = "0x4AAAAnewwidget"
+        _, (code, out, _) = self.self_service()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.world.rc_repos[0]["turnstile_sitekey"], "0x4AAAAkampadmin")
+
+    def test_self_service_org_without_widget_stops_no_unguarded_form(self):
+        self.org_setup(sitekey="")
+        _, (code, out, writes) = self.self_service()
+        self.assertEqual(code, 1)
+        self.assertIn("REPLYPEN_TURNSTILE_SITEKEY", out)
+        self.assertNotIn("cmd git push", self.names(writes))
+
+    def test_self_service_teammate_on_another_machine_continues(self):
+        self.org_setup()
+        self.self_service()
+        for f in Path(self.tmp.name, "state").iterdir():  # the other laptop has no record
+            f.unlink()
+        clone = Path(self.tmp.name, "astrid", "site-test")
+        code, out, writes = self.kick("kampadmin", "--self-service", "--clone-to", str(clone), env={})
+        self.assertEqual(code, 0, out)
+        self.assertIn("filled by a teammate", out)
+        self.assertNotIn("cmd git push", self.names(writes))
+        self.assertTrue(clone.joinpath("wrangler.jsonc").exists())
+        code, out, writes = self.kick("kampadmin", "--self-service", "--clone-to", str(clone), env={}, tenant="other")
+        self.assertEqual(code, 1)
+        self.assertIn("filled for another scope", out)
+        self.assertNotIn("cmd rp repo add", self.names(writes))
 
     def test_push_run_without_secret_is_replaced_by_a_dispatched_run(self):
         self.world.deploy_outcomes = ["failure"]  # the push run lost the race with the secret

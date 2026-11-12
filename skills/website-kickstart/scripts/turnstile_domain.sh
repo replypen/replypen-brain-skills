@@ -4,9 +4,11 @@
 # host is already covered. Uses wrangler's OAuth login (scope challenge-widgets.write; `wrangler login`).
 #   turnstile_domain.sh                 # list the widget's hostnames
 #   turnstile_domain.sh dekies.be       # add an apex (covers www. and every other subdomain)
+# A customer's own widget (self-service, its own Cloudflare account; your wrangler login must be a member):
+#   TURNSTILE_ACCOUNT=<account id> TURNSTILE_SITEKEY=<org widget sitekey> turnstile_domain.sh kamp-x.be
 set -euo pipefail
-ACCOUNT=60c5feed78b351b48868d3a691184c4b # Cloudflare "Rootcause Sites"
-SITEKEY=0x4AAAAAAFlC2YxmVg2JbUFF         # "ReplyPen website forms"; same value as site-template _data/site.yml
+ACCOUNT=${TURNSTILE_ACCOUNT:-60c5feed78b351b48868d3a691184c4b} # default: Cloudflare "Rootcause Sites"
+SITEKEY=${TURNSTILE_SITEKEY:-0x4AAAAAAFlC2YxmVg2JbUFF}         # default: fleet "ReplyPen website forms" (site-template _data/site.yml)
 WR=(env CLOUDFLARE_ACCOUNT_ID="$ACCOUNT" pnpm dlx wrangler@4 turnstile widget)
 
 # The widget JSON carries the secret: keep it in this pipe, print only hostnames.

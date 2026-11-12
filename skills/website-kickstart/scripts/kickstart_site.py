@@ -59,6 +59,9 @@ WORKFLOW = ".github/workflows/deploy.yml"
 DEPLOY_CHECK = "Website deploy"  # the workflow's deploy job; ReplyPen waits for the same check-run
 REVISION_PATH = "/replypen-revision.json"  # {"revision": "<sha>"}, written by the deploy job
 DEPLOY_SECRET, ACCOUNT_VAR = "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"
+# Self-service only: org-level Actions variables an org owner sets once (see SKILL.md).
+SUBDOMAIN_VAR, SITEKEY_VAR = "CLOUDFLARE_WORKERS_SUBDOMAIN", "REPLYPEN_TURNSTILE_SITEKEY"
+FLEET_SITEKEY = "0x4AAAAAAFlC2YxmVg2JbUFF"  # "ReplyPen website forms", as site-template ships it
 POLL_SECONDS = 10
 DEPLOY_POLLS = 72  # 12 min: build + deploy jobs, plus queueing behind a push-triggered run
 LIVE_POLLS = 12  # 2 min
@@ -134,16 +137,26 @@ class Kickstart:
         self.repo_name = f"site-{args.slug}"
         self.full_name = f"{args.org}/{self.repo_name}"
         self.worker = args.worker_name or self.repo_name
-        self.workers_dev = f"https://{self.worker}.{WORKERS_SUBDOMAIN}.workers.dev"
-        self.live_url = args.live_url or self.workers_dev
-        self.preview_template = f"https://{{branch}}-{self.worker}.{WORKERS_SUBDOMAIN}.workers.dev"
+        # Self-service: no operator token on this machine. The org's hosting settings (account, workers.dev
+        # subdomain, Turnstile sitekey, deploy secret) are org-level Actions variables/secret an org owner set
+        # once; they are read from the new repo (load_org_settings) before anything is deployed.
+        self.self_service = bool(getattr(args, "self_service", False))
+        self.sitekey = None  # None ⇒ keep the template's (fleet) sitekey; "" ⇒ no bot check
+        self.set_hosting(args.account, getattr(args, "workers_subdomain", None) or WORKERS_SUBDOMAIN)
         self.out = Path(args.out).expanduser()
         self.s = {}  # facts gathered along the way, printed in the summary
         self._checkout = None
         self.secrets = [t for t in (self.cf_token, self.deploy_token, self.gh_pat, self.br_token) if len(t) >= 8]
+
+    def set_hosting(self, account, subdomain):
+        """Cloudflare account + workers.dev subdomain → URLs and this machine's state record for them."""
+        self.a.account, self.subdomain = account, subdomain
+        self.workers_dev = f"https://{self.worker}.{subdomain}.workers.dev"
+        self.live_url = self.a.live_url or self.workers_dev
+        self.preview_template = f"https://{{branch}}-{self.worker}.{subdomain}.workers.dev"
         # This machine's record: the Worker it claimed for which repo (ownership), the repo it personalised
         # (an existing repo without it needs --adopt) and where a partial teardown parked the repo.
-        self.state_path = Path(args.state_dir).expanduser() / f"{args.account}-{self.worker}.json"
+        self.state_path = Path(self.a.state_dir).expanduser() / f"{account}-{self.worker}.json"
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {}
 
     # ---- plumbing -------------------------------------------------------------------------------
@@ -309,6 +322,10 @@ class Kickstart:
         first deploy would overwrite it, and this machine's record must not name another repo. The record
         is written only once step_repo has proven the repo is ours (created, adopted or our own kickstart),
         so a refused run never leaves a record a later teardown would trust."""
+        if self.self_service:
+            # No Cloudflare token here: the repo name in the org is the claim (GitHub refuses a second one);
+            # the Worker is probed on workers.dev once the org's hosting settings are read (step repo).
+            return f"self-service (your own gh + {_cli()} logins); {self.full_name} is the claim"
         if other := self.record_conflict():
             raise StepFailed(f"this machine created Worker {self.worker} for {other}, not {self.full_name} "
                              f"({self.state_path}); pick another slug/--worker-name, tear {other} down first, "
@@ -356,6 +373,8 @@ class Kickstart:
             raise StepFailed(f"{self.full_name} has no wrangler.jsonc on main")
         if self.file_text(WORKFLOW) is None:
             raise StepFailed(f"{self.full_name} has no {WORKFLOW}: copy it from {TEMPLATE} onto main")
+        if self.self_service:
+            self.load_org_settings()
         if self.a.adopt:
             m = re.search(r'"name"\s*:\s*"([^"]+)"', wrangler)
             if not m or m.group(1) != self.worker:
@@ -370,10 +389,19 @@ class Kickstart:
                 self.plan("clone, fill placeholders, push main")
                 detail = f"{self.full_name} exists, placeholders still to fill"
             else:
+                if self.self_service:  # every first fill, also a rerun after a refused one: it pushes → deploys
+                    self.check_worker_free()
                 self.personalise()
                 detail = f"{'created' if created else 'filled'} {self.full_name} ({self.worker})"
         elif self.state.get("repo_id") == repo["id"]:
+            if self.self_service:
+                self.check_form_scope()
             detail = f"{self.full_name} exists, already personalised"
+        elif self.self_service and f'"{self.worker}"' in wrangler:
+            # A teammate (or this person's other laptop) filled it: in self-service the org is the
+            # ownership boundary, and an already-filled repo has had its Worker check.
+            self.check_form_scope()
+            detail = f"{self.full_name} exists, filled by a teammate; continuing"
         else:
             raise StepFailed(f"{self.full_name} exists and is not a kickstart from this machine; "
                              "pass --adopt to take it over")
@@ -381,6 +409,51 @@ class Kickstart:
         head = self.gh("GET", f"/repos/{self.full_name}/commits/main")
         self.s["head_sha"] = head["sha"] if head else None
         return detail + (f" @ {self.s['head_sha'][:8]}" if self.s["head_sha"] else "")
+
+    def load_org_settings(self):
+        """Self-service: the org owner's one-time hosting setup, read through the new repo (any collaborator
+        may list the org variables/secrets shared with it; repo-level ones win). Missing pieces stop the run
+        with the exact owner instruction, before any deploy."""
+        variables = {}
+        for path in ("actions/organization-variables", "actions/variables"):
+            data = self.gh("GET", f"/repos/{self.full_name}/{path}?per_page=100") or {}
+            variables |= {v["name"]: v.get("value", "") for v in data.get("variables", [])}
+        secrets = set()
+        for path in ("actions/organization-secrets", "actions/secrets"):
+            data = self.gh("GET", f"/repos/{self.full_name}/{path}?per_page=100") or {}
+            secrets |= {s["name"] for s in data.get("secrets", [])}
+        # The widget is required: no site goes live with an unguarded contact form.
+        missing = [n for n in (ACCOUNT_VAR, SUBDOMAIN_VAR, SITEKEY_VAR) if not variables.get(n, "").strip()]
+        missing += [DEPLOY_SECRET] if DEPLOY_SECRET not in secrets else []
+        if missing:
+            raise StepFailed(
+                f"{self.a.org} lacks the one-time hosting setup ({', '.join(missing)}): an owner of {self.a.org} "
+                f"sets the org Actions variables {ACCOUNT_VAR}, {SUBDOMAIN_VAR}, {SITEKEY_VAR} and the org secret "
+                f"{DEPLOY_SECRET} (website-kickstart SKILL.md § One-time org setup), then rerun this command")
+        account, subdomain = variables[ACCOUNT_VAR].strip(), variables[SUBDOMAIN_VAR].strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", account) or not SLUG.fullmatch(subdomain):
+            raise StepFailed(f"org variables look wrong: {ACCOUNT_VAR}={account!r}, {SUBDOMAIN_VAR}={subdomain!r}")
+        self.sitekey = variables[SITEKEY_VAR].strip()
+        self.set_hosting(account, subdomain)
+        self.s["hosting"] = f"account {account}, *.{subdomain}.workers.dev, widget {self.sitekey}"
+
+    def check_form_scope(self):
+        """An already-filled site is only resumed for the scope it was filled for: its form must post to
+        the project/tenant this run registers the mirror on."""
+        want = f"/forms/{self.form_scope}"
+        form = str((yaml.safe_load(self.file_text("_data/site.yml") or "") or {}).get("contact_form_action") or "")
+        if not form.rstrip("/").endswith(want):
+            raise StepFailed(f"{self.full_name} was filled for another scope (form posts to {form or 'nothing'!r}, "
+                             f"not …{want}); rerun with that site's --project/--tenant, or pick another slug")
+
+    def check_worker_free(self):
+        """Self-service, fresh repo: a Worker of that name already serving in the org's account is someone
+        else's site (our first deploy would overwrite it)."""
+        status, body = self.http.request("GET", self.workers_dev + REVISION_PATH)
+        if status == 200 and b'"revision"' in body[:200]:
+            raise StepFailed(f"{self.workers_dev} already serves a site, so Worker {self.worker} is taken in "
+                             f"this account; nothing was deployed. Pick another slug (or --worker-name), and "
+                             f"rename {self.full_name} or ask an org owner to delete it")
 
     def get_repo(self):
         """The repo, or None. A renamed (torn-down) repo still answers on its old name via a redirect;
@@ -426,6 +499,10 @@ class Kickstart:
             text = path.read_text()
             for key, value in values.items():
                 text = text.replace(key, value)
+            if rel == "_data/site.yml":
+                text = text.replace(f".{WORKERS_SUBDOMAIN}.workers.dev", f".{self.subdomain}.workers.dev")
+                if self.sitekey is not None:  # the org's own widget, or "" = no bot check
+                    text = re.sub(r'(?m)^turnstile_sitekey:.*$', f"turnstile_sitekey: {json.dumps(self.sitekey)}", text)
             path.write_text(text)
         try:
             site = yaml.safe_load((root / "_data/site.yml").read_text())
@@ -450,6 +527,11 @@ class Kickstart:
         return next((i for i in data.get("installations", []) if i.get("app_id") == REPLYPEN_APP_ID), False)
 
     def step_github_app(self):
+        if self.self_service:
+            # An org member cannot list or edit the org's App installations; the mirror refresh below is the
+            # proof, and its error names the owner's settings page when the App cannot see the repo.
+            return (f"{REPLYPEN_APP} App access is checked by the mirror refresh (the org owner selects "
+                    "All repositories once, or adds this repo)")
         inst = self.installation()
         if inst is None:
             return f"would add the repo to the {REPLYPEN_APP} App"
@@ -503,13 +585,14 @@ class Kickstart:
         """Arm the workflow's deploy job, then see main deployed: check-run `Website deploy` success on
         the head sha, the live page, and the revision marker naming that sha. The first deploy creates
         the Worker, so there is no separate create step (and no Cloudflare token on this laptop's build)."""
-        if not self.deploy_token and not self.a.dry_run:
-            raise StepFailed("CF_SITES_DEPLOY_TOKEN is not set (mise-env replypen/replypen.env)")
         repo = ["--repo", self.full_name]
-        # The token travels on stdin only: never argv, never a log line.
-        self.act(["gh", "secret", "set", DEPLOY_SECRET, *repo], stdin=self.deploy_token,
-                 shown=f"gh secret set {DEPLOY_SECRET} --repo {self.full_name} < $CF_SITES_DEPLOY_TOKEN")
-        self.act(["gh", "variable", "set", ACCOUNT_VAR, "--body", self.a.account, *repo])
+        if not self.self_service:  # self-service: the org-level secret + variable (load_org_settings)
+            if not self.deploy_token and not self.a.dry_run:
+                raise StepFailed("CF_SITES_DEPLOY_TOKEN is not set (mise-env replypen/replypen.env)")
+            # The token travels on stdin only: never argv, never a log line.
+            self.act(["gh", "secret", "set", DEPLOY_SECRET, *repo], stdin=self.deploy_token,
+                     shown=f"gh secret set {DEPLOY_SECRET} --repo {self.full_name} < $CF_SITES_DEPLOY_TOKEN")
+            self.act(["gh", "variable", "set", ACCOUNT_VAR, "--body", self.a.account, *repo])
         sha = self.s.get("head_sha")
         if self.a.dry_run and not sha:
             self.plan(f"gh workflow run deploy.yml --ref main, wait for that run, "
@@ -612,8 +695,12 @@ class Kickstart:
                 "deploy_check": DEPLOY_CHECK, "revision_path": REVISION_PATH}
         # Bot check on by default: ReplyPen refuses form posts without a verified Turnstile token, but only
         # once the site renders the widget (a filled turnstile_sitekey), else its form would break.
-        if self.has_turnstile_sitekey():
+        if rendered := self.site_sitekey():
             want["form_challenge"] = "turnstile"
+            # The widget the site RENDERS (not today's org variable: a rerun after a widget change must not
+            # point ReplyPen at a secret the live pages don't use). Fleet widget ⇒ field empty.
+            if self.self_service:
+                want["turnstile_sitekey"] = "" if rendered == FLEET_SITEKEY else rendered
         try:
             repos = json.loads(self.run(scope + ["project", "repo", "ls", "-o", "json"]) or "[]")
         except (StepFailed, json.JSONDecodeError) as err:
@@ -639,19 +726,43 @@ class Kickstart:
             self.act(c)
         return f"mirror {name} {verb if not self.a.dry_run else 'would be ' + verb}; refreshed @ {sha[:12]}"
 
-    def has_turnstile_sitekey(self):
-        """Does the site render the bot-check widget? Read from main; a failed read fails the step."""
+    def site_sitekey(self):
+        """The bot-check widget's sitekey the site renders ("" = none). Read from main; a failed read fails
+        the step."""
         if self.a.dry_run and not self.s.get("repo_id"):
-            return True  # plan as the template ships; the repo does not exist yet
+            return self.sitekey or FLEET_SITEKEY  # plan as it will ship; the repo does not exist yet
         text = self.file_text("_data/site.yml")
         if text is None:
-            return False  # not our template (an adopted Astro site…): leave the mirror's form_challenge as it is
+            return ""  # not our template (an adopted Astro site…): leave the mirror's form_challenge as it is
         site = yaml.safe_load(text) or {}
-        return bool(str(site.get("turnstile_sitekey") or "").strip())
+        return str(site.get("turnstile_sitekey") or "").strip()
 
     # ---- 5. screenshots -------------------------------------------------------------------------
 
+    def step_clone(self):
+        """Self-service: leave a working checkout for the colleague's coding agent (its website-dev skill
+        takes over from there). An existing checkout of the same repo is fast-forwarded, never reset."""
+        target = Path(self.a.clone_to or f"~/code/{self.a.org}/{self.repo_name}").expanduser()
+        if self.a.dry_run:
+            return f"would clone {self.full_name} into {target}"
+        if (target / ".git").exists():
+            remote = self.run(["git", "-C", str(target), "remote", "get-url", "origin"]).strip()
+            if not remote.rstrip("/").removesuffix(".git").lower().endswith(self.full_name.lower()):
+                raise StepFailed(f"{target} is a checkout of {remote}, not {self.full_name}; pass --clone-to")
+            self.run(["git", "-C", str(target), "pull", "--ff-only", "--quiet"])
+            verb = "updated"
+        elif target.exists() and any(target.iterdir()):
+            raise StepFailed(f"{target} exists and is not a checkout; pass --clone-to")
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            self.run(["gh", "repo", "clone", self.full_name, str(target), "--", "--quiet"])
+            verb = "cloned"
+        self.s["checkout"] = str(target)
+        return f"{verb} {target}"
+
     def step_screenshots(self):
+        if not self.br_token and not self.a.dry_run and self.self_service:
+            return f"skipped (no Browser Rendering token on this machine): open {self.live_url}"
         paths = []
         for label, (w, h) in VIEWPORTS.items():
             path = self.out / f"{self.a.slug}-{label}.png"
@@ -831,8 +942,9 @@ class Kickstart:
 
     def main(self):
         ok = True
+        steps = self.STEPS + ((("local checkout", "step_clone"),) if self.self_service or self.a.clone_to else ())
         try:
-            for label, method in self.STEPS:
+            for label, method in steps:
                 try:
                     detail = getattr(self, method)()
                 except StepFailed as err:
@@ -856,6 +968,8 @@ class Kickstart:
             ("preview", self.preview_template),
             ("deploy run", s.get("deploy_run", "-")),
             ("screenshots", ", ".join(s.get("screenshots", [])) or "-"),
+            ("hosting", s.get("hosting", "-")),
+            ("checkout", s.get("checkout", "-")),
             ("try in chat", f'"{chat}"'),
             ("or from cli", " ".join(["rp"] + self.rp_scope()[1:] + ["project", "chat", "send", "--lane", "setup", f'"{chat}"'])),
         ]
@@ -890,6 +1004,10 @@ def parse_args(argv=None):
                    help="teardown: proceed without this machine's record of creating the site")
     p.add_argument("--state-dir", default="~/.local/state/website-kickstart",
                    help="kickstart records (Worker ownership, personalised repo, teardown resume point)")
+    p.add_argument("--self-service", action="store_true",
+                   help="run on your own gh + rp logins only (no operator tokens): hosting settings come from the "
+                        "org's Actions variables/secret, the result is cloned to --clone-to")
+    p.add_argument("--clone-to", help="local checkout path (default with --self-service: ~/code/<org>/site-<slug>)")
     p.add_argument("--dry-run", action="store_true", help="read live state, print writes, change nothing")
     p.add_argument("--out", default="~/Downloads", help="where screenshots go")
     args = p.parse_args(argv)
