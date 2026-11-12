@@ -59,7 +59,7 @@ developer path, not an end-user upgrade path — a Go copy earlier on `PATH` sha
    No clone yet, or one too old to have `scripts/kit_update.py`: run the installer of a pinned release
    from inside a brain checkout, or pass the brain path from elsewhere:
    ```bash
-   INSTALL=https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.15.2/install.sh
+   INSTALL=https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.15.3/install.sh
    bash <(curl -fsSL $INSTALL) [~/code/replypen/replypen-brain-<project>]
    bash <(curl -fsSL $INSTALL) --latest-version   # check without installing
    ```
