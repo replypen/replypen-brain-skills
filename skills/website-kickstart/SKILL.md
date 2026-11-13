@@ -44,7 +44,8 @@ Cloudflare login. Repos live in the customer's own GitHub org.
 
 **Who can run it:** a member of the GitHub org (members create repos; the creator is repo admin), read on
 `replypen/site-template`, project admin in ReplyPen (`rp --project <p> project member ls` → `admin: true`),
-and the customer's deploy token in their env (name in `hosting.json`, e.g. `KA_SITES_DEPLOY_TOKEN`).
+and the customer's deploy token: in their env, or saved in the file `hosting.json` names (KampAdmin:
+`~/.config/mise-env/kampadmin/kampadmin-sites.env` with `KA_SITES_DEPLOY_TOKEN=…`, chmod 600; ReplyPen sends it).
 KampAdmin sites always attach to **`kampadmin-support`** tenants (where its admins edit sites in chat).
 
 ```bash

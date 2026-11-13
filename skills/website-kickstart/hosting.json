@@ -4,13 +4,15 @@
     "account_id": "5a6eb40e4085115aaafd81e76455fb01",
     "workers_subdomain": "kampadmin-sites",
     "deploy_token_env": "KA_SITES_DEPLOY_TOKEN",
-    "replypen_project": "kampadmin-support"
+    "replypen_project": "kampadmin-support",
+    "deploy_token_file": "~/.config/mise-env/kampadmin/kampadmin-sites.env"
   },
   "dentai-org": {
     "account_name": "ReplyPen Sites - DentAI",
     "account_id": "e2f2851cfdbb9b61bc20ff891c012970",
     "workers_subdomain": "dentai-sites",
     "deploy_token_env": "DA_SITES_DEPLOY_TOKEN",
-    "replypen_project": "dentai"
+    "replypen_project": "dentai",
+    "deploy_token_file": "~/.config/mise-env/dentai-org/dentai-sites.env"
   }
 }

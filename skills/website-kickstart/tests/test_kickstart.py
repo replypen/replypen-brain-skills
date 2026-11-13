@@ -406,6 +406,16 @@ class KickstartTest(unittest.TestCase):
         self.assertIn(f"updated {clone}", out)
         self.assertNotIn("POST /repos/replypen/site-template/generate", self.names(writes))
 
+    def test_self_service_reads_the_token_from_the_saved_env_file(self):
+        self.org_setup()
+        token_file = Path(self.tmp.name, "kampadmin-sites.env")
+        token_file.write_text(f"# saved from a Send\nKA_SITES_DEPLOY_TOKEN={self.KA_TOKEN}\n")
+        self.hosting["deploy_token_file"] = str(token_file)
+        _, (code, out, _) = self.self_service(env={})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.world.repos["kampadmin/site-test"]["secrets"], {ks.DEPLOY_SECRET: self.KA_TOKEN})
+        self.assertNotIn(self.KA_TOKEN, out)
+
     def test_self_service_without_token_or_hosting_stops_before_any_deploy(self):
         self.org_setup()
         _, (code, out, writes) = self.self_service(env={})

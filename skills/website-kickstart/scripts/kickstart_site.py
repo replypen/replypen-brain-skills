@@ -445,7 +445,7 @@ class Kickstart:
         # A token in the env is (re)set every run, so a rotated token converges on rerun; without one an
         # existing repo secret is reused (a teammate continuing a site needs none).
         env_name = org.get("deploy_token_env", "SITES_DEPLOY_TOKEN")
-        token = self.env.get(env_name, "")
+        token = self.env.get(env_name, "") or self.token_from_file(org.get("deploy_token_file", ""), env_name)
         if len(token) >= 20:
             self.secrets.append(token)
             self.act(["gh", "secret", "set", DEPLOY_SECRET, *repo], stdin=token,
@@ -459,6 +459,19 @@ class Kickstart:
         self.sitekey = variables.get(SITEKEY_VAR, "").strip() or FLEET_SITEKEY
         self.set_hosting(account, subdomain)
         self.s["hosting"] = f"account {account}, *.{subdomain}.workers.dev, widget {self.sitekey}"
+
+    @staticmethod
+    def token_from_file(path, name):
+        """The token from a dotenv file (hosting.json `deploy_token_file`, e.g. the 0600 file a Send was
+        saved into), so a colleague needs no shell/mise setup. Missing file or name ⇒ ""."""
+        p = Path(path).expanduser() if path else None
+        if not p or not p.is_file():
+            return ""
+        for line in p.read_text().splitlines():
+            key, sep, value = line.strip().partition("=")
+            if sep and key.removeprefix("export ").strip() == name:
+                return value.strip().strip('"').strip("'")
+        return ""
 
     def check_form_scope(self):
         """An already-filled site is only resumed for the scope it was filled for: its form must post to
