@@ -170,3 +170,5 @@ repo's deploy secret, and renames the repo to `site-<slug>-teardown-<ts>` and ar
 it prints the delete command). Ownership (record or `--force-orphan`) is proven first (wrong org = refusal,
 nothing changed); a missing repo is an error. Rerun resumes a partial teardown: the renamed repo is found via the record or GitHub's
 redirect, deletes retry and treat 404 as done.
+With `--self-service` it works in the org's hosting account (`hosting.json`) with the member's deploy token, and
+leaves App access alone (the App is on All repositories).

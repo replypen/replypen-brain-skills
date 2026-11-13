@@ -63,6 +63,7 @@ class World:
         self.rp_scopes = []
         self.perms = None  # ReplyPen installation permissions override
         self.token = None  # bearer of the current GitHub request
+        self.cf_calls = []  # (account, bearer) per Cloudflare request
         self.no_classic_pat = False  # the org's policy refuses the classic PAT (403)
         self.no_user_installations = False  # …and /user/installations refuses gh's OAuth token too
         self.argv = []  # every command line, to prove no secret rides in argv
@@ -119,7 +120,10 @@ class World:
             self.token = (headers or {}).get("Authorization", "").removeprefix("Bearer ")
             return self.github(method, path, query, body)
         if u.netloc == "api.cloudflare.com":
-            return self.cloudflare(method, path.removeprefix(f"/client/v4/accounts/{ACC}"), body)
+            acct = re.match(r"^/client/v4/accounts/(\w+)", path)
+            self.cf_calls.append((acct.group(1) if acct else None,
+                                  (headers or {}).get("Authorization", "").removeprefix("Bearer ")))
+            return self.cloudflare(method, short, body)
         worker = u.netloc.split(".")[0]
         if worker not in self.live or worker not in self.scripts:
             return 404, b"not found"
@@ -463,6 +467,18 @@ class KickstartTest(unittest.TestCase):
         site = self.world.repos["kampadmin/site-test"]["files"]["_data/site.yml"]
         self.assertIn(f'turnstile_sitekey: "{ks.FLEET_SITEKEY}"', site)
         self.assertEqual((self.world.rc_repos[0]["form_challenge"], self.world.rc_repos[0]["turnstile_sitekey"]), ("turnstile", ""))
+
+    def test_self_service_teardown_uses_the_org_account_and_deploy_token(self):
+        self.org_setup()
+        _, (code, out, _) = self.self_service()
+        self.assertEqual(code, 0, out)
+        self.world.scripts["site-test"] = "tag"  # the deploy created the Worker in the org's account
+        self.world.cf_calls = []
+        _, (code, out, _) = self.self_service("--teardown", "site-test")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.world.scripts, {})
+        self.assertEqual(set(self.world.cf_calls), {(self.KA_ACC, self.KA_TOKEN)})
+        self.assertNotIn(self.KA_TOKEN, out)
 
     def test_self_service_teammate_on_another_machine_continues(self):
         self.org_setup()

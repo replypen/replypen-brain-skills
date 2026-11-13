@@ -835,6 +835,8 @@ class Kickstart:
             print(f"✗ teardown — pass --teardown {self.worker} to confirm", flush=True)
             return 1
         try:
+            if self.self_service:
+                self.use_org_cloudflare()
             plan = self.teardown_preflight()
         except StepFailed as err:
             self.say("✗", "preflight", f"{err} — nothing was changed")
@@ -861,6 +863,20 @@ class Kickstart:
         if ok and not self.a.dry_run:
             self.state_path.unlink(missing_ok=True)
         return 0 if ok else 1
+
+    def use_org_cloudflare(self):
+        """Self-service teardown: the org's hosting account (hosting.json) and its customer-scoped deploy
+        token, which may delete Workers in that account only, stand in for the operator's token."""
+        org = HOSTING.get(self.a.org, {})
+        if not org.get("account_id") or not org.get("workers_subdomain"):
+            raise StepFailed(f"no ReplyPen hosting account for GitHub org {self.a.org} in hosting.json")
+        env_name = org.get("deploy_token_env", "SITES_DEPLOY_TOKEN")
+        token = self.env.get(env_name, "") or self.token_from_file(org.get("deploy_token_file", ""), env_name)
+        if len(token) < 20:
+            raise StepFailed(f"{env_name} is not set on this machine: teardown needs it to delete the Worker")
+        self.cf_token = token
+        self.secrets.append(token)
+        self.set_hosting(org["account_id"], org["workers_subdomain"])
 
     def teardown_preflight(self):
         exists = self.worker_exists()
@@ -948,7 +964,7 @@ class Kickstart:
 
     def teardown_github(self, repo, parked):
         parts = []
-        inst = self.installation()
+        inst = None if self.self_service else self.installation()  # self-service: App on All repositories
         if inst and inst.get("repository_selection") != "all" and repo["id"] in self.install_repo_ids(inst["id"]):
             self.gh("DELETE", f"/user/installations/{inst['id']}/repositories/{repo['id']}", pat=True)
             parts.append(f"removed from {REPLYPEN_APP}")
