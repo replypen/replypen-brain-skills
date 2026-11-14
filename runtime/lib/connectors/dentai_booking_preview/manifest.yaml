@@ -18,11 +18,14 @@ read_endpoints:
     - /internal/booking/book
     - /internal/booking/refresh-patient
     - /internal/booking/reschedule-link
+    - /internal/booking/series-context
 help_md: |
   Tenant-bound read plane of DentAI's single availability/booking engine: slot search, dry-run
   booking verdicts, and the patient-appointment cache read-through (`refresh-patient`: re-mirror one
   patient of THIS tenant from ClickDoc), and minting a patient's personal reschedule link
-  (`reschedule-link`: DentAI stores a server-bound request, nothing in the PMS changes). The raw token stays in ReplyPen's broker; ordinary runs only
+  (`reschedule-link`: DentAI stores a server-bound request, nothing in the PMS changes), and reading
+  a patient's treatment-series context (`series-context`: masked appointment notes, labels and the
+  practice's series templates; read-only, served only when the tenant switch `treatment_series_enabled` is on). The raw token stays in ReplyPen's broker; ordinary runs only
   see the broker route. The project-brain wrapper is `skills/scheduling/scripts/search_availability.py`.
   DentAI enforces the token scope server-side: this credential can search, dry-run and refresh the
   cache, never mutate PMS appointments.
