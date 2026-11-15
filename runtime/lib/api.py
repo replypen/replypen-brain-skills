@@ -18,6 +18,12 @@ guidance), raise LOUDLY with the failing provider detail on error rather than re
 empty/partial, and take the credential from ``lib.oauth.token`` so it never lands in argv, logs, or
 model context.
 
+App-session connectors (manifest ``session_credential``) are the other write lane: the app embedding a
+ReplyPen chat mints a short-lived token into the session ``credentials``; the host broker holds it and
+forwards PUT/POST/PATCH/DELETE only on the manifest ``write_paths`` (``*`` = one segment, a final
+``**`` = any suffix). The app enforces what each call may do. Use ``app_client(key)`` /
+``app_connected(key)``; the token is never in this container's env.
+
 One exception to read-tier: a manifest's ``write_endpoints`` (verb → path patterns + a ``consent``
 name) lets a BROKERED run mutate those paths, because the host broker enforces the per-resource consent
 on every call (e.g. ``google_drive_share``: the file is shared with ReplyPen's address as Editor). A
@@ -190,6 +196,12 @@ class Manifest:
     # Delegated writes: upper-case verb → path patterns, honoured only on a brokered client.
     write_endpoints: dict[str, tuple[str, ...]] = field(default_factory=dict)
     write_consent: str = ""
+    # App-session connector: the credentials entry the host brokers (never in env), the optional entry
+    # naming its API base (then the broker, not the manifest base_url, resolves relative paths), and the
+    # paths the broker forwards writes on.
+    session_credential: str = ""
+    session_base_url: str = ""
+    write_paths: tuple[str, ...] = ()
 
 
 @dataclass
@@ -372,12 +384,23 @@ class Client:
         idempotency_key: str | None = None,
         idempotency_header: str = "Idempotency-Key",
         endpoint_template: str | None = None,
+        json: Any | None = None,
+        params: dict[str, Any] | None = None,
     ) -> Any:
         """Make one HTTP call (following retries/rate-limits) and return parsed JSON.
 
         ``path`` is joined onto the manifest ``base_url`` (an absolute URL overrides). Raises
-        ``ApiError`` on a non-2xx after exhausting retries — never a silent empty.
+        ``ApiError`` on a non-2xx after exhausting retries — never a silent empty. ``json``/``params``
+        are aliases of ``json_body``/``query``.
         """
+        if json is not None:
+            if json_body is not None:
+                raise TypeError("use only one of json= or json_body=")
+            json_body = json
+        if params is not None:
+            if query is not None:
+                raise TypeError("use only one of params= or query=")
+            query = params
         resp = self._send(
             method,
             path,
@@ -536,6 +559,14 @@ class Client:
             return True
         if verb == "POST" and _matches_any_path(path, self.manifest.allowed_post_paths):
             return True
+        if verb in _STATE_CHANGING_METHODS and _matches_write_path(path, self.manifest.write_paths):
+            if not self.manifest.brokered:
+                raise MethodPolicyError(
+                    f"{verb} {path!r} is an app-session write for integration {self.manifest.key!r}, but the "
+                    "app's session credential is not brokered this run (only chat sessions opened from the "
+                    "app carry it)."
+                )
+            return False
         if self._is_delegated_write(verb, path):
             if not self.manifest.brokered:
                 raise MethodPolicyError(
@@ -821,7 +852,9 @@ class Client:
 
     def _request_url(self, path: str) -> str:
         if self.manifest.brokered:
-            return _broker_url(self.manifest.key, path, base_url=self.manifest.base_url)
+            # A session-supplied base (staging vs prod) is known only to the broker: send the path relative.
+            base = "" if self.manifest.session_base_url else self.manifest.base_url
+            return _broker_url(self.manifest.key, path, base_url=base)
         return _join(self.manifest.base_url, path)
 
     def _audit_url(self, path: str, *, request_url: str) -> str:
@@ -867,11 +900,37 @@ def client(manifest: Manifest, *, token_key: str | None = None, **kw) -> Client:
     ``auth.strategy == "none"`` and brokered connectors skip credential resolution.
     """
     manifest = _manifest_with_runtime_broker_flag(manifest, token_key=token_key)
+    if manifest.session_credential and not manifest.brokered:
+        raise RuntimeError(
+            f"{manifest.key!r} is not connected in this run: only chat sessions opened from the app carry its token"
+        )
     cred = ""
     if not manifest.brokered and manifest.auth.strategy not in ("none", ""):
         cred = oauth.token(token_key or manifest.key)
         manifest, cred = _resolve_host_embedded_credential(manifest, cred)
     return Client(manifest=manifest, credential=cred, **kw)
+
+
+def app_connected(key: str) -> bool:
+    """True when this run carries the app-session route for ``key`` (the app minted a token for it)."""
+    return _key_in_brokered_keys_env(key)
+
+
+def app_client(key: str, **kw) -> Client:
+    """Client for an app-session connector (manifest ``session_credential``), always through the broker.
+
+    Writes are allowed on the manifest ``write_paths``; the broker and the app are the real gates. Raises
+    when ``key`` is not such a connector or this run carries no route for it (check ``app_connected``).
+    """
+    load_manifests()
+    mani = MANIFESTS.get(key)
+    if mani is None or not mani.session_credential:
+        raise ValueError(f"{key!r} is not an app-session connector")
+    if not app_connected(key):
+        raise RuntimeError(
+            f"{key!r} is not connected in this run: only chat sessions opened from the app carry its token"
+        )
+    return Client(manifest=replace(mani, brokered=True), **kw)
 
 
 def _resolve_host_embedded_credential(manifest: Manifest, credential: str) -> tuple[Manifest, str]:
@@ -1055,6 +1114,31 @@ def _matches_any_path(path: str, patterns: tuple[str, ...], *, base_url: str = "
         if any(rx.fullmatch(c) for c in candidates):
             return True
     return False
+
+
+def _matches_write_path(path: str, patterns: tuple[str, ...]) -> bool:
+    """Write-path grammar (mirrors the host broker): per segment a literal, ``*`` = one non-empty
+    segment, a final ``**`` = any suffix including none. Dot segments never match."""
+    if not patterns:
+        return False
+    segs = _segments(_normalized_path(path))
+    if any(s in (".", "..") for s in segs):
+        return False
+    return any(_write_segments_match(_segments(p), segs) for p in patterns)
+
+
+def _segments(path: str) -> list[str]:
+    trimmed = path.strip("/")
+    return trimmed.split("/") if trimmed else []
+
+
+def _write_segments_match(pattern: list[str], path: list[str]) -> bool:
+    for i, p in enumerate(pattern):
+        if p == "**" and i == len(pattern) - 1:
+            return True
+        if i >= len(path) or not path[i] or (p != "*" and p != path[i]):
+            return False
+    return len(path) == len(pattern)
 
 
 def _path_pattern_re(pattern: str) -> re.Pattern:
@@ -1272,6 +1356,13 @@ def _manifest_from_dict(raw: dict) -> Manifest:
     write_consent = str(write_raw.get("consent") or "")
     if write_endpoints and not write_consent:
         raise ValueError("'write_endpoints' needs a 'consent' the host broker enforces")
+    write_paths_raw = raw.get("write_paths") or []
+    if not isinstance(write_paths_raw, list):
+        raise ValueError("'write_paths' must be a list")
+    write_paths = tuple(str(v) for v in write_paths_raw if str(v).strip())
+    session_credential = str(raw.get("session_credential") or "")
+    if write_paths and not session_credential:
+        raise ValueError("'write_paths' needs a 'session_credential' (app-session connectors only)")
 
     return Manifest(
         key=key,
@@ -1284,6 +1375,9 @@ def _manifest_from_dict(raw: dict) -> Manifest:
         brokered=brokered,
         write_endpoints=write_endpoints,
         write_consent=write_consent,
+        session_credential=session_credential,
+        session_base_url=str(raw.get("session_base_url") or ""),
+        write_paths=write_paths,
     )
 
 
@@ -1309,10 +1403,10 @@ def _main(argv: list[str] | None = None) -> int:
             sp.add_argument("--file", action="append", default=[], metavar="FIELD=PATH", help="multipart file (repeatable)")
 
     add_common(sub.add_parser("get", help="GET a path on a registered integration and print JSON"))
-    add_common(sub.add_parser("post", help="POST to an allowlisted read endpoint or a manifest write endpoint"), body=True)
+    add_common(sub.add_parser("post", help="POST to an allowlisted read endpoint, a manifest write endpoint or an app-session write path"), body=True)
     for verb in ("put", "patch", "delete"):
         add_common(
-            sub.add_parser(verb, help=f"{verb.upper()} to a manifest write endpoint (brokered runs); otherwise refused"),
+            sub.add_parser(verb, help=f"{verb.upper()} to a manifest write endpoint or app-session write path (brokered runs); otherwise refused"),
             body=True,
         )
     args = p.parse_args(argv)

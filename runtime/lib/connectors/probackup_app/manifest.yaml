@@ -1,0 +1,26 @@
+key: probackup_app
+name: ProBackup app (chat session)
+kinds: [token]
+connector_module: ""
+env_var: RC_CONN_PROBACKUP_APP
+credential_exposure: broker
+session_credential: PROBACKUP_AGENT_TOKEN
+session_base_url: PROBACKUP_API_BASE
+egress_hosts:
+  - api.probackup.io
+  - api-staging.probackup.io
+base_url: https://api.probackup.io
+auth:
+  strategy: api_key_header
+  name: pb-agent-token
+pagination:
+  style: none
+write_paths:
+  - /**
+help_md: |
+  The ProBackup API as the signed-in ProBackup user, for chat sessions opened from the ProBackup app.
+  ProBackup mints a short-lived, user-scoped agent token (`pb-agent-token`) into the chat; ReplyPen's
+  broker holds it and attaches it, so it is never in this workspace. Call it with
+  `lib.api.app_client("probackup_app")` (check `lib.api.app_connected("probackup_app")` first) and
+  relative paths: the session decides whether they go to production or staging. ProBackup's own
+  agent policy decides which reads and mutations the token may make.

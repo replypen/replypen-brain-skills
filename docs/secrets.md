@@ -25,9 +25,12 @@ can land in a stored run trace. Pick the most-contained store that works, top to
 6. **Hosted action write credential**: `rp project env set --plane action` (operator only) → `.env.action`;
    diagnosis runs never receive it.
 7. **Per-user embed-chat token**: not a store you manage. The customer backend mints it into the chat
-   token's `credentials` claim; the host injects it as a plain env var (e.g. `PROBACKUP_AGENT_TOKEN`) in
-   that session's runs only. Branch on its presence, never print it, treat an auth failure as expiry.
-   Names cannot start with `RC_` or collide with a grounding env key.
+   token's `credentials` claim. When a catalog **app-session connector** declares that name
+   (`session_credential`: `dentai_app` ← `DENTAI_APP_TOKEN`, `probackup_app` ← `PROBACKUP_AGENT_TOKEN`),
+   the host brokers it and it is NOT in env: `if api.app_connected(key): api.app_client(key).request(...)`
+   (writes only on the manifest `write_paths`). Any other name is injected as a plain env var in that
+   session's runs only. Branch on its presence, never print it, treat an auth failure as expiry. Names
+   cannot start with `RC_` or collide with a grounding env key.
 
 Secrets inside **customer data** (API keys in a settings table) are a data-scoping problem, not an env
 one: hide the rows/columns in the scope manifest so no run can select them.

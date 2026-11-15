@@ -5,6 +5,7 @@ mocked with the `responses` library. These lock down the logic that decides *wha
     cd runtime && uv run --with . --with pytest --with responses --no-project pytest tests/test_api.py -q
 """
 
+import json
 import random
 import os
 import sys
@@ -961,6 +962,105 @@ class HostEmbeddedCredential(unittest.TestCase):
         # A backslash in the credential URL must not be interpreted as a regex escape in re.sub.
         out = api._fill_base_placeholder("https://{d}/api", "https://h\\x")
         self.assertEqual(out, "https://h\\x/api")
+
+
+# --- app-session connectors: app_client / app_connected / write_paths ---
+
+BROKER = "http://rc-broker.internal"
+
+
+def _routed(keys: str):
+    return mock.patch.dict(os.environ, {"RC_API_BROKERED_KEYS": keys}, clear=False)
+
+
+class AppSessionManifests(unittest.TestCase):
+    def test_shipped_session_connectors(self):
+        m = api.load_manifests(force=True)
+        dentai, pb = m["dentai_app"], m["probackup_app"]
+        self.assertEqual((dentai.session_credential, dentai.session_base_url), ("DENTAI_APP_TOKEN", ""))
+        self.assertEqual(dentai.write_paths, ("/dashboard/*/agent/**",))
+        self.assertEqual((pb.session_credential, pb.session_base_url), ("PROBACKUP_AGENT_TOKEN", "PROBACKUP_API_BASE"))
+        self.assertEqual((pb.auth.strategy, pb.auth.name, pb.write_paths), ("api_key_header", "pb-agent-token", ("/**",)))
+
+    def test_write_paths_need_a_session_credential(self):
+        with self.assertRaisesRegex(ValueError, "session_credential"):
+            api._manifest_from_dict({"key": "x", "base_url": "https://x.test", "write_paths": ["/**"]})
+
+
+class AppSessionWritePathGrammar(unittest.TestCase):
+    def test_matches_like_the_broker(self):
+        pats = ("/dashboard/*/agent/**",)
+        for path, want in [
+            ("/dashboard/kies/agent/telefonie/api/campaigns", True),
+            ("dashboard/kies/agent", True),
+            ("https://app.dentai.be/dashboard/kies/agent/x?y=1", True),
+            ("/dashboard/kies/TOKEN/telefonie", False),
+            ("/dashboard//agent/x", False),
+            ("/dashboard/kies/agent/../../x", False),
+        ]:
+            self.assertEqual(api._matches_write_path(path, pats), want, path)
+        self.assertTrue(api._matches_write_path("/", ("/**",)))
+        self.assertFalse(api._matches_write_path("/x", ()))
+
+
+class AppClient(unittest.TestCase):
+    def test_not_connected_raises(self):
+        with _routed(""):
+            self.assertFalse(api.app_connected("dentai_app"))
+            with self.assertRaisesRegex(RuntimeError, "not connected"):
+                api.app_client("dentai_app")
+
+    def test_non_session_connector_refused(self):
+        with _routed("dentai_booking_preview"), self.assertRaisesRegex(ValueError, "not an app-session connector"):
+            api.app_client("dentai_booking_preview")
+
+    @responses.activate
+    def test_writes_on_declared_paths_through_the_broker(self):
+        target = "https://app.dentai.be/dashboard/kies/agent/telefonie/api/campaigns"
+        responses.add(responses.POST, f"{BROKER}/dentai_app/__url/" + api.quote(target, safe=""), json={"id": 7})
+        responses.add(responses.DELETE, f"{BROKER}/dentai_app/__url/" + api.quote(target + "/7", safe=""), json={})
+        with _routed("stripe,dentai_app"):
+            self.assertTrue(api.app_connected("dentai_app"))
+            c = api.app_client("dentai_app")
+            self.assertEqual(c.request("POST", "/dashboard/kies/agent/telefonie/api/campaigns", json={"name": "x"}), {"id": 7})
+            c.request("DELETE", "/dashboard/kies/agent/telefonie/api/campaigns/7")
+        req = responses.calls[0].request
+        self.assertNotIn("Authorization", req.headers)  # the broker attaches the token
+        self.assertEqual(json.loads(req.body), {"name": "x"})
+        with _routed("dentai_app"):
+            with self.assertRaises(api.MethodPolicyError):
+                api.app_client("dentai_app").request("POST", "/dashboard/kies/SIGNED/messages/send", json={})
+        self.assertEqual(len(responses.calls), 2)
+
+    @responses.activate
+    def test_session_base_paths_stay_relative_for_the_broker(self):
+        # The broker, not the manifest base_url, knows whether this session is prod or staging.
+        responses.add(responses.POST, f"{BROKER}/probackup_app/backups/v1/query", json={"data": {}})
+        responses.add(responses.GET, f"{BROKER}/probackup_app/users/me", json={"id": "u"})
+        with _routed("probackup_app"):
+            c = api.app_client("probackup_app")
+            c.request("POST", "/backups/v1/query", json={"query": "{ backups { id } }"})
+            self.assertEqual(c.request("GET", "users/me", params={"x": "1"}), {"id": "u"})
+        self.assertNotIn("pb-agent-token", responses.calls[0].request.headers)
+        self.assertIn("x=1", responses.calls[1].request.url)
+
+    def test_request_alias_conflicts(self):
+        with _routed("dentai_app"):
+            c = api.app_client("dentai_app")
+        with self.assertRaises(TypeError):
+            c.request("POST", "/dashboard/k/agent/x", json={}, json_body={})
+        with self.assertRaises(TypeError):
+            c.request("GET", "/x", params={}, query={})
+
+    @responses.activate
+    def test_cli_put_on_write_path(self):
+        target = "https://app.dentai.be/dashboard/kies/agent/campaigns/7"
+        responses.add(responses.PUT, f"{BROKER}/dentai_app/__url/" + api.quote(target, safe=""), json={"ok": True})
+        with _routed("dentai_app"), mock.patch("builtins.print") as out:
+            self.assertEqual(api._main(["put", "dentai_app", "/dashboard/kies/agent/campaigns/7", "--json", '{"name":"y"}']), 0)
+        self.assertIn('"ok": true', out.call_args[0][0])
+        with _routed(""), self.assertRaises(SystemExit):
+            api._main(["put", "dentai_app", "/dashboard/kies/agent/campaigns/7", "--json", "{}"])
 
 
 if __name__ == "__main__":

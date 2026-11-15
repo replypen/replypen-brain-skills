@@ -1,0 +1,25 @@
+key: dentai_app
+name: DentAI app (chat session)
+kinds: [token]
+connector_module: ""
+env_var: RC_CONN_DENTAI_APP
+credential_exposure: broker
+session_credential: DENTAI_APP_TOKEN
+egress_hosts:
+  - app.dentai.be
+base_url: https://app.dentai.be
+auth:
+  strategy: bearer
+pagination:
+  style: none
+write_paths:
+  - /dashboard/*/agent/**
+help_md: |
+  The DentAI practice dashboard's own API, for chat sessions opened from that dashboard. DentAI mints a
+  short-lived, practice-scoped draft-tier token when the page opens the chat; ReplyPen's broker holds it
+  and attaches it, so it is never in this workspace. Call it with `lib.api.app_client("dentai_app")`
+  (check `lib.api.app_connected("dentai_app")` first: mail runs never carry it). Agent requests use the
+  dashboard JSON paths with the token segment set to the literal `agent`
+  (`/dashboard/<slug>/agent/...`). DentAI enforces the tier per handler: drafts and previews only;
+  anything with an external effect (send, start calls, ClickDoc notes) stays a human click in the app,
+  so link the user to the review screen with a relative link.
