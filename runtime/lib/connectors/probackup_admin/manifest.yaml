@@ -25,7 +25,8 @@ help_md: |
   (`skills/pb-admin-api/scripts/pb_api.py`, `skills/platform-api/scripts/*`); send absolute URLs on
   `api-staging.probackup.io` for the staging project. GET plus the two read-shaped POSTs only; state
   changes are hosted actions (their own sealed action-plane token). A few legacy admin GETs mutate
-  (`/backups/v1/emails/{email}/update`): never call those from a run.
+  (`/backups/v1/emails/{email}/update`): never call those from a run. Staff authority (it forwards
+  `pb-admin-impersonate`): never list it in `principal.credentials_allow`.
 onboarding_md: |
   Ask can the ProBackup operator paste the support-bot token (the `X-Support-Bot-Token` value) now.
   Store it on the project, labelled `support-bot`; it must stay out of the grounding env.
