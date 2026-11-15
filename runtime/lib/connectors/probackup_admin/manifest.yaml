@@ -1,0 +1,31 @@
+key: probackup_admin
+name: ProBackup admin API (support bot)
+kinds: [token]
+connector_module: ""
+env_var: RC_CONN_PROBACKUP_ADMIN
+credential_exposure: broker
+egress_hosts:
+  - api.probackup.io
+  - api-staging.probackup.io
+base_url: https://api.probackup.io
+auth:
+  strategy: api_key_header
+  name: X-Support-Bot-Token
+pagination:
+  style: none
+read_endpoints:
+  post:
+    - /oauth/v1/proxy
+    - /backups/v1/has_sso
+help_md: |
+  ProBackup's staff admin API as the support bot: account context dumps, OAuth/scheduler dumps,
+  impersonated read-only user views (`pb-admin-impersonate` + `pb-platform` headers) and the
+  server-side platform proxy. ReplyPen's broker holds the `X-Support-Bot-Token` and attaches it, so
+  it is never in this workspace. Call it through the project brain wrappers
+  (`skills/pb-admin-api/scripts/pb_api.py`, `skills/platform-api/scripts/*`); send absolute URLs on
+  `api-staging.probackup.io` for the staging project. GET plus the two read-shaped POSTs only; state
+  changes are hosted actions (their own sealed action-plane token). A few legacy admin GETs mutate
+  (`/backups/v1/emails/{email}/update`): never call those from a run.
+onboarding_md: |
+  Ask can the ProBackup operator paste the support-bot token (the `X-Support-Bot-Token` value) now.
+  Store it on the project, labelled `support-bot`; it must stay out of the grounding env.

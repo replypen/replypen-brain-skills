@@ -393,6 +393,38 @@ class Client:
         ``ApiError`` on a non-2xx after exhausting retries — never a silent empty. ``json``/``params``
         are aliases of ``json_body``/``query``.
         """
+        return _parse_json(self._response(method, path, query=query, headers=headers, json_body=json_body,
+                                          data=data, files=files, idempotency_key=idempotency_key,
+                                          idempotency_header=idempotency_header,
+                                          endpoint_template=endpoint_template, json=json, params=params))
+
+    def request_text(self, method: str, path: str, **kw) -> str:
+        """``request`` for an API that answers markdown/CSV/plain text: returns the body as ``str``.
+
+        A text body served without a charset decodes as UTF-8, not requests' ISO-8859-1 default for
+        ``text/*`` (which turns every "·" and emoji into mojibake).
+        """
+        resp = self._response(method, path, **kw)
+        if "charset" not in (getattr(resp, "headers", None) or {}).get("content-type", "").lower():
+            resp.encoding = "utf-8"
+        return _body_text(resp)
+
+    def _response(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        json_body: Any | None = None,
+        data: Any | None = None,
+        files: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        idempotency_header: str = "Idempotency-Key",
+        endpoint_template: str | None = None,
+        json: Any | None = None,
+        params: dict[str, Any] | None = None,
+    ):
         if json is not None:
             if json_body is not None:
                 raise TypeError("use only one of json= or json_body=")
@@ -413,7 +445,7 @@ class Client:
             idempotency_header=idempotency_header,
             endpoint_template=endpoint_template,
         )
-        return _parse_json(resp)
+        return resp
 
     def get(self, path: str, **kw) -> Any:
         return self.request("GET", path, **kw)

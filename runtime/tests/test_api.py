@@ -1065,3 +1065,39 @@ class AppClient(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RequestText(unittest.TestCase):
+    """request_text: report-shaped (markdown/CSV) APIs through the same auth/broker/retry path."""
+
+    @responses.activate
+    def test_text_body_utf8_without_charset_and_static_broker_route(self):
+        target = "https://api.probackup.io/backups/v1/emails/a%40b.test/context_dump"
+        responses.add(responses.GET, f"{BROKER}/probackup_admin/__url/" + api.quote(target, safe=""),
+                      body="# Account · ok ✅".encode("utf-8"), content_type="text/plain")
+        with _routed("probackup_admin"):
+            m = api.load_manifests(force=True)["probackup_admin"]
+            with mock.patch.object(api.oauth, "token") as token:
+                c = api.client(m)
+            token.assert_not_called()
+            got = c.request_text("GET", "/backups/v1/emails/a%40b.test/context_dump",
+                                 headers={"pb-admin-impersonate": "u-1", "pb-platform": "notion"})
+        self.assertEqual(got, "# Account · ok ✅")
+        req = responses.calls[0].request
+        self.assertNotIn("X-Support-Bot-Token", req.headers)  # the broker attaches it
+        self.assertEqual((req.headers["pb-admin-impersonate"], req.headers["pb-platform"]), ("u-1", "notion"))
+
+    @responses.activate
+    def test_non_2xx_raises_api_error_with_body(self):
+        responses.add(responses.GET, "https://api.demo.test/v1/x", status=422, json={"error": "no users found"})
+        c, _ = _client()
+        with self.assertRaises(api.ApiError) as ctx:
+            c.request_text("GET", "/x")
+        self.assertEqual(ctx.exception.status, 422)
+        self.assertIn("no users found", ctx.exception.body)
+
+    def test_static_admin_manifest_is_read_only(self):
+        m = api.load_manifests(force=True)["probackup_admin"]
+        self.assertEqual((m.auth.strategy, m.auth.name), ("api_key_header", "X-Support-Bot-Token"))
+        self.assertEqual(m.allowed_post_paths, ("/oauth/v1/proxy", "/backups/v1/has_sso"))
+        self.assertEqual((m.session_credential, m.write_paths), ("", ()))
