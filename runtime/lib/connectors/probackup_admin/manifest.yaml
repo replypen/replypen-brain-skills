@@ -17,15 +17,36 @@ read_endpoints:
   post:
     - /oauth/v1/proxy
     - /backups/v1/has_sso
+  # The ONLY GETs the broker forwards: the admin API has legacy mutating GETs
+  # (/backups/v1/emails/{email}/update), and reviewed staff runs keep this connector.
+  get:
+    - /backups/v1/emails/*/context_dump
+    - /backups/v1/emails/*/users
+    - /backups/v1/users/*/context_dump
+    - /oauth/v1/platforms/*/backups/*/dump
+    - /scheduler/v1/platforms/*/backups/*/dump
+    - /oauth/v1/platforms/*/backups/*/google_token_json
+    - /oauth/v1/proxy/allowed
+    - /oauth/v1/status
+    - /oauth/v1/status/*
+    - /scheduler/v1/report
+    - /scheduler/v1/errors
+    - /scheduler/v1/activity_log
+    - /data/v1/total_active_records
+    - /restore/v1/report
+    - /restore/v1/report/*
+    - /treestructure/v1/status
+    - /treestructure/v1/search
 help_md: |
   ProBackup's staff admin API as the support bot: account context dumps, OAuth/scheduler dumps,
   impersonated read-only user views (`pb-admin-impersonate` + `pb-platform` headers) and the
   server-side platform proxy. ReplyPen's broker holds the `X-Support-Bot-Token` and attaches it, so
   it is never in this workspace. Call it through the project brain wrappers
   (`skills/pb-admin-api/scripts/pb_api.py`, `skills/platform-api/scripts/*`); send absolute URLs on
-  `api-staging.probackup.io` for the staging project. GET plus the two read-shaped POSTs only; state
-  changes are hosted actions (their own sealed action-plane token). A few legacy admin GETs mutate
-  (`/backups/v1/emails/{email}/update`): never call those from a run. Staff authority (it forwards
+  `api-staging.probackup.io` for the staging project. The broker forwards only the GET paths listed
+  in `read_endpoints.get` plus the two read-shaped POSTs (legacy mutating GETs such as
+  `/backups/v1/emails/{email}/update` are refused); state changes are hosted actions (their own sealed
+  action-plane token). Staff authority (it forwards
   `pb-admin-impersonate`): never list it in `principal.credentials_allow`.
 onboarding_md: |
   Ask can the ProBackup operator paste the support-bot token (the `X-Support-Bot-Token` value) now.
