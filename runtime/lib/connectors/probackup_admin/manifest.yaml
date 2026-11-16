@@ -14,9 +14,8 @@ auth:
 pagination:
   style: none
 read_endpoints:
-  post:
-    - /oauth/v1/proxy
-    - /backups/v1/has_sso
+  # No POST: /oauth/v1/proxy can carry upstream writes (its GraphQL guard is a byte match) and returns
+  # Notion file objects with authenticated download URLs; /backups/v1/has_sso can repair a user row.
   # The ONLY GETs the broker forwards: the admin API has legacy mutating GETs
   # (/backups/v1/emails/{email}/update), and reviewed staff runs keep this connector. Never a route that
   # returns a credential (google_token_json / google_decode / api_token hand out third-party bearers).
@@ -40,12 +39,12 @@ read_endpoints:
 help_md: |
   ProBackup's staff admin API as the support bot: account context dumps, OAuth/scheduler dumps,
   impersonated read-only user views (`pb-admin-impersonate` + `pb-platform` headers) and the
-  server-side platform proxy. ReplyPen's broker holds the `X-Support-Bot-Token` and attaches it, so
+  server-side platform proxy rule table. ReplyPen's broker holds the `X-Support-Bot-Token` and attaches it, so
   it is never in this workspace. Call it through the project brain wrappers
   (`skills/pb-admin-api/scripts/pb_api.py`, `skills/platform-api/scripts/*`); send absolute URLs on
-  `api-staging.probackup.io` for the staging project. The broker forwards only the GET paths listed
-  in `read_endpoints.get` plus the two read-shaped POSTs (legacy mutating GETs such as
-  `/backups/v1/emails/{email}/update` are refused); state changes are hosted actions (their own sealed
+  `api-staging.probackup.io` for the staging project. GET-only: the broker forwards only the paths
+  in `read_endpoints.get` (legacy mutating GETs such as `/backups/v1/emails/{email}/update`, the
+  platform proxy and has_sso are refused); state changes are hosted actions (their own sealed
   action-plane token). Staff authority (it forwards
   `pb-admin-impersonate`): never list it in `principal.credentials_allow`.
 onboarding_md: |

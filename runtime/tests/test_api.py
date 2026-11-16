@@ -1099,5 +1099,5 @@ class RequestText(unittest.TestCase):
     def test_static_admin_manifest_is_read_only(self):
         m = api.load_manifests(force=True)["probackup_admin"]
         self.assertEqual((m.auth.strategy, m.auth.name), ("api_key_header", "X-Support-Bot-Token"))
-        self.assertEqual(m.allowed_post_paths, ("/oauth/v1/proxy", "/backups/v1/has_sso"))
+        self.assertEqual(m.allowed_post_paths, ())  # GET-only: proxy can write, has_sso can repair
         self.assertEqual((m.session_credential, m.write_paths), ("", ()))
