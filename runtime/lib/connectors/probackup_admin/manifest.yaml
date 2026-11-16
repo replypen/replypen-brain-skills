@@ -18,14 +18,14 @@ read_endpoints:
     - /oauth/v1/proxy
     - /backups/v1/has_sso
   # The ONLY GETs the broker forwards: the admin API has legacy mutating GETs
-  # (/backups/v1/emails/{email}/update), and reviewed staff runs keep this connector.
+  # (/backups/v1/emails/{email}/update), and reviewed staff runs keep this connector. Never a route that
+  # returns a credential (google_token_json / google_decode / api_token hand out third-party bearers).
   get:
     - /backups/v1/emails/*/context_dump
     - /backups/v1/emails/*/users
     - /backups/v1/users/*/context_dump
     - /oauth/v1/platforms/*/backups/*/dump
     - /scheduler/v1/platforms/*/backups/*/dump
-    - /oauth/v1/platforms/*/backups/*/google_token_json
     - /oauth/v1/proxy/allowed
     - /oauth/v1/status
     - /oauth/v1/status/*
