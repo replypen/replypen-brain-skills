@@ -14,7 +14,7 @@ surface or in managed infrastructure.
 | No inbound email run at all | Upstream channel/ReplyPen routing or ReplyPen support. |
 | Callback rejected or dead-lettered | ReplyPen/channel integration. Use `rp run thread`/`rp fleet health` evidence. |
 | Action plane 404, disabled, or not wired | ReplyPen support plus the customer app owner for app-side receivers. |
-| Pushed brain commit not mounted | A push alone is never picked up: publish it with `brain_publish.py --project <p>` from the checkout (tenant brains too). |
+| Pushed brain commit not mounted | A push alone is never picked up: publish it with `brain_publish.py --project <p>` from the checkout (a tenant brain without GitHub: [tenant-brain.md](tenant-brain.md)). |
 | `rp dev brain sync` reports manual reconcile | ReplyPen support request with `rp dev brain status -o json`. |
 | Shared project channel points at an old SHA | With a project-maintainer login, run `brain_publish.py --project <p>` from the brain checkout (checks, git sync, preflight, exact-SHA publish, proof). See [`brain-publish`](../skills/brain-publish/SKILL.md). |
 | `rp dev brain status` looks fine but the channel is stale | Missing `--scope project`: in a tenant context status answers about the tenant overlay brain. Re-check with `--scope project` and read `.status.channels[]`. |

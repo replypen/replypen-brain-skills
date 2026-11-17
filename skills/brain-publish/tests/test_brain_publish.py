@@ -38,7 +38,8 @@ FAKE_RC = textwrap.dedent('''\
             state["tenant_main"] = sha
         if sub == "publish" and state.get("fail_after_promote"):
             json.dump(state, open(path, "w")); print("verify: connection reset", file=sys.stderr); sys.exit(1)
-        out = {"project": "demo", "status": {"local_sha": state.get("tenant_main")}}
+        out = {"project": "demo", "status": {"local_sha": state.get("tenant_main"),
+                                             "remote_mode": state.get("remote_mode", "github")}}
     elif sub == "status":
         # A concurrent publisher moves stable after the first read: status runs in parallel with
         # the preflights, so only the publish-recheck (a later status) may see the advance.
@@ -242,6 +243,23 @@ class BrainPublishTest(unittest.TestCase):
         self.tenant_brain()
         code, receipt = self.publish("--channel", "edge")
         self.assertEqual((code, receipt["stage"]), (2, "classify"))
+
+    def test_switched_tenant_brain_refuses_before_any_push_or_publish(self) -> None:
+        self.tenant_brain(remote_mode="none")
+        origin_before = git(self.repo, "ls-remote", "origin", "main")
+        for args in ((), ("--dry-run",)):
+            code, receipt = self.publish(*args)
+            self.assertEqual(code, 2, receipt)
+            self.assertIn("rp dev brain clone demo --tenant t1 --temp", receipt["error"])
+            self.assertIn("rp dev brain publish -m", receipt["error"])
+        self.assertEqual(self.published(), [])
+        self.assertEqual(git(self.repo, "ls-remote", "origin", "main"), origin_before)
+
+    def test_bundle_checkout_is_refused_with_the_rp_recipe(self) -> None:
+        git(self.repo, "remote", "set-url", "origin", str(self.repo / ".git" / "replypen.bundle"))
+        code, receipt = self.publish()
+        self.assertEqual((code, receipt["stage"], self.published()), (2, "classify", []))
+        self.assertIn("rp dev brain publish -m", receipt["error"])
 
     def publish_with_project(self, project: str) -> tuple[int, dict]:
         out = io.StringIO()

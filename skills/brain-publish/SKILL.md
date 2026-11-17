@@ -5,6 +5,12 @@ description: "Publish, ship, deploy, or promote replypen brain changes after saf
 
 # brain-publish — make a brain change live
 
+> [!IMPORTANT]
+> **GitHub brains only** (`rp dev brain status` → `remote_mode: github`, e.g. every project brain).
+> A tenant brain with `remote_mode: none`, or any `rp dev brain clone` checkout, publishes with
+> `rp dev brain publish -m … --rm` instead: [tenant-brain recipe](../../docs/tenant-brain.md). The script
+> refuses both.
+
 The shared final step after brain edits from `local-brain-work`, `brain-ask`, `rp-debug`, `rp-health`,
 `rp-fleet`, or manual authoring. A project-maintainer OAuth login is enough; no private ReplyPen
 surface is involved.
@@ -28,7 +34,8 @@ publishing `actions/<id>/`.
 
 - `replypen-brain-skills` (the **kit**) → `./refresh-brains.sh --release patch` and stop; no generic
   Git step first, never `rp dev brain sync`/promote.
-- **tenant brain** (`tenant =` in `.replypen.toml`) → the same command below. No channel or preflight:
+- **tenant brain** whose `remote_mode` is `none` → not this skill: [tenant-brain recipe](../../docs/tenant-brain.md).
+- **tenant brain** still on GitHub (`tenant =` in `.replypen.toml`) → the same command below. No channel or preflight:
   the box serves its own clone of `main`, which a push never moves, so the script syncs it (`rp dev
   brain publish --sha`, no `--channel`) and proves served `main` contains the SHA. `LIVE <p> tenant
   <slug> main @ <sha>`.

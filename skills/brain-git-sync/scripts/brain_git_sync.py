@@ -200,55 +200,93 @@ def _in_progress(git: Git, name: str) -> bool:
     return git.git_path(name).exists()
 
 
+def _binding(repo: Path) -> dict[str, str]:
+    """Best-effort `project`/`tenant` of the checkout: committed marker, then the gitignored
+    `.replypen/local.toml` (where `rp dev brain clone` may put the tenant)."""
+    found: dict[str, str] = {}
+    for path in (_marker(repo), repo / ".replypen" / "local.toml"):
+        try:
+            data = tomllib.loads(path.read_text("utf-8"))
+        except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+            continue
+        for key in ("project", "tenant"):
+            if data.get(key) and key not in found:
+                found[key] = str(data[key])
+    return found
+
+
 def _selected_project(repo: Path, explicit: str) -> str:
-    """Explicit --project wins; otherwise best-effort from the checkout's committed marker
-    (same pattern as sent_delta_report.py's local_scope)."""
-    if explicit:
-        return explicit
-    marker = _marker(repo)
-    if not marker.is_file():
-        return ""
-    try:
-        data = tomllib.loads(marker.read_text("utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return ""
-    return str(data.get("project", ""))
+    """Explicit --project wins; otherwise best-effort from the checkout's binding."""
+    return explicit or _binding(repo).get("project", "")
 
 
-def _brain_source(repo: Path, project: str, reporter: Reporter) -> dict[str, object] | None:
-    """Best-effort `status.brain_source` from `rp dev brain status -o json`. Returns None (never
-    blocking) when `rp` is unavailable, fails, or the field is absent — a server that predates
-    the read-only brain alias, or a project that owns its own brain, both read as no alias."""
+TENANT_BRAIN_DOC = "docs/tenant-brain.md (in a brain checkout: .agents/docs/tenant-brain.md)"
+
+
+def bundle_checkout(repo: Path) -> bool:
+    """An `rp dev brain clone` checkout: its origin is a git bundle file, not a Git server."""
+    url = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"],
+                         capture_output=True, text=True).stdout.strip()
+    return url.endswith(".bundle")
+
+
+def local_only_error(repo: Path, project: str = "", *, stale_clone: bool) -> str:
+    """The one refusal text for a brain without a GitHub repository (remote_mode none)."""
+    bound = _binding(repo)
+    project = project or bound.get("project", "<project>")
+    tenant = bound.get("tenant", "")
+    label = f"{project} tenant {tenant}" if tenant else project
+    clone = f"rp dev brain clone {project}{f' --tenant {tenant}' if tenant else ''} --temp -o json"
+    if stale_clone:
+        head = (f"the {label} brain has no GitHub repository any more (remote_mode is not github): this "
+                "GitHub clone is stale, do not push it. Re-apply the edit in a throwaway checkout: "
+                f"D=$({clone} | jq -r .dir), edit there, then")
+    else:
+        head = (f"this is an `rp dev brain clone` checkout of the {label} brain (origin is a bundle, no "
+                "GitHub): brain-git-sync/brain-publish do not apply. From this checkout run")
+    return f"{head} `rp dev brain publish -m '<what and why>' --rm`. Recipe: {TENANT_BRAIN_DOC}"
+
+
+def brain_status(repo: Path, project: str, reporter: Reporter) -> dict[str, object] | None:
+    """Best-effort `status` from `rp dev brain status -o json` for the checkout's brain (its
+    tenant brain when bound to one). None (never blocking) when `rp` is unavailable or fails."""
     cmd = [_cli(), "dev", "brain", "status", "-o", "json", "--raw-output"]
     if project:
         cmd = [cmd[0], "--project", project, *cmd[1:]]
+    if tenant := _binding(repo).get("tenant"):
+        cmd += ["--tenant", tenant]
     try:
         proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as error:
-        reporter.note(f"brain-alias check skipped: cannot run rp dev brain status: {error}")
+        reporter.note(f"brain status check skipped: cannot run rp dev brain status: {error}")
         return None
     if proc.returncode != 0:
         reporter.note(
-            "brain-alias check skipped: rp dev brain status failed: "
+            "brain status check skipped: rp dev brain status failed: "
             + (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}")
         )
         return None
     try:
         data = json.loads(proc.stdout)
     except json.JSONDecodeError:
-        reporter.note("brain-alias check skipped: rp dev brain status returned non-JSON output")
+        reporter.note("brain status check skipped: rp dev brain status returned non-JSON output")
         return None
     status = data.get("status") if isinstance(data, dict) else None
-    source = status.get("brain_source") if isinstance(status, dict) else None
-    return source if isinstance(source, dict) else None
+    return status if isinstance(status, dict) else None
 
 
-def _refuse_if_read_only_alias(repo: Path, project: str, reporter: Reporter) -> None:
-    """A read-only brain alias reads its source project's brain and must never write it: refuse
-    before any fetch/commit/push, mirroring the laptop-side source/alias contract
-    (BRAIN_READ_ONLY_ALIAS on the server side)."""
-    source = _brain_source(repo, project, reporter)
-    if not source or not source.get("read_only"):
+def refuse_unsupported_brain(repo: Path, project: str, reporter: Reporter) -> None:
+    """Refuse before any fetch/commit/push: an `rp dev brain clone` checkout, a brain whose
+    remote_mode is not github (pushing a stale GitHub clone would publish nothing), and a read-only
+    brain alias (BRAIN_READ_ONLY_ALIAS on the server side)."""
+    if bundle_checkout(repo):
+        raise SyncError(local_only_error(repo, project, stale_clone=False))
+    status = brain_status(repo, project, reporter) or {}
+    mode = status.get("remote_mode")
+    if mode and mode != "github":
+        raise SyncError(local_only_error(repo, project, stale_clone=True), details={"remote_mode": mode})
+    source = status.get("brain_source")
+    if not isinstance(source, dict) or not source.get("read_only"):
         return
     owner = source.get("project") or source.get("project_id") or "its source project"
     label = project or "this project"
@@ -672,7 +710,7 @@ def _synchronize(
         raise SyncError(f"repository path is not a directory: {resolved_repo}")
     git = Git(resolved_repo)
     validate_repository(git, allow_detached=allow_detached)
-    _refuse_if_read_only_alias(resolved_repo, _selected_project(resolved_repo, project), reporter)
+    refuse_unsupported_brain(resolved_repo, _selected_project(resolved_repo, project), reporter)
 
     current_inventory = inventory(git)
     reporter.note(

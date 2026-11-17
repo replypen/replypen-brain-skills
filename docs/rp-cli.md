@@ -194,7 +194,7 @@ request. Practices that keep proposed rules readable and safe:
   live refs. It creates a test run: no callback, no durable journal push, and proposals are test
   artifacts.
 - `--brain-ref` is always the PROJECT brain (`/brain`), even from a tenant checkout. A tenant brain
-  branch (`/tenant`, pushed to the tenant brain repo) needs `--tenant-brain-ref dev/<branch>`: same
+  branch (`/tenant`, uploaded by `rp dev brain push` per [tenant-brain.md](tenant-brain.md), or pushed to its GitHub repo) needs `--tenant-brain-ref dev/<branch>`: same
   test-run semantics, tenant-scoped runs only (`--tenant`, a tenant checkout, or a replayed tenant chat
   turn). Combinable with `--brain-ref`, `--mirror-ref`, `--replay-run`, `--simulation`. The trace
   header shows `tenant_brain_ref` and `tenant_brain_resolved` (`<ref> @ <sha>`, what `/tenant` mounted).

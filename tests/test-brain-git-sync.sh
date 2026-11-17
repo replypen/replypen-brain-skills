@@ -478,6 +478,33 @@ assert_json_ok "$output"
 assert_converged_clean
 test "$(cat "$LOCAL/standalone.txt")" = "rc status unavailable"
 
+# A brain without a GitHub repository is refused before any commit or push: a stale GitHub clone
+# (status says remote_mode none) and an `rp dev brain clone` checkout (origin is a bundle file).
+new_fixture switched-tenant
+printf 'project = "demo"\ntenant = "t1"\n' >"$LOCAL/.replypen.toml"
+git -C "$LOCAL" add .replypen.toml
+origin_before_switched="$(git --git-dir="$ORIGIN" rev-parse main)"
+pre_head="$(git -C "$LOCAL" rev-parse HEAD)"
+set +e
+output="$(PATH="$FAKE_RC_BIN:$PATH" FAKE_RC_RESPONSE='{"status":{"state":"local_only","remote_mode":"none"}}' \
+  run_sync --commit-message "stale clone attempt" --json)"
+switched_status=$?
+set -e
+test "$switched_status" = 2
+printf '%s\n' "$output" | uv run --no-project python -c \
+  'import json, sys; e = json.load(sys.stdin)["error"]; assert "demo --tenant t1 --temp" in e and "rp dev brain publish -m" in e, e'
+test "$(git --git-dir="$ORIGIN" rev-parse main)" = "$origin_before_switched"
+test "$(git -C "$LOCAL" rev-parse HEAD)" = "$pre_head"
+
+new_fixture bundle-checkout
+git -C "$LOCAL" remote set-url origin "$LOCAL/.git/replypen.bundle"
+set +e
+output="$(PATH="$FAKE_RC_BIN_FAIL:$PATH" run_sync --json)"
+bundle_status=$?
+set -e
+test "$bundle_status" = 2
+printf '%s\n' "$output" | grep -Fq "rp dev brain publish -m"
+
 # Keep the exact public command discoverable if the skill integration is present in this checkout.
 if test -f "$ROOT/skills/brain-git-sync/SKILL.md"; then
   grep -Fq "\$brain dev: git sync" "$ROOT/skills/brain-git-sync/SKILL.md"

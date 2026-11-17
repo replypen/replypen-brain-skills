@@ -491,7 +491,8 @@ artifacts stay on the laptop.
 - A project/shared brain holds shared grounding scripts, playbooks, projection templates, and the
   shared action catalog.
 - A tenant brain, when present, holds tenant-specific natural-language overlay. Tenant values may live
-  in ReplyPen settings rather than committed files.
+  in ReplyPen settings rather than committed files. Most have no GitHub repository: edit them in an `rp`
+  throwaway checkout, project brains via GitHub + brain-publish ([tenant-brain recipe](tenant-brain.md)).
 - Tenant files reference project-brain material by its runtime path (`/brain/...`), and shared mounts
   (`/kb`, `/mirrors/<name>`) the same way — never by restating them; the overlay carries only tenant
   deltas.

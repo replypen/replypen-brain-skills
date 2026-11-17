@@ -5,6 +5,8 @@ description: "Safely reconcile and publish a brain repository's local Git work w
 
 # Brain Git Sync
 
+**GitHub brains only** (`remote_mode: github`); `none`: [tenant-brain recipe](../../docs/tenant-brain.md).
+
 The owning home for making `origin/main` the cross-computer rendezvous without losing local or remote
 work. `scripts/brain_git_sync.py` owns the mechanics — deterministic fetch, merge, bounded push-retry
 under a race, ancestry verification. The agent owns intent: what is real work, secret hygiene, conflict

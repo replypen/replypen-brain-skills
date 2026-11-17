@@ -10,6 +10,9 @@ A brain is markdown knowledge plus Python grounding/action scripts that producti
 broad prompts to the focused skills. Production runs go through public `rp`; never ReplyPen-private
 repos, SSM, or host database shells.
 
+Editing a tenant brain? **Tenant brain → `rp` throwaway checkout, project brain → GitHub +
+brain-publish**; `rp dev brain status` → `remote_mode` decides: [tenant-brain recipe](../../docs/tenant-brain.md).
+
 ## Required Context
 
 - [docs/brain-model.md](../../docs/brain-model.md) — layout, `include_in`, mounts, project/tenant model.

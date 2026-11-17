@@ -65,7 +65,8 @@ its proposed name in its absolute target directory, followed by the added text q
 ## 4. Edit on a dev ref
 
 Brain: `git push origin HEAD:refs/heads/dev/<branch>`. Tenant brain (the fix belongs in `/tenant`):
-the same in the tenant brain repo. Mirror: the same in the mirror repo (a worktree on a shared
+`rp dev brain push -m …` from a throwaway checkout ([tenant-brain recipe](../../docs/tenant-brain.md));
+the same `git push` only if its `remote_mode` is still `github`. Mirror: the same in the mirror repo (a worktree on a shared
 checkout). Nothing moves `main`/`stable`.
 
 A rule that states a count or carries a query: run that exact SQL on production first

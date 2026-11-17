@@ -27,9 +27,9 @@ and `rp ask --help`.
    validating.
 
 2. **Trigger and wait.** The choices that matter:
-   - `--brain-ref dev/<branch>` — an already-pushed dev branch, after Local Brain Work covered the checks
-     that fit the change. `main` stays live and the run is flagged `test`: no ReplyPen callback, no
-     durable journal push, proposed actions/PRs are test artifacts.
+   - `--brain-ref dev/<branch>`: a pushed dev branch, once Local Brain Work covered the fitting checks;
+     tenant branch: `--tenant-brain-ref` ([tenant-brain](../../docs/tenant-brain.md)). `main` stays live,
+     the run is a `test`: no callback, no journal push, actions/PRs are test artifacts.
    - `--file <path>` (repeatable) stages local files read-only in the run workspace. Content is sniffed
      server-side; text, images, pdf, csv, json and xlsx pass, other binaries/archives are rejected.
      Files the run generates (written to `/tmp/outbox`) come back as metadata + a download URL in the

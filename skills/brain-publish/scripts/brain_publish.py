@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Publish a brain in one command: local checks -> brain_git_sync -> preflight -> edge/stable gate ->
 `rp dev brain publish` -> proof. A tenant brain (`tenant =` in .replypen.toml) has no channel: after
-the sync it runs the tenant `rp dev brain publish` and proves the box serves the SHA. Run from the
-brain checkout root:
+the sync it runs the tenant `rp dev brain publish` and proves the box serves the SHA. GitHub brains
+only: an `rp dev brain clone` checkout, or a brain whose `remote_mode` is not github, is refused with
+the `rp dev brain publish -m` recipe. Run from the brain checkout root:
 
     uv run --no-project python .agents/skills/brain-publish/scripts/brain_publish.py --project <p>
 
@@ -118,8 +119,18 @@ class Rc:
         except json.JSONDecodeError:
             raise Stop(EXIT_BLOCKED, stage, f"{shlex.join(cmd)} returned non-JSON output") from None
 
-    def channels(self, stage: str) -> dict[str, dict]:
+    def status(self, stage: str) -> dict:
+        """`status` of this brain; refuses a brain without a GitHub repository before any publish
+        (its `rp dev brain publish --sha` would fail with BRAIN_LOCAL_ONLY)."""
         status = self("status", stage=stage).get("status") or {}
+        mode = status.get("remote_mode")
+        if mode and mode != "github":
+            raise Stop(EXIT_BLOCKED, stage, bgs.local_only_error(self.repo, self.project, stale_clone=True),
+                       remote_mode=mode)
+        return status
+
+    def channels(self, stage: str) -> dict[str, dict]:
+        status = self.status(stage)
         source = status.get("brain_source") or {}
         if source.get("read_only"):
             raise Stop(EXIT_BLOCKED, stage, f"read-only brain alias of {source.get('project')}; "
@@ -200,6 +211,8 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
         raise Stop(EXIT_BLOCKED, "classify", "rp is not on PATH (brain-dev-upgrade)")
     top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
     repo = Path(top.stdout.strip() or ".").resolve()
+    if bgs.bundle_checkout(repo):
+        raise Stop(EXIT_BLOCKED, "classify", bgs.local_only_error(repo, args.project, stale_clone=False))
     tenant = classify(repo, args.project)
     if tenant and args.channel != "stable":
         raise Stop(EXIT_BLOCKED, "classify", f"tenant brain ({tenant}) has no channel; drop --channel")
@@ -312,7 +325,7 @@ def run(args: argparse.Namespace, receipt: dict) -> int:
 
 
 def served(rc: Rc, stage: str) -> str:
-    return ((rc("status", stage=stage).get("status") or {}).get("local_sha") or "").lower()
+    return (rc.status(stage).get("local_sha") or "").lower()
 
 
 def publish_tenant(args: argparse.Namespace, receipt: dict, git: bgs.Git, rc: Rc, sha: str, started: float) -> int:
