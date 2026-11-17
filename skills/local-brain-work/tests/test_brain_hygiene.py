@@ -243,7 +243,7 @@ def hooked(root: Path, origin: Path | None = None) -> Path:
     for name in ("pre-commit", "pre-push"):
         body = subprocess.run(["bash", str(KIT / "install.sh"), "--print-hook", name], check=True,
                               capture_output=True, text=True, env={**os.environ, "RC_BRAIN_KIT": str(KIT)}).stdout
-        hook = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", f"hooks/{name}"))
+        hook = Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks" / name
         hook.parent.mkdir(parents=True, exist_ok=True)
         hook.write_text(body)
         hook.chmod(0o755)

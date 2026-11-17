@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT/skills/brain-git-sync/scripts/brain_git_sync.py"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+. "$ROOT/tests/git-isolation.sh"
 
 test -f "$SCRIPT"
 
@@ -243,10 +244,7 @@ write_file "$LOCAL/local-race.txt" "local before race"
 git -C "$LOCAL" add local-race.txt
 git -C "$LOCAL" commit -q -m "local before race"
 pre_local="$(git -C "$LOCAL" rev-parse HEAD)"
-# Repo-local hooks dir: with a global core.hooksPath the hook path resolves to the machine-wide
-# dispatcher, and this fixture would overwrite it (it did, 2026-11-17).
-git -C "$LOCAL" config core.hooksPath "$LOCAL/.git/hooks"
-hook="$(git -C "$LOCAL" rev-parse --path-format=absolute --git-path hooks/pre-push)"
+hook="$(fixture_path "$(git -C "$LOCAL" rev-parse --path-format=absolute --git-path hooks/pre-push)")"
 mkdir -p "$(dirname "$hook")"
 apply_hook="$TMP/push-race-fired"
 cat >"$hook" <<'HOOK'

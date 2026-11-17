@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+. "$ROOT/tests/git-isolation.sh"
 
 REMOTE="$TMP/origin.git"
 CHECKOUT="$TMP/kit"

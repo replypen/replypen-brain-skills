@@ -278,6 +278,44 @@ def test_job_repairs_a_missing_hook_unless_opted_out_or_user_owned(tmp_path):
     assert "hook" not in out and not (hooks / "pre-commit").exists()
 
 
+def global_dispatcher(tmp_path, monkeypatch, chain=True):
+    """A machine-wide core.hooksPath like git-secret-guard's: every hook name links to one `dispatch`."""
+    hooks = tmp_path / "global-hooks"
+    hooks.mkdir()
+    marker = "# git-hooks-chain: v1\n" if chain else ""
+    (hooks / "dispatch").write_text(f"#!/bin/sh\n{marker}exit 0\n")
+    for name in ("pre-commit", "pre-push", "reference-transaction"):
+        (hooks / name).symlink_to("dispatch")
+    config = tmp_path / "global.gitconfig"
+    config.write_text(f"[core]\n\thooksPath = {hooks}\n[user]\n\tname = T\n\temail = t@example.org\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    return hooks
+
+
+def test_chaining_global_dispatcher_gets_hooks_in_the_repo_and_stays_untouched(tmp_path, monkeypatch):
+    """git-secret-guard's dispatcher chains <common>/hooks/<name>: the hook goes there (flagged when
+    missing), and the shared dispatch file is never written through its symlinks (2026-11-17)."""
+    _, clone, brain = setup(tmp_path)
+    hooks = global_dispatcher(tmp_path, monkeypatch)
+    before = (hooks / "dispatch").read_bytes()
+    out = run(clone, tmp_path, "--apply")
+    own = brain / ".git" / "hooks"
+    assert "managed pre-push hook" in (own / "pre-push").read_text(), out
+    (own / "pre-push").unlink()
+    assert "missing pre-push hook" in run(clone, tmp_path, "--apply")
+    assert (own / "pre-push").is_file() and (hooks / "dispatch").read_bytes() == before
+    assert sorted(p.name for p in hooks.iterdir()) == ["dispatch", "pre-commit", "pre-push", "reference-transaction"]
+
+
+def test_non_chaining_global_hookspath_is_left_to_the_user(tmp_path, monkeypatch):
+    _, clone, brain = setup(tmp_path)
+    (brain / ".git" / "hooks" / "pre-push").unlink(missing_ok=True)
+    hooks = global_dispatcher(tmp_path, monkeypatch, chain=False)
+    before = (hooks / "dispatch").read_bytes()
+    assert "pre-push" not in run(clone, tmp_path, "--apply")
+    assert (hooks / "dispatch").read_bytes() == before
+
+
 def test_git_hook_env_never_reaches_the_kit_clone(tmp_path, monkeypatch):
     """A hook exports GIT_INDEX_FILE (GIT_DIR in a linked worktree): the clone's git must not use them."""
     _, clone, brain = setup(tmp_path)

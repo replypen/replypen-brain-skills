@@ -292,6 +292,19 @@ def _expected_hook(name: str) -> str | None:
     return _HOOK[name]
 
 
+def _hooks_blocker(brain: Path) -> str:
+    """install.sh --print-hooks-blocker: the core.hooksPath that would skip <common-dir>/hooks, or ''.
+    An older install.sh without the mode fails: fall back to its rule (any core.hooksPath blocks)."""
+    try:
+        done = subprocess.run(["bash", str(ROOT / "install.sh"), "--print-hooks-blocker", str(brain)],
+                              capture_output=True, text=True, timeout=30, env=_env(RC_BRAIN_KIT=str(ROOT)))
+    except (OSError, subprocess.SubprocessError):
+        done = None
+    if done is None or done.returncode:
+        return _git("config", "core.hooksPath", cwd=brain).stdout.strip()
+    return done.stdout.strip()
+
+
 def _kit_link(path: Path) -> bool:
     try:
         target = os.readlink(path)
@@ -331,7 +344,9 @@ def _relink_reasons(brain: Path) -> list[str]:
             common = (gd / (gd / "commondir").read_text().strip()).resolve()
     if common is None or (common / NO_HOOKS).exists():
         return reasons
-    hooks_path = _git("config", "core.hooksPath", cwd=brain).stdout.strip()
+    # install.sh owns "would a hook in <common>/hooks run?" (a global chaining dispatcher: yes; a local or
+    # non-chaining core.hooksPath: no, the user wires it): ask it, never re-derive it here.
+    hooks_path = _hooks_blocker(brain)
     for name in HOOKS:
         if not (expected := _expected_hook(name)):
             continue

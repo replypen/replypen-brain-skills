@@ -25,7 +25,11 @@ checkout, never read from the working tree, so partial staging and dirty files c
   share it). The logic lives in the pinned kit clone, so a release changes behaviour without
   rewriting them; the daily kit refresh rewrites a wrapper only when its text changes, and restores a
   missing one.
-- A user-owned hook or `core.hooksPath` is never touched; install prints the line to add.
+- A user-owned hook or `core.hooksPath` is never touched; install prints the line to add. Exception: a
+  global/system `core.hooksPath` whose hooks declare `# git-hooks-chain: v1` (git-secret-guard's
+  machine-wide dispatcher runs `<common-dir>/hooks/<name>` after its own work) gets the wrappers in
+  `<common-dir>/hooks`, which it chains. Never resolve a hook path with `--git-path hooks/…`: it follows
+  `core.hooksPath` and would write through the dispatcher's symlinks into the shared script.
 - `install.sh --no-hooks` removes only the marked wrappers and sticks; `--hooks` opts back in.
 - The wrappers fail open (no kit, no Python 3.11+, a crash in the gate) and say so.
 - `--no-verify` skips a gate once: a convenience gate, not enforcement.

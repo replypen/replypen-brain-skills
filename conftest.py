@@ -17,6 +17,12 @@ def _isolated_git_config(tmp_path_factory, monkeypatch):
                           '[init]\n\tdefaultBranch = main\n')
     monkeypatch.setenv('GIT_CONFIG_GLOBAL', str(config))
     monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
+    # A global core.hooksPath (git-secret-guard) must not reach fixtures either: `--git-path hooks/<name>`
+    # would resolve to the machine-wide dispatcher (tests/git-isolation.sh has the shell twin). Nor may
+    # agent/hook env redirect fixture git or inject `-c` config.
+    for name in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_CONFIG',
+                 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT'):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)

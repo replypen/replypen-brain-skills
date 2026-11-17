@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export RP_KIT_SCHEDULE=0  # never arm a real launchd/systemd job against a temp kit
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+. "$ROOT/tests/git-isolation.sh"
 
 KIT="$TMP/kit"
 mkdir -p "$KIT/skills/alpha" "$KIT/skills/beta"
@@ -251,24 +252,24 @@ test "$(git -C "$REPO" status --short --untracked-files=all)" = '?? other/.claud
 # Managed pre-commit hook: installed on a root brain, rewritten on refresh, never over a user hook.
 new_brain hooked
 run_install >/dev/null
-hook="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+hook="$(fixture_path "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)")"
 test -x "$hook"
 grep -qF 'replypen-brain-skills managed pre-commit hook' "$hook"
 grep -qF "$KIT/skills/local-brain-work/scripts/brain_hygiene.py" "$hook"
 run_install >/dev/null
 new_brain userhook
-hook="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+hook="$(fixture_path "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)")"
 printf '%s\n' '#!/bin/sh' 'echo mine' >"$hook"
 run_install >"$TMP/userhook.out"
 grep -qF 'pre-commit hook: kept your own hook' "$TMP/userhook.out"
 test "$(sed -n 2p "$hook")" = 'echo mine'
-grep -qF 'managed pre-push hook' "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-push)"
+grep -qF 'managed pre-push hook' "$(fixture_path "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-push)")"
 
 # Managed pre-push hook beside it; --no-hooks removes only marked wrappers and sticks; --hooks opts back in;
 # core.hooksPath is never written to, only told what to add.
 new_brain pushhook
 run_install >/dev/null
-pre_push="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-push)"
+pre_push="$(fixture_path "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-push)")"
 test -x "$pre_push"
 grep -qF 'replypen-brain-skills managed pre-push hook' "$pre_push"
 grep -qF '"$GATE" --push' "$pre_push"
@@ -289,6 +290,45 @@ grep -qF 'pre-push hook: kept your own hook (core.hooksPath=.githooks)' "$TMP/ho
 test ! -e "$BRAIN/.githooks"
 test ! -e "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-common-dir)/hooks/pre-push"
 
+# A global core.hooksPath dispatcher (git-secret-guard: every name links to `dispatch`, which chains
+# <common-dir>/hooks/<name>) gets the managed hooks in the repo's own hooks dir and is never written through
+# its symlinks (2026-11-17: a write via `--git-path hooks/pre-push` broke every git ref update on the
+# machine). A global hooksPath that does not declare the chain is left to the user, like a local one.
+GLOBAL_HOOKS="$TMP/global-hooks"
+mkdir -p "$GLOBAL_HOOKS"
+printf '%s\n' '#!/bin/sh' '# git-hooks-chain: v1' 'exit 0' >"$GLOBAL_HOOKS/dispatch"
+chmod +x "$GLOBAL_HOOKS/dispatch"
+for name in pre-commit pre-push reference-transaction; do ln -s dispatch "$GLOBAL_HOOKS/$name"; done
+dispatch_before="$(cat "$GLOBAL_HOOKS/dispatch")"
+new_brain dispatcher
+GIT_CONFIG_GLOBAL="$TMP/dispatcher.gitconfig"
+printf '[core]\n\thooksPath = %s\n' "$GLOBAL_HOOKS" >"$GIT_CONFIG_GLOBAL"
+run_install >"$TMP/dispatcher.out"
+test "$(RC_BRAIN_KIT="$KIT" "$ROOT/install.sh" --print-hooks-blocker "$BRAIN")" = ""
+for name in pre-commit pre-push; do
+  grep -qF "replypen-brain-skills managed $name hook" "$BRAIN/.git/hooks/$name"
+done
+test "$(cat "$GLOBAL_HOOKS/dispatch")" = "$dispatch_before"
+test "$(ls "$GLOBAL_HOOKS" | tr '\n' ' ')" = "dispatch pre-commit pre-push reference-transaction "
+if grep -qF 'kept your own hook' "$TMP/dispatcher.out"; then echo "error: chaining dispatcher treated as a blocker" >&2; exit 1; fi
+# End to end: a real commit goes dispatcher -> <common-dir>/hooks/pre-commit (the fixture kit has no gate, so
+# the managed wrapper says so: proof it ran).
+printf '%s\n' '#!/bin/sh' '# git-hooks-chain: v1' 'own="$(git rev-parse --git-common-dir)/hooks/${0##*/}"' \
+  '[ -x "$own" ] && exec "$own" "$@"' 'exit 0' >"$TMP/dispatch.chain"
+mv -f "$TMP/dispatch.chain" "$GLOBAL_HOOKS/dispatch"; chmod +x "$GLOBAL_HOOKS/dispatch"
+dispatch_before="$(cat "$GLOBAL_HOOKS/dispatch")"
+echo x >"$BRAIN/x.txt"; git -C "$BRAIN" add x.txt
+git -C "$BRAIN" commit -q -m chained 2>"$TMP/chained.err"
+grep -qF 'brain hygiene: kit missing' "$TMP/chained.err"
+test "$(cat "$GLOBAL_HOOKS/dispatch")" = "$dispatch_before"
+printf '%s\n' '#!/bin/sh' 'exit 0' >"$GLOBAL_HOOKS/dispatch"  # same dir, no chain marker
+new_brain nochain
+run_install >"$TMP/nochain.out"
+grep -qF "pre-push hook: kept your own hook (core.hooksPath=$GLOBAL_HOOKS)" "$TMP/nochain.out"
+test ! -e "$BRAIN/.git/hooks/pre-push"
+test "$(cat "$GLOBAL_HOOKS/dispatch")" = "$(printf '%s\n' '#!/bin/sh' 'exit 0')"
+GIT_CONFIG_GLOBAL="$TMP/.gitconfig-isolated"
+
 # Pre-rebrand install: ~/.rootcause-brain-skills moves to ~/.replypen-brain-skills (old path kept as a
 # link); links, exclude block and hook made by the old installer stay installer-owned; .rootcause.toml
 # still marks a brain; retired rc-* skill links are removed.
@@ -307,7 +347,7 @@ ln -s "$LEGACY/skills/rc-debug" "$BRAIN/.agents/skills/rc-debug"
 exclude="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path info/exclude)"
 printf '%s\n' '# rootcause-brain-skills: begin managed local install (.)' '/.rootcause/' \
   '/.agents/skills/rc-debug' '# rootcause-brain-skills: end managed local install (.)' >>"$exclude"
-hook="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+hook="$(fixture_path "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)")"
 mkdir -p "$(dirname "$hook")"
 printf '%s\n' '#!/bin/sh' '# rootcause-brain-skills managed pre-commit hook (install.sh)' 'exit 0' >"$hook"
 # First pass as a user (no RC_BRAIN_KIT), second as refresh-brains.sh (default path passed explicitly).

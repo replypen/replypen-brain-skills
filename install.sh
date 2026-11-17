@@ -49,6 +49,7 @@ usage() {
 usage: install.sh [--tag vX.Y.Z] [--schedule|--no-schedule] [--hooks|--no-hooks] [BRAIN_DIR]
        install.sh --latest-version
        install.sh --print-hook [pre-commit|pre-push]   (a managed hook this kit writes; the updater compares)
+       install.sh --print-hooks-blocker BRAIN_DIR      (the core.hooksPath that would skip managed hooks, if any)
 
 --no-schedule: disarm the daily kit refresh job and stay opted out; --schedule: opt back in.
 --no-hooks: remove this brain's managed git hooks and stay opted out; --hooks: opt back in.
@@ -149,6 +150,26 @@ echo "$label: no Python 3.11+ (python3/uv) here (untrusted mise.toml?), $what no
 HOOK_EOF
 }
 
+# hooks_blocker BRAIN: print the core.hooksPath that would skip <common-dir>/hooks, or nothing. A global or
+# system hooksPath whose pre-commit and pre-push declare `git-hooks-chain: v1` (git-secret-guard's machine-wide
+# dispatcher; older copies only carry its header) runs <common-dir>/hooks/<name> itself: not a blocker. A local
+# hooksPath (husky, .githooks) or a non-chaining global one is: the installer then only says what to add.
+# kit_update.py asks this same function (--print-hooks-blocker), so both agree on "missing hook".
+hooks_blocker() {
+  local brain="$1" line scope name hook
+  line="$(git -C "$brain" config --show-scope --get core.hooksPath 2>/dev/null)" || return 0
+  scope="${line%%$'\t'*}"
+  if [ "$scope" = global ] || [ "$scope" = system ]; then
+    for name in pre-commit pre-push; do
+      hook="$(git -C "$brain" rev-parse --path-format=absolute --git-path "hooks/$name")"  # read-only lookup
+      grep -qsE -e 'git-hooks-chain: v1' -e '^# git-secret-guard: the global core.hooksPath dispatcher' "$hook" ||
+        { echo "${line#*$'\t'}"; return 0; }
+    done
+    return 0
+  fi
+  echo "${line#*$'\t'}"
+}
+
 BRAIN_ARG=""
 SCHEDULE=""
 HOOKS=""
@@ -163,6 +184,10 @@ while [ $# -gt 0 ]; do
         pre-commit|pre-push) hook_body "$2" ;;
         *) hook_body pre-commit ;;
       esac
+      exit 0
+      ;;
+    --print-hooks-blocker)
+      hooks_blocker "${2:?--print-hooks-blocker needs BRAIN_DIR}"
       exit 0
       ;;
     --hooks|--no-hooks)
@@ -531,31 +556,36 @@ mv "$EXCLUDE_TMP" "$EXCLUDE"
 } >>"$EXCLUDE"
 
 # 4b. Managed git hooks (brain_hygiene.py): pre-commit judges the staged bytes (`--staged`), pre-push
-#     each pushed commit (`--push`): regressions vs the base only, so legacy debt never blocks. Never
-#     replaces a user-owned hook or a core.hooksPath setup; says what to add instead. `--no-hooks`
+#     each pushed commit (`--push`): regressions vs the base only, so legacy debt never blocks. Always written
+#     to <common-dir>/hooks, never to `--git-path hooks/...`: that follows core.hooksPath, and through a global
+#     dispatcher's symlinks it would overwrite the machine-wide hook script. Never replaces a user-owned hook,
+#     a symlink, or a blocking core.hooksPath setup (hooks_blocker); says what to add instead. `--no-hooks`
 #     removes only marked wrappers and leaves a marker the updater respects.
-HOOKS_PATH="$(git -C "$BRAIN" config core.hooksPath || true)"
-NO_HOOKS="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-common-dir)/replypen-kit-no-hooks"
+HOOKS_PATH="$(hooks_blocker "$BRAIN")"
+COMMON_DIR="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-common-dir)"
+[ -L "$COMMON_DIR/hooks" ] && HOOKS_PATH="${HOOKS_PATH:-$COMMON_DIR/hooks -> $(readlink "$COMMON_DIR/hooks")}"  # never write through a linked dir
+NO_HOOKS="$COMMON_DIR/replypen-kit-no-hooks"
 case "$HOOKS" in
   --no-hooks) date +%F >"$NO_HOOKS" ;;
   --hooks) rm -f "$NO_HOOKS" ;;
 esac
 for name in pre-commit pre-push; do
-  HOOK="$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path "hooks/$name")"
+  HOOK="$COMMON_DIR/hooks/$name"
   owned=0
-  [ -f "$HOOK" ] && grep -qF -e "$(hook_mark "$name")" -e "$(legacy_hook_mark "$name")" "$HOOK" && owned=1
+  [ -f "$HOOK" ] && [ ! -L "$HOOK" ] && grep -qF -e "$(hook_mark "$name")" -e "$(legacy_hook_mark "$name")" "$HOOK" && owned=1
   if [ -e "$NO_HOOKS" ]; then
     [ "$owned" = 1 ] && rm "$HOOK" && echo "$name hook: removed"
   elif [ -n "$BRAIN_PREFIX" ]; then
     echo "$name hook: skipped (brain is a subdirectory of its repo)"
-  elif [ -n "$HOOKS_PATH" ] || { [ -e "$HOOK" ] && [ "$owned" = 0 ]; }; then
+  elif [ -n "$HOOKS_PATH" ] || { { [ -e "$HOOK" ] || [ -L "$HOOK" ]; } && [ "$owned" = 0 ]; }; then
     flag=--staged; [ "$name" = pre-push ] && flag="--push   (reads the hook's stdin: pass it through)"
     echo "$name hook: kept your own hook${HOOKS_PATH:+ (core.hooksPath=$HOOKS_PATH)}; add this line to it:"
     echo "  python3 \"$KIT/skills/local-brain-work/scripts/brain_hygiene.py\" $flag"
   else
-    mkdir -p "$(dirname "$HOOK")"
-    hook_body "$name" >"$HOOK"
-    chmod +x "$HOOK"
+    mkdir -p "$COMMON_DIR/hooks"
+    hook_body "$name" >"$HOOK.rp-new"
+    chmod +x "$HOOK.rp-new"
+    mv -f "$HOOK.rp-new" "$HOOK"  # replaces the file itself: never writes through a link
   fi
 done
 [ -e "$NO_HOOKS" ] && echo "git hooks: opted out (re-enable: install.sh --hooks)"
