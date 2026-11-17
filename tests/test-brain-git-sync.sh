@@ -505,6 +505,36 @@ set -e
 test "$bundle_status" = 2
 printf '%s\n' "$output" | grep -Fq "rp dev brain publish -m"
 
+# A PROJECT checkout whose gitignored .replypen/local.toml selects a local-only tenant is still a
+# GitHub project brain: the check asks with --scope project, never the override's tenant.
+new_fixture project-local-tenant
+printf 'project = "demo"\n' >"$LOCAL/.replypen.toml"
+printf '/.replypen/\n' >"$LOCAL/.gitignore"
+mkdir -p "$LOCAL/.replypen"
+printf 'tenant = "t1"\n' >"$LOCAL/.replypen/local.toml"
+git -C "$LOCAL" add .replypen.toml .gitignore
+FAKE_RC_BIN_ARGS="$TMP/bin-args"
+mkdir -p "$FAKE_RC_BIN_ARGS"
+cat >"$FAKE_RC_BIN_ARGS/rc" <<'RC'
+#!/usr/bin/env bash
+case " $* " in
+  *" --tenant "*) echo '{"status":{"remote_mode":"none"}}' ;;
+  *) echo '{"status":{"remote_mode":"github"}}' ;;
+esac
+RC
+chmod +x "$FAKE_RC_BIN_ARGS/rc"
+ln -s rc "$FAKE_RC_BIN_ARGS/rp"
+output="$(PATH="$FAKE_RC_BIN_ARGS:$PATH" run_sync --commit-message "project with local tenant" --json)"
+assert_json_ok "$output"
+
+# An unknown status shape is not an affirmative answer: sync proceeds.
+new_fixture odd-status
+write_file "$LOCAL/odd.txt" "odd"
+git -C "$LOCAL" add odd.txt
+output="$(PATH="$FAKE_RC_BIN:$PATH" FAKE_RC_RESPONSE='{"status":{"remote_mode":{"x":1}}}' \
+  run_sync --commit-message "odd status" --json)"
+assert_json_ok "$output"
+
 # Keep the exact public command discoverable if the skill integration is present in this checkout.
 if test -f "$ROOT/skills/brain-git-sync/SKILL.md"; then
   grep -Fq "\$brain dev: git sync" "$ROOT/skills/brain-git-sync/SKILL.md"

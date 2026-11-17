@@ -255,6 +255,17 @@ class BrainPublishTest(unittest.TestCase):
         self.assertEqual(self.published(), [])
         self.assertEqual(git(self.repo, "ls-remote", "origin", "main"), origin_before)
 
+    def test_project_checkout_with_local_tenant_override_ignores_that_tenants_mode(self) -> None:
+        (self.repo / ".gitignore").write_text("/.replypen/\n")
+        git(self.repo, "add", ".gitignore")
+        git(self.repo, "commit", "-qm", "ignore local")
+        (self.repo / ".replypen").mkdir()
+        (self.repo / ".replypen" / "local.toml").write_text('tenant = "t1"\n')
+        self.rc_state(channels={"stable": self.old}, remote_mode="none")  # the TENANT is local-only
+        code, receipt = self.publish()
+        self.assertEqual((code, receipt["status"]), (0, "published"), receipt)
+        self.assertEqual(self.published(), ["stable"])
+
     def test_bundle_checkout_is_refused_with_the_rp_recipe(self) -> None:
         git(self.repo, "remote", "set-url", "origin", str(self.repo / ".git" / "replypen.bundle"))
         code, receipt = self.publish()

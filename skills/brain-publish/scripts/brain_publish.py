@@ -124,7 +124,7 @@ class Rc:
         (its `rp dev brain publish --sha` would fail with BRAIN_LOCAL_ONLY)."""
         status = self("status", stage=stage).get("status") or {}
         mode = status.get("remote_mode")
-        if mode and mode != "github":
+        if isinstance(mode, str) and mode and mode != "github":
             raise Stop(EXIT_BLOCKED, stage, bgs.local_only_error(self.repo, self.project, stale_clone=True),
                        remote_mode=mode)
         return status

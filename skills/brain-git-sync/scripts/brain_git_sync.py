@@ -200,11 +200,12 @@ def _in_progress(git: Git, name: str) -> bool:
     return git.git_path(name).exists()
 
 
-def _binding(repo: Path) -> dict[str, str]:
-    """Best-effort `project`/`tenant` of the checkout: committed marker, then the gitignored
-    `.replypen/local.toml` (where `rp dev brain clone` may put the tenant)."""
+def _binding(repo: Path, *, local: bool = True) -> dict[str, str]:
+    """Best-effort `project`/`tenant` of the checkout: committed marker, then (with `local`) the
+    gitignored `.replypen/local.toml`. Only the marker says what the checkout IS: local.toml is a
+    per-machine tenant override that a project checkout may carry too."""
     found: dict[str, str] = {}
-    for path in (_marker(repo), repo / ".replypen" / "local.toml"):
+    for path in (_marker(repo), repo / ".replypen" / "local.toml")[: 2 if local else 1]:
         try:
             data = tomllib.loads(path.read_text("utf-8"))
         except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
@@ -232,7 +233,7 @@ def bundle_checkout(repo: Path) -> bool:
 
 def local_only_error(repo: Path, project: str = "", *, stale_clone: bool) -> str:
     """The one refusal text for a brain without a GitHub repository (remote_mode none)."""
-    bound = _binding(repo)
+    bound = _binding(repo, local=not stale_clone)
     project = project or bound.get("project", "<project>")
     tenant = bound.get("tenant", "")
     label = f"{project} tenant {tenant}" if tenant else project
@@ -248,13 +249,15 @@ def local_only_error(repo: Path, project: str = "", *, stale_clone: bool) -> str
 
 
 def brain_status(repo: Path, project: str, reporter: Reporter) -> dict[str, object] | None:
-    """Best-effort `status` from `rp dev brain status -o json` for the checkout's brain (its
-    tenant brain when bound to one). None (never blocking) when `rp` is unavailable or fails."""
+    """Best-effort `status` from `rp dev brain status -o json` for the brain this checkout IS: a
+    tenant brain when its committed marker says `tenant =`, else the project brain (`--scope
+    project`, ignoring a local tenant override). None (never blocking) when `rp` is unavailable,
+    fails, times out or answers an unknown shape."""
     cmd = [_cli(), "dev", "brain", "status", "-o", "json", "--raw-output"]
     if project:
         cmd = [cmd[0], "--project", project, *cmd[1:]]
-    if tenant := _binding(repo).get("tenant"):
-        cmd += ["--tenant", tenant]
+    tenant = _binding(repo, local=False).get("tenant")
+    cmd += ["--tenant", tenant] if tenant else ["--scope", "project"]
     try:
         proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as error:
@@ -283,7 +286,7 @@ def refuse_unsupported_brain(repo: Path, project: str, reporter: Reporter) -> No
         raise SyncError(local_only_error(repo, project, stale_clone=False))
     status = brain_status(repo, project, reporter) or {}
     mode = status.get("remote_mode")
-    if mode and mode != "github":
+    if isinstance(mode, str) and mode and mode != "github":  # refuse only on an affirmative answer
         raise SyncError(local_only_error(repo, project, stale_clone=True), details={"remote_mode": mode})
     source = status.get("brain_source")
     if not isinstance(source, dict) or not source.get("read_only"):
