@@ -1,91 +1,75 @@
 key: quickbooks
 name: QuickBooks Online
-kinds: [token, oauth]
+kinds: [oauth]
 credential_exposure: broker
-# Script connector: lib.connectors.quickbooks exists because multiple force-code triggers fire:
+# Script connector: lib.connectors.quickbooks exists because force-code triggers fire:
 # (a) field pre-selection — Customer/Invoice objects carry 50+ fields; support needs 5–8.
-# (d) non-standard pagination — QB embeds STARTPOSITION/MAXRESULTS *inside* the SQL query string
-#     sent as a query param; lib.api's offset style can't inject values into SQL clauses.
-# (e) search DSL — QB uses a SQL-like query language; a thin wrapper with pre-built queries
-#     prevents footguns (missing quotes, wrong field names, bare LIKE without %).
-# The realmId (company identifier) also varies per connection; the connector resolves it from
-# RC_CONN_QUICKBOOKS_REALM_ID so the base_url is fully concrete at call time.
+# (d) non-standard pagination — QB embeds STARTPOSITION/MAXRESULTS *inside* the SQL query string.
+# (e) search DSL — QB's SQL-like query language; pre-built queries prevent footguns.
+# OAuth only: QBO has no customer-mintable API key and access tokens expire hourly.
 connector_module: lib.connectors.quickbooks
 env_var: RC_CONN_QUICKBOOKS
 egress_hosts:
-  - quickbooks.api.intuit.com   # REST API (production)
-  - sandbox-quickbooks.api.intuit.com  # sandbox (dev/test only)
+  - quickbooks.api.intuit.com          # production companies (production keys)
+  - sandbox-quickbooks.api.intuit.com  # sandbox companies (development keys)
 
-# --- Generic lib.api caller fields (the compact declarative row) ---
-# Base URL is templated: the realmId is company-specific and cannot be hardcoded.
-# The connector resolves it from RC_CONN_QUICKBOOKS_REALM_ID at call time.
-# For direct lib.api use, pass the full URL or set base_url=https://quickbooks.api.intuit.com/v3/company/{realmId}.
-base_url: https://quickbooks.api.intuit.com/v3/company
+# One connection = one company. The host stores realm_id (Intuit's callback realmId) and api_host (the
+# host the token answered on at connect) in the connection config and resolves both placeholders on the
+# broker route; api_host must be one of egress_hosts above.
+base_url: https://{api_host}/v3/company/{realm_id}
 auth:
-  strategy: bearer        # OAuth 2.0 access token presented as `Authorization: Bearer …`
+  strategy: bearer
 pagination:
-  # QB embeds pagination in the SQL: SELECT … STARTPOSITION N MAXRESULTS M
-  # The connector handles paging manually; lib.api's generic loop is not used.
-  style: none
-  items_field: ""         # connector extracts items from QueryResponse.<Entity>
+  style: none             # the connector pages inside the SQL itself
+  items_field: ""
   page_size: 100
 default_headers:
-  Accept: application/json     # QB also serves XML by default; JSON requires this header
+  Accept: application/json     # QB serves XML without it
 rate_limit:
-  # QuickBooks signals throttling with 429 + Retry-After; no remaining-count header.
+  # 500 req/min and 10 req/s per company; throttling is 429 (errorCode 003001), no remaining header.
   remaining_header: ""
 oauth:
   auth_url: https://appcenter.intuit.com/connect/oauth2
   token_url: https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer
-  # QuickBooks does not separate read vs. write scopes; accounting covers both.
-  # openid/profile/email are standard OIDC scopes for identity context.
+  # Intuit has no read-only scope: accounting is read+write. Read-only is enforced by the broker (GET
+  # only) and this connector. No OIDC scopes: identity is the company (realmId), not the signing-in user.
   default_scopes:
     - com.intuit.quickbooks.accounting
-    - openid
-    - profile
-    - email
 help_md: |
-  Reads QuickBooks Online customers, invoices, payments, and company info for billing/support
-  diagnosis. Bearer auth via an OAuth 2.0 access token — token or OAuth kinds both use the API broker.
+  Reads QuickBooks Online customers, invoices and payments of the one connected company.
+  Answers "did you get my payment", "can you resend invoice 1037", "what do I still owe". Read-only.
+  Billing contacts often differ from the person writing in, so if the sender's email finds nothing,
+  search by name or by the invoice number they quote. Balance 0 on an invoice means paid.
 
-  QuickBooks is multi-company: the company identifier (realmId) is required for every request.
-  Set `RC_CONN_QUICKBOOKS_REALM_ID=<your-realm-id>` alongside the token. The realmId is the
-  numeric company ID visible in the QB dashboard URL: `.../app/...?companyId=<realmId>`.
+  Start with the customer or the invoice:
 
-  The connector wraps the QB query endpoint (`/v3/company/{realmId}/query?query=<SQL>`),
-  handling offset-in-SQL pagination and common entity lookups with field pre-selection.
+      python -m lib.connectors.quickbooks customer --email jane@acme.com
+      python -m lib.connectors.quickbooks customer "Acme"
+      python -m lib.connectors.quickbooks invoice --number 1037
 
-  CLI usage:
+  Then follow the customer Id from the output:
 
-      # Look up a customer by name or email
-      python -m lib.connectors.quickbooks customer "Acme Corp"
-      python -m lib.connectors.quickbooks customer --email acme@example.com
-
-      # List recent invoices for a customer (by QB customer id)
-      python -m lib.connectors.quickbooks invoices --customer-id 42 --limit 10
-
-      # Show a single invoice by QB invoice id
-      python -m lib.connectors.quickbooks invoice 1001
-
-      # Company overview (name, address, fiscal year)
+      python -m lib.connectors.quickbooks invoices --customer-id 42 --open
+      python -m lib.connectors.quickbooks payments --customer-id 42
+      python -m lib.connectors.quickbooks invoice 1001        # by QuickBooks Id
       python -m lib.connectors.quickbooks company
 
-  For direct QB SQL queries via lib.api (requires knowing the realm id):
+  Anything else: QuickBooks SQL through the query endpoint (paths are relative to the company),
+  e.g. credit memos for a customer:
 
-      python -m lib.api get quickbooks v3/company/<realmId>/query \
-        --query "query=SELECT * FROM Customer WHERE DisplayName LIKE '%Acme%' MAXRESULTS 5" \
-        --pick "QueryResponse.Customer.*.DisplayName,QueryResponse.Customer.*.Balance"
+      python -m lib.api get quickbooks query \
+        --query "query=SELECT * FROM CreditMemo WHERE CustomerRef = '42' MAXRESULTS 20" \
+        --query minorversion=75 --pick "QueryResponse.CreditMemo.*.DocNumber,QueryResponse.CreditMemo.*.TotalAmt"
 
-  QB SQL tips:
-  - Wrap string literals in single quotes: `WHERE DisplayName = 'Acme Corp'`
-  - Use `LIKE '%term%'` for partial matches
-  - Pagination: append `STARTPOSITION 1 MAXRESULTS 100` to the SQL (1-based offset)
-  - Available entities: Customer, Invoice, Payment, Bill, Vendor, Item, Account, CompanyInfo
+  SQL notes: always `SELECT *` (narrow with `--pick`), single-quote string values,
+  `LIKE '%term%'` for partial matches, page with `STARTPOSITION 1 MAXRESULTS 100` at the end.
+  Entities: Customer, Invoice, Payment, CreditMemo, Estimate, Item, Vendor, Bill, CompanyInfo. For
+  several lookups in a row, write a small /tmp script that imports `lib.connectors.quickbooks`.
 onboarding_md: |
   Ask which invoice or payment questions customers write in about — an unpaid or missing invoice, a
   payment not showing, or a credit note. Explore representative customers, invoices, and payments
-  without keeping customer rows; capture how a sender email or name maps to a QuickBooks customer id
-  and then to that customer's invoices and payments, plus invoice-number format and the status fields
-  that mean paid or overdue. Clarify which company (realmId) to use when the connection sees more than
-  one. Sending or voiding an invoice, recording a payment, or creating a customer is a write requiring
-  a live action or an explicit manual step; this connector only reads.
+  without keeping customer rows; capture how a sender email or name maps to a QuickBooks customer and
+  then to that customer's invoices and payments (and how often the billing contact differs from the
+  sender), plus the invoice-number format customers quote and which fields mean paid or overdue.
+  Sending or voiding an invoice, recording a payment, or creating a customer is a write requiring a
+  live action or an explicit manual step; this connector only reads.
