@@ -577,6 +577,10 @@ for name in pre-commit pre-push; do
     [ "$owned" = 1 ] && rm "$HOOK" && echo "$name hook: removed"
   elif [ -n "$BRAIN_PREFIX" ]; then
     echo "$name hook: skipped (brain is a subdirectory of its repo)"
+  elif [ -f "$BRAIN/install.sh" ] && [ -f "$BRAIN/skills/local-brain-work/scripts/brain_hygiene.py" ]; then
+    # The kit repo itself is not a brain: brain hygiene would reject its own runtime tests and tooling.
+    [ "$owned" = 1 ] && rm "$HOOK" && echo "$name hook: removed (this is the kit repo, not a brain)" \
+      || echo "$name hook: skipped (this is the kit repo, not a brain)"
   elif [ -n "$HOOKS_PATH" ] || { { [ -e "$HOOK" ] || [ -L "$HOOK" ]; } && [ "$owned" = 0 ]; }; then
     flag=--staged; [ "$name" = pre-push ] && flag="--push   (reads the hook's stdin: pass it through)"
     echo "$name hook: kept your own hook${HOOKS_PATH:+ (core.hooksPath=$HOOKS_PATH)}; add this line to it:"
