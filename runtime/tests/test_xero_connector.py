@@ -186,6 +186,11 @@ class TestPagination(_XeroCase):
 
 
 class TestTenantResolution(_XeroCase):
+    def test_not_connected_says_so_in_plain_words(self):
+        os.environ.pop("RC_CONN_XERO", None)
+        with patch.dict(os.environ, {"RC_API_BROKERED_KEYS": ""}):
+            self.assertIn("Xero is not connected in this run", self.cli_fails("tenants"))
+
     @responses_lib.activate
     def test_single_org_is_picked_automatically(self):
         self.connections()

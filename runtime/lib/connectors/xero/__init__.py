@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -50,6 +51,8 @@ _XERO_DATE_RE = re.compile(r"^/Date\((-?\d+)([+-]\d{4})?\)/$")
 
 
 def _client() -> api.Client:
+    if not api._manifest_with_runtime_broker_flag(MANIFEST, token_key="xero").brokered and not os.environ.get("RC_CONN_XERO", "").strip():
+        raise RuntimeError("Xero is not connected in this run. Connect it under Settings → Integrations.")
     return api.client(MANIFEST, token_key="xero")
 
 
