@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fr_common import (  # noqa: E402
     UTC,
     DEFAULT_TZ,
+    _cli,
     clip,
     day_bounds,
     find_brain_root,
@@ -78,6 +80,18 @@ def default_repos(brain_root: Path, members: Sequence[str]) -> list[dict[str, An
         repos.append({"id": "replypen", "path": str(host), "plane": "host",
                       "relevant_paths": list(HOST_PATHS)})
     return repos
+
+
+def box_checkout(project: str, tenant: str, cwd: Path) -> Path | None:
+    """Throwaway `rp` checkout of a tenant brain that has no GitHub repo; the caller deletes it."""
+    try:
+        done = subprocess.run(
+            [_cli(), "dev", "brain", "clone", project, "--tenant", tenant, "--temp", "-o", "json"],
+            capture_output=True, text=True, timeout=120, cwd=cwd)
+        path = Path(str(json.loads(done.stdout)["dir"]))
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
+        return None
+    return path if (path / ".git").exists() else None
 
 
 def commits(repo: Path, since: datetime, until: datetime, relevant: Sequence[str]) -> list[dict[str, Any]]:
@@ -338,12 +352,22 @@ def run(brain_root: Path, members: Sequence[str], overlay, clusters: Sequence[di
     until = min(until, datetime.now(UTC) + timedelta(hours=1))
     repo_commits: dict[str, list[dict[str, Any]]] = {}
     for repo in repos:
-        path = Path(str(repo.get("path", ""))).expanduser()
-        if not (path / ".git").exists():
+        temp = None
+        if repo.get("path"):
+            path = Path(str(repo["path"])).expanduser()
+        elif repo.get("project") and repo.get("tenant"):
+            path = temp = box_checkout(str(repo["project"]), str(repo["tenant"]), brain_root)
+        else:
+            path = None
+        if path is None or not (path / ".git").exists():
             continue
-        repo_commits[str(repo.get("id") or path.name)] = commits(
-            path, since, until, [str(p) for p in (repo.get("relevant_paths") or [])]
-        )
+        try:
+            repo_commits[str(repo.get("id") or path.name)] = commits(
+                path, since, until, [str(p) for p in (repo.get("relevant_paths") or [])]
+            )
+        finally:
+            if temp is not None:
+                shutil.rmtree(temp, ignore_errors=True)
     found = candidates(clusters, repo_commits)
     full = render(repo_commits, found, deploy_state, repos, tz, max_commits=40)
     brief = render_brief(repo_commits, found, implicated(repo_commits, clusters), deploy_state, tz)

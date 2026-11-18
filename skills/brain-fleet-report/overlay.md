@@ -28,9 +28,13 @@ already is in most brains). The report output (`.replypen/`) is gitignored.
 | `noise_senders` | same, on the sender |
 | `known_non_names` | words the privacy reducer must not mistake for a first name |
 | `include_kinds` | override the default `["email", "analysis"]` |
-| `[[repos]]` | `id`, `path`, `plane` (`brain\|tenant_brain\|mirror\|project_code\|host`), optional `relevant_paths` — scanned by `correlate.py` for onset candidates |
+| `[[repos]]` | `id`, `path` (or `project` + `tenant` for a tenant brain without a GitHub repo), `plane` (`brain\|tenant_brain\|mirror\|project_code\|host`), optional `relevant_paths` — scanned by `correlate.py` for onset candidates |
 
-TOML has no globs: enumerate tenant overlay repos explicitly, one `[[repos]]` row per tenant.
+TOML has no globs: enumerate tenant overlay repos explicitly, one `[[repos]]` row per tenant. A tenant
+brain without a GitHub repo (`rp dev brain status` → `remote_mode: none`) has no local clone: give the
+row `project` + `tenant` instead of `path` (`id = "dentai/de-kies"`, `plane = "tenant_brain"`), and
+`correlate.py` reads its history through a throwaway `rp dev brain clone --temp` checkout it deletes
+again. A row whose `path` no longer exists is skipped silently, so convert rows when a brain is switched.
 `relevant_paths` matters on the host repo — without it every host commit becomes a candidate.
 
 ## `overlay.py` hooks

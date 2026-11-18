@@ -150,8 +150,10 @@ Every proposal must be indistinguishable from the existing articles' author. Thr
 read in this order before writing any edit; the earlier one wins on conflict:
 
 1. **A help-centre voice file in the brain**, when it exists: `notes/helpcenter-tone-of-voice.md`
-   at the root of the checkout you run from (project brain for a project KB, tenant brain
-   `replypen-brain-<project>-tenant-<slug>` for a tenant KB). It is the owner's own description of
+   at the brain root: the project brain checkout for a project KB, the tenant brain for a tenant KB.
+   A tenant brain without a GitHub repo (`rp dev brain status` → `remote_mode: none`) has no clone:
+   read the file from a throwaway `rp dev brain clone <project> --tenant <slug> --temp` checkout and
+   delete it (`docs/tenant-brain.md`). It is the owner's own description of
    how their docs read and it beats everything below. Keep it out of runs (`.replypenignore`): docs
    voice is not mail voice.
 2. **The persona of the level you report on**, via `rp`: `rp project settings behavior get -o json`
