@@ -1,12 +1,10 @@
 key: xero
 name: Xero
-kinds: [token, oauth]
+kinds: [oauth]
 credential_exposure: broker
-# Script connector: Xero uses 1-based page-number pagination (`page=1,2,3…`) with a fixed 100
-# items/page, stopping when a page returns fewer than 100 items. The generic lib.api offset style
-# increments by item count (0 → 100 → 200…), which is incompatible. Force-code trigger (d) fired:
-# non-standard pagination. The connector also handles the required per-tenant `Xero-tenant-id`
-# header so callers don't need to supply it as a raw --query k=v on every call.
+# Script connector: every accounting call needs the `Xero-tenant-id` header (raw lib.api get cannot
+# send headers), the tenant is resolved from GET /connections, and each list endpoint wraps its rows
+# under its own key (Invoices, Contacts, ...). OAuth only: Xero has no customer-mintable API key.
 connector_module: lib.connectors.xero
 env_var: RC_CONN_XERO
 egress_hosts:
@@ -16,17 +14,17 @@ egress_hosts:
 base_url: https://api.xero.com/api.xro/2.0
 auth:
   strategy: bearer        # OAuth2 access token, injected from the oauth row's fresh bearer
+default_headers:
+  Accept: application/json  # Xero answers XML without it
 pagination:
-  # Xero uses 1-based page-number paging (page=1,2,3…), a fixed 100-item ceiling, no has-more flag —
-  # lib.api's `page` style. The script's _xero_pages() drives it with a per-call items_field because
-  # each endpoint wraps its rows under a different key (Invoices, Contacts, …). The manifest row
-  # below documents the real style but leaves items_field empty: a single key can't paginate every
-  # endpoint, so generic `--paginate` collapses to one page (use the connector CLI for multi-page).
+  # 1-based page numbers (page=1,2,...), no has-more flag: stop on a short page. Invoices/Contacts honour
+  # pageSize (default 100, max 1000). items_field is empty because every endpoint uses its own key; the
+  # script's _xero_pages sets it per call, so generic --paginate collapses to one page.
   style: page
   page_param: page
   page_start: 1
-  items_field: ""          # varies per endpoint (Invoices, Contacts, etc.); the script sets it per call
-  page_size: 100           # Xero's fixed maximum — cannot be overridden
+  items_field: ""
+  page_size: 100
 rate_limit:
   remaining_header: X-MinLimit-Remaining   # advisory; Xero also sends 429 + Retry-After
 oauth:
@@ -43,46 +41,45 @@ oauth:
     - accounting.contacts.read
     - accounting.settings.read
 help_md: |
-  Reads Xero accounting data for support diagnosis: invoices, contacts, credit notes, payments,
-  accounts, and bank transactions. Read-only — only ever issues GETs. Auth is OAuth (recommended)
-  or a long-lived token; the access token is held host-side behind the API broker.
+  Reads Xero invoices, payments and contacts for the connected organisation, so you can tell a
+  customer whether an invoice is paid, what is still open, and send them the invoice link. Read-only.
+  AUTHORISED = approved and unpaid, PAID = settled; `AmountDue` is what is still open.
 
-  Every Xero request requires a `Xero-tenant-id` header (the organisation's UUID — find it via
-  `/connections`). The connector CLI accepts `--tenant-id` and threads it through automatically.
-  For raw lib.api calls supply it explicitly with `--query Xero-tenant-id=<uuid>` (the connector
-  injects it as a header, but lib.api's --query flag is the escape hatch for direct calls).
+  Find the customer by the sender's email (contact + open and recently paid invoices), by company
+  name, or the invoice by the number they quote (payments, credit notes, due and paid dates);
+  `--online-url` adds the link the customer can view and pay from:
 
-  **Connector commands (recommended):**
+      python -m lib.connectors.xero contact --email billing@acme.example
+      python -m lib.connectors.xero contact "Acme"
+      python -m lib.connectors.xero invoice INV-0042
+      python -m lib.connectors.xero invoice INV-0042 --online-url
 
-      # List tenants / find tenant-id first:
-      python -m lib.connectors.xero tenants
+  Xero matches only a contact's main email: when `--email` finds nothing, try the company name from the
+  signature or domain, then the invoice number. Cross-check that the invoice's contact is the sender.
 
-      # Get an invoice by number or UUID:
-      python -m lib.connectors.xero invoice --tenant-id <uuid> INV-0042
+  Anything else: `get <path>` adds the organisation header for you (plain `lib.api get xero` cannot,
+  so it fails). Paths sit under the accounting API; `--query` takes Xero's `where`, `order`,
+  `Statuses`, `searchTerm`; `--max-pages N` collects a list; `--pick` keeps a few fields per row:
 
-      # List a contact's open invoices:
-      python -m lib.connectors.xero contact --tenant-id <uuid> "Acme Corp"
+      python -m lib.connectors.xero invoices --contact-id <ContactID> --status AUTHORISED,PAID
+      python -m lib.connectors.xero get CreditNotes --query 'where=Contact.ContactID==Guid("<ContactID>")' --pick CreditNoteNumber,Status,RemainingCredit
+      python -m lib.connectors.xero get Payments --query 'where=Date>=DateTime(2026,11,01)' --query 'order=Date DESC'
+      python -m lib.connectors.xero get Overpayments --query 'where=Contact.ContactID==Guid("<ContactID>")'
 
-      # List recent invoices (all statuses, newest first):
-      python -m lib.connectors.xero invoices --tenant-id <uuid> --status OUTSTANDING
+  Other useful paths: Prepayments, BankTransactions, Organisation, Accounts, Currencies. Dates come as
+  `/Date(ms+0000)/` in raw `get` output. Write a small `/tmp` script when one call isn't enough.
 
-  **Direct API reads (single-page, for quick exploration):**
+  Organisations: commands pick the organisation automatically when the connection covers one. With
+  several they stop and list them; pass `--org "<name>"` or `--tenant-id <id>` (`tenants` lists them).
 
-      python -m lib.api get xero /Invoices --query InvoiceNumber=INV-0042
-      python -m lib.api get xero /Contacts --query where=Name%3D%3D%22Acme+Corp%22
-
-  Note: for multi-page collection use the connector CLI; `python -m lib.api get xero ... --paginate`
-  is not supported for Xero (1-based page style incompatible with the generic paginator).
-
-  **Common paths:** /Invoices, /Contacts, /CreditNotes, /Payments, /Accounts, /BankTransactions,
-  /Organisations, /Currencies
-  **OAuth connect flow:** requires granular read scopes for invoices/credit notes, payments,
-  bank transactions, contacts, and organisation settings, plus `offline_access` for refresh tokens.
+  Disconnecting Xero in ReplyPen does not remove ReplyPen from Xero; the customer does that under
+  Xero → Settings → Connected apps. An error saying the connection was rejected means a project admin
+  must reconnect Xero in ReplyPen.
 onboarding_md: |
   Ask which invoice or payment questions customers write in about — an outstanding or missing
   invoice, a payment not applied, or a credit note. Explore contacts, invoices, and payments without
   keeping customer rows; capture how a sender email or name maps to a Xero contact and then to that
   contact's invoices, credit notes, and payments, plus the status values that mean outstanding or
-  paid. Clarify which organisation (Xero-tenant-id) applies when the connection sees more than one.
-  Sending or voiding an invoice, recording a payment, or creating a contact is a write requiring a
-  live action or an explicit manual step; this connector only reads.
+  paid. When the connection covers several organisations, record which one serves which mailbox or
+  brand. Sending or voiding an invoice, recording a payment, or creating a contact is a write
+  requiring a live action or an explicit manual step; this connector only reads.
