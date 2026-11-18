@@ -257,6 +257,17 @@ test -x "$hook"
 grep -qF 'replypen-brain-skills managed pre-commit hook' "$hook"
 grep -qF "$KIT/skills/local-brain-work/scripts/brain_hygiene.py" "$hook"
 run_install >/dev/null
+# The kit repo itself (install.sh + the hygiene gate at its root) gets no hook; a stale managed one goes.
+new_brain kitrepo
+mkdir -p "$BRAIN/skills/local-brain-work/scripts"
+: >"$BRAIN/install.sh"; : >"$BRAIN/skills/local-brain-work/scripts/brain_hygiene.py"
+hook="$(fixture_path "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)")"
+mkdir -p "$(dirname "$hook")"
+printf '%s\n' '#!/bin/sh' '# replypen-brain-skills managed pre-commit hook (install.sh)' 'exit 1' >"$hook"
+run_install >"$TMP/kitrepo.out"
+grep -qF 'pre-commit hook: removed (this is the kit repo, not a brain)' "$TMP/kitrepo.out"
+grep -qF 'pre-push hook: skipped (this is the kit repo, not a brain)' "$TMP/kitrepo.out"
+if [ -e "$hook" ]; then echo "error: managed hook left in the kit repo" >&2; exit 1; fi
 new_brain userhook
 hook="$(fixture_path "$(git -C "$BRAIN" rev-parse --path-format=absolute --git-path hooks/pre-commit)")"
 printf '%s\n' '#!/bin/sh' 'echo mine' >"$hook"
