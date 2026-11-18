@@ -2,25 +2,24 @@
 
 Force-code triggers that required a script (not just manifest.yaml):
 (a) Field pre-selection: Customer/Invoice objects carry 50+ fields; support needs 5–8.
-    Pre-selecting in the QB SQL query is idiomatic and keeps context small.
-(d) Non-standard pagination: QB embeds pagination *inside* the SQL query string
-    (``STARTPOSITION N MAXRESULTS M`` are SQL clauses, not separate query params).
-    lib.api's offset style sends ``offset_param`` as a standalone query param — it can't
-    inject values into an embedded SQL string.
-(e) QB query DSL: the ``/query`` endpoint requires SQL-like strings; a thin wrapper with
-    pre-built queries prevents footguns (unquoted string values, missing MAXRESULTS, wrong
-    field names per entity).
+(d) Non-standard pagination: QB embeds ``STARTPOSITION N MAXRESULTS M`` *inside* the SQL string,
+    which lib.api's offset style can't inject.
+(e) QB query DSL: pre-built queries prevent footguns (unquoted values, wrong field names).
 
-Auth: OAuth 2.0 bearer token injected as ``RC_CONN_QUICKBOOKS``.
-RealmId: the company identifier varies per QB company; resolved from ``RC_CONN_QUICKBOOKS_REALM_ID``.
-
-This connector imports ``lib.api`` — it never re-implements retry/backoff/rate-limiting.
+One OAuth connection = one QuickBooks company. The host captures the company id (``realmId``) at
+connect time and resolves the API base (``https://{api_host}/v3/company/{realm_id}``, sandbox or
+production host) on the broker route, so in a run every call is a path relative to that company.
+Local smoke without the broker: set ``RC_CONN_QUICKBOOKS`` (access token) and
+``RC_CONN_QUICKBOOKS_REALM_ID`` (+ ``RC_CONN_QUICKBOOKS_API_HOST=sandbox-quickbooks.api.intuit.com`` for
+a sandbox company).
 
 CLI:
     python -m lib.connectors.quickbooks customer "Acme Corp"
     python -m lib.connectors.quickbooks customer --email acme@example.com
-    python -m lib.connectors.quickbooks invoices --customer-id 42
+    python -m lib.connectors.quickbooks invoices --customer-id 42 [--open]
+    python -m lib.connectors.quickbooks invoice --number 1037
     python -m lib.connectors.quickbooks invoice 1001
+    python -m lib.connectors.quickbooks payments --customer-id 42
     python -m lib.connectors.quickbooks company
 """
 
@@ -28,114 +27,108 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
+import sys
 from typing import Any
 
 from lib import api
 
-# Pinned API version segment — part of the base path, not a header.
-_API_VERSION = "v3"
+# Below 75 Intuit serves 75 anyway (since 2025-08-01); pin it so responses are reproducible.
+_MINOR_VERSION = "75"
+# Upper bound on the local email scan when the server-side filter finds nothing (customers per company).
+_EMAIL_SCAN_MAX = 5000
+_PROD_HOST = "quickbooks.api.intuit.com"
+_ALLOWED_HOSTS = (_PROD_HOST, "sandbox-quickbooks.api.intuit.com")
+# Templated on purpose: the broker resolves it from the connection, so requests go out as relative paths.
+_TEMPLATE_BASE = "https://{api_host}/v3/company/{realm_id}"
+# Intuit documents column projection in SELECT as unsupported: always SELECT *, pick fields when rendering.
 
-# QB SQL field sets pre-selected for support grounding. QB SQL uses entity-prefixed field names
-# only in JOINs; for single-entity SELECT the plain field names are correct.
-_CUSTOMER_FIELDS = (
-    "Id, DisplayName, PrimaryEmailAddr, PrimaryPhone, Balance, "
-    "BillAddr, Active, CompanyName, GivenName, FamilyName, "
-    "MetaData"
-)
-
-_INVOICE_FIELDS = (
-    "Id, DocNumber, TxnDate, DueDate, TotalAmt, Balance, "
-    "CustomerRef, EmailStatus, PrintStatus, "
-    "BillEmail, Line, MetaData"
-)
-
-_PAYMENT_FIELDS = (
-    "Id, TxnDate, TotalAmt, UnappliedAmt, CustomerRef, "
-    "DepositToAccountRef, PaymentMethodRef, MetaData"
-)
-
-_COMPANY_FIELDS = (
-    "CompanyName, LegalName, CompanyAddr, FiscalYearStartMonth, "
-    "Country, Email, PrimaryPhone, WebAddr"
-)
-
-# The manifest row for this connector. base_url is set per-call using the resolved realmId;
-# the YAML declares the static host as documentation — the connector overrides it at runtime.
-_MANIFEST = api.Manifest(
-    key="quickbooks",
-    base_url="https://quickbooks.api.intuit.com",  # host only; path set per-call
-    auth=api.Auth(strategy="bearer"),
-    pagination=api.Pagination(style="none"),  # connector drives SQL-embedded pagination manually
-    rate_limit_remaining_header="",
-    default_headers={"Accept": "application/json"},
-)
-api.register(_MANIFEST)
-
-
-def _realm_id() -> str:
-    """Resolve the QB company realmId from ``RC_CONN_QUICKBOOKS_REALM_ID``.
-
-    The realmId is the numeric company identifier in QB URLs (.../app/...?companyId=<realmId>).
-    Must be set alongside ``RC_CONN_QUICKBOOKS`` — unlike Salesforce we can't derive it from
-    the token because QB tokens are not bound to a single company (a token may access multiple
-    companies; the operator picks the target company by setting this env var).
-    """
-    realm = os.environ.get("RC_CONN_QUICKBOOKS_REALM_ID", "").strip()
-    if not realm:
-        raise RuntimeError(
-            "RC_CONN_QUICKBOOKS_REALM_ID is not set. "
-            "Set it to the numeric company ID from your QuickBooks Online dashboard URL "
-            "(.../app/...?companyId=<realmId>)."
-        )
-    return realm
-
-
-def _client(realm: str | None = None) -> api.Client:
-    """Build a lib.api Client for the given QB company."""
-    rid = realm or _realm_id()
-    # Build a per-call manifest with the fully resolved base URL so _join works correctly.
-    manifest = api.Manifest(
+def _manifest(base_url: str) -> api.Manifest:
+    return api.Manifest(
         key="quickbooks",
-        base_url=f"https://quickbooks.api.intuit.com/{_API_VERSION}/company/{rid}",
+        base_url=base_url,
         auth=api.Auth(strategy="bearer"),
-        pagination=api.Pagination(style="none"),
+        pagination=api.Pagination(style="none"),  # connector drives SQL-embedded pagination
         rate_limit_remaining_header="",
         default_headers={"Accept": "application/json"},
     )
-    return api.client(manifest, token_key="quickbooks")
 
 
-def _qb_query(
-    sql: str,
-    entity: str,
-    *,
-    realm: str | None = None,
-    page_size: int = 100,
-    max_records: int = 500,
-) -> list[dict]:
-    """Execute a QB SQL query and page through results up to ``max_records``.
+api.register(_manifest(_TEMPLATE_BASE))
 
-    QB embeds pagination in the SQL: ``STARTPOSITION N MAXRESULTS M``. Each response carries
-    ``QueryResponse.<Entity>`` (the item list) and ``QueryResponse.totalCount``.
-    The connector drives the STARTPOSITION offset here — nowhere else.
 
-    ``sql`` must NOT include STARTPOSITION/MAXRESULTS (we append them).
-    ``entity`` is the QB entity name (``Customer``, ``Invoice``, etc.) used to extract items
-    from the response envelope.
-    """
-    c = _client(realm)
+def _local_base() -> str | None:
+    """Concrete base for a local smoke run (env token, no broker); None when no realm is set."""
+    realm = os.environ.get("RC_CONN_QUICKBOOKS_REALM_ID", "").strip()
+    if not realm:
+        return None
+    if not realm.isdigit():
+        raise RuntimeError("RC_CONN_QUICKBOOKS_REALM_ID must be the numeric QuickBooks company id")
+    host = os.environ.get("RC_CONN_QUICKBOOKS_API_HOST", "").strip() or _PROD_HOST
+    if host not in _ALLOWED_HOSTS:
+        raise RuntimeError(f"RC_CONN_QUICKBOOKS_API_HOST must be one of {', '.join(_ALLOWED_HOSTS)}")
+    return f"https://{host}/v3/company/{realm}"
+
+
+def _client() -> api.Client:
+    templated = _manifest(_TEMPLATE_BASE)
+    # Broker mode wins: stale local smoke variables must never turn run calls into absolute targets.
+    if api._manifest_with_runtime_broker_flag(templated, token_key="quickbooks").brokered:
+        return api.client(templated, token_key="quickbooks")
+    local = _local_base()
+    if local is None:
+        raise RuntimeError(
+            "QuickBooks is not connected in this run. Connect it under Settings → Integrations "
+            "(one connection per QuickBooks company)."
+        )
+    return api.client(_manifest(local), token_key="quickbooks")
+
+
+def _get(path: str, query: dict[str, str] | None = None) -> Any:
+    q = {"minorversion": _MINOR_VERSION, **(query or {})}
+    try:
+        return _client().get(path, query=q)
+    except api.ApiError as exc:
+        raise _friendly(exc) from exc
+
+
+def _friendly(exc: api.ApiError) -> Exception:
+    if exc.status in (401, 403):
+        return RuntimeError(
+            f"QuickBooks refused the request ({exc.status}): the connection expired or lost access. "
+            "Ask the project admin to reconnect QuickBooks under Settings → Integrations."
+        )
+    if exc.status == 429:
+        return RuntimeError(
+            "QuickBooks rate limit hit (429, max 500 requests/min per company). Wait a minute, then retry "
+            "with fewer calls."
+        )
+    return exc
+
+
+def _q(value: str) -> str:
+    """Quote a QB SQL string literal (backslash-escape backslashes and single quotes)."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def _id(value: str, what: str) -> str:
+    value = str(value).strip()
+    if not re.fullmatch(r"[0-9]+", value):
+        raise RuntimeError(f"invalid QuickBooks {what}: {value!r} (expected the numeric Id)")
+    return value
+
+
+def _qb_query(sql: str, entity: str, *, page_size: int = 100, max_records: int = 500) -> list[dict]:
+    """Run a QB SQL query, paging with SQL-embedded STARTPOSITION/MAXRESULTS (1-based)."""
     records: list[dict] = []
-    start = 1  # QB uses 1-based offset
+    start = 1
     while len(records) < max_records:
-        page_sql = f"{sql} STARTPOSITION {start} MAXRESULTS {page_size}"
-        body = c.get("query", query={"query": page_sql, "minorversion": "65"})
-        qr = body.get("QueryResponse") or {}
-        page_items: list[dict] = list(qr.get(entity) or [])
-        records.extend(page_items)
-        # QB returns fewer items than MAXRESULTS when exhausted (or omits the entity key entirely).
-        if len(page_items) < page_size:
+        body = _get("query", {"query": f"{sql} STARTPOSITION {start} MAXRESULTS {page_size}"})
+        page = list((body.get("QueryResponse") or {}).get(entity) or [])
+        records.extend(page)
+        if len(page) < page_size:
             break
-        start += len(page_items)
+        start += len(page)
     return records[:max_records]
 
 
@@ -145,93 +138,83 @@ def _qb_query(
 
 
 def query_customer(
-    display_name: str | None = None,
-    *,
-    email: str | None = None,
-    customer_id: str | None = None,
-    realm: str | None = None,
+    display_name: str | None = None, *, email: str | None = None, customer_id: str | None = None
 ) -> list[dict]:
-    """Return Customers matching display_name (LIKE), email, or QB customer id.
-
-    At least one of ``display_name``, ``email``, or ``customer_id`` is required.
-    """
+    """Customers by display name (LIKE), primary email, or QB customer Id."""
     if not display_name and not email and not customer_id:
         raise RuntimeError("at least one of display_name, email, or customer_id is required")
-
     if customer_id:
-        # Direct read endpoint — faster than a query; no SQL needed.
-        c = _client(realm)
-        body = c.get(f"customer/{customer_id}")
-        cust = body.get("Customer")
+        cust = _get(f"customer/{_id(customer_id, 'customer id')}").get("Customer")
         return [cust] if cust else []
-
-    clauses: list[str] = []
-    if display_name:
-        safe = display_name.replace("'", "\\'")
-        clauses.append(f"DisplayName LIKE '%{safe}%'")
+    if email and not display_name:
+        return _customers_by_email(email.strip())
+    clauses = [f"DisplayName LIKE {_q('%' + display_name + '%')}"]
+    found = _qb_query(f"SELECT * FROM Customer WHERE {' AND '.join(clauses)}", "Customer", max_records=50)
     if email:
-        safe_email = email.replace("'", "\\'")
-        clauses.append(f"PrimaryEmailAddr = '{safe_email}'")
+        found = [c for c in found if _email_of(c) == email.strip().lower()]
+    return found
 
-    where = " AND ".join(clauses)
-    sql = f"SELECT {_CUSTOMER_FIELDS} FROM Customer WHERE {where}"
-    return _qb_query(sql, "Customer", realm=realm, max_records=50)
+
+def _email_of(customer: dict) -> str:
+    return str(_val(customer, "PrimaryEmailAddr.Address") or "").strip().lower()
+
+
+def _customers_by_email(email: str) -> list[dict]:
+    """Server-side filter first; if Intuit refuses PrimaryEmailAddr as a filter (400), match locally over a
+    bounded scan, case-insensitively either way."""
+    # TODO(quickbooks): confirm on a sandbox company whether the server-side filter is accepted and
+    # case-insensitive (spec §6); drop whichever branch proves useless.
+    try:
+        found = _qb_query(f"SELECT * FROM Customer WHERE PrimaryEmailAddr = {_q(email)}", "Customer", max_records=50)
+    except api.ApiError as exc:
+        if exc.status != 400:
+            raise
+        found = []
+    if found:
+        return found
+    scan = _qb_query("SELECT * FROM Customer", "Customer", page_size=1000, max_records=_EMAIL_SCAN_MAX)
+    return [c for c in scan if _email_of(c) == email.lower()]
 
 
 def query_invoices(
     *,
     customer_id: str | None = None,
     invoice_id: str | None = None,
-    realm: str | None = None,
+    number: str | None = None,
+    open_only: bool = False,
     limit: int = 20,
 ) -> list[dict]:
-    """Return Invoices by QB invoice id or filtered by QB customer id (newest first)."""
+    """Invoices by QB Id, by invoice number (DocNumber), or for a customer (newest first)."""
     if invoice_id:
-        c = _client(realm)
-        body = c.get(f"invoice/{invoice_id}")
-        inv = body.get("Invoice")
+        inv = _get(f"invoice/{_id(invoice_id, 'invoice id')}").get("Invoice")
         return [inv] if inv else []
-
+    where = []
+    if number:
+        where.append(f"DocNumber = {_q(number.strip())}")
     if customer_id:
-        safe = customer_id.replace("'", "\\'")
-        sql = (
-            f"SELECT {_INVOICE_FIELDS} FROM Invoice "
-            f"WHERE CustomerRef = '{safe}' "
-            f"ORDERBY MetaData.LastUpdatedTime DESC"
-        )
-    else:
-        sql = (
-            f"SELECT {_INVOICE_FIELDS} FROM Invoice "
-            f"ORDERBY MetaData.LastUpdatedTime DESC"
-        )
-    return _qb_query(sql, "Invoice", realm=realm, max_records=limit)
+        where.append(f"CustomerRef = {_q(_id(customer_id, 'customer id'))}")
+    if open_only:
+        where.append("Balance > '0'")
+    sql = "SELECT * FROM Invoice"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDERBY MetaData.LastUpdatedTime DESC"
+    return _qb_query(sql, "Invoice", max_records=limit)
 
 
-def query_payments(
-    *,
-    customer_id: str | None = None,
-    realm: str | None = None,
-    limit: int = 20,
-) -> list[dict]:
-    """Return Payments for a customer (newest first)."""
+def query_payments(*, customer_id: str | None = None, limit: int = 20) -> list[dict]:
+    """Payments, optionally for one customer (newest first)."""
+    sql = "SELECT * FROM Payment"
     if customer_id:
-        safe = customer_id.replace("'", "\\'")
-        sql = (
-            f"SELECT {_PAYMENT_FIELDS} FROM Payment "
-            f"WHERE CustomerRef = '{safe}' "
-            f"ORDERBY MetaData.LastUpdatedTime DESC"
-        )
-    else:
-        sql = f"SELECT {_PAYMENT_FIELDS} FROM Payment ORDERBY MetaData.LastUpdatedTime DESC"
-    return _qb_query(sql, "Payment", realm=realm, max_records=limit)
+        sql += f" WHERE CustomerRef = {_q(_id(customer_id, 'customer id'))}"
+    sql += " ORDERBY TxnDate DESC"
+    return _qb_query(sql, "Payment", max_records=limit)
 
 
-def query_company_info(*, realm: str | None = None) -> dict | None:
-    """Return the QB company info for the configured realmId."""
-    rid = realm or _realm_id()
-    c = _client(rid)
-    body = c.get(f"companyinfo/{rid}")
-    return body.get("CompanyInfo")
+def query_company_info() -> dict | None:
+    """The connected company (CompanyInfo is a one-row entity; querying it needs no realm id)."""
+    rows = _qb_query("SELECT * FROM CompanyInfo", "CompanyInfo", max_records=1)
+    return rows[0] if rows else None
 
 
 # ---------------------------------------------------------------------------
@@ -240,21 +223,24 @@ def query_company_info(*, realm: str | None = None) -> dict | None:
 
 
 def _val(obj: Any, path: str) -> Any:
-    """Dotted-path lookup that tolerates nested QB response dicts."""
     found, v = api._dget(obj, path.split("."))
     return v if found else None
 
 
+def _money(v: Any) -> str:
+    try:
+        return f"{float(v):.2f}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
 def _customer_to_md(c: dict) -> str:
     name = _val(c, "DisplayName") or "(unknown)"
+    company = _val(c, "CompanyName") or ""
     email = _val(c, "PrimaryEmailAddr.Address") or ""
     phone = _val(c, "PrimaryPhone.FreeFormNumber") or ""
-    company = _val(c, "CompanyName") or ""
     balance = _val(c, "Balance")
-    active = _val(c, "Active")
-    cid = _val(c, "Id") or ""
-
-    lines = [f"### Customer {cid}: {name}"]
+    lines = [f"### Customer {_val(c, 'Id') or ''}: {name}"]
     if company and company != name:
         lines.append(f"- Company: {company}")
     if email:
@@ -262,8 +248,8 @@ def _customer_to_md(c: dict) -> str:
     if phone:
         lines.append(f"- Phone: {phone}")
     if balance is not None:
-        lines.append(f"- Balance owing: {balance:.2f}")
-    if active is False:
+        lines.append(f"- Open balance: {_money(balance)}")
+    if _val(c, "Active") is False:
         lines.append("- **Inactive**")
     return "\n".join(lines)
 
@@ -276,35 +262,60 @@ def _invoice_to_md(inv: dict) -> str:
     total = _val(inv, "TotalAmt")
     balance = _val(inv, "Balance")
     cust = _val(inv, "CustomerRef.name") or _val(inv, "CustomerRef.value") or ""
+    bill_email = _val(inv, "BillEmail.Address") or ""
     email_status = _val(inv, "EmailStatus") or ""
-
-    lines = [f"### Invoice {doc}"]
+    lines = [f"### Invoice {doc} (Id {iid})"]
     lines.append(f"- Date: {date}" + (f" | Due: {due}" if due else ""))
     if cust:
-        lines.append(f"- Customer: {cust}")
+        lines.append(f"- Customer: {cust} (Id {_val(inv, 'CustomerRef.value') or '?'})")
     if total is not None:
-        paid = (total - balance) if balance is not None else None
-        lines.append(
-            f"- Total: {total:.2f}"
-            + (f" | Paid: {paid:.2f} | Balance: {balance:.2f}" if paid is not None else "")
-        )
+        status = ""
+        if balance is not None:
+            status = " | **paid**" if float(balance) == 0 else f" | open balance {_money(balance)}"
+        lines.append(f"- Total: {_money(total)}{status}")
+    if bill_email:
+        lines.append(f"- Billed to: {bill_email}")
     if email_status:
         lines.append(f"- Email status: {email_status}")
     return "\n".join(lines)
 
 
+def _payment_to_md(p: dict) -> str:
+    lines = [f"### Payment {_val(p, 'Id') or ''} on {(_val(p, 'TxnDate') or '')[:10]}"]
+    cust = _val(p, "CustomerRef.name") or _val(p, "CustomerRef.value") or ""
+    if cust:
+        lines.append(f"- Customer: {cust}")
+    lines.append(f"- Amount: {_money(_val(p, 'TotalAmt'))}")
+    unapplied = _val(p, "UnappliedAmt")
+    if unapplied not in (None, 0, 0.0):
+        lines.append(f"- Unapplied: {_money(unapplied)}")
+    linked = [
+        str(txn.get("TxnId"))
+        for line in (_val(p, "Line") or [])
+        for txn in ((line or {}).get("LinkedTxn") or [])
+        if txn.get("TxnType") == "Invoice"
+    ]
+    if linked:
+        lines.append(f"- Applied to invoice Ids: {', '.join(linked)}")
+    return "\n".join(lines)
+
+
+def _list_md(items: list[dict], title: str, empty: str, render) -> str:
+    if not items:
+        return f"# {title}\n\n{empty}"
+    return f"# {title} ({len(items)} found)\n\n" + "\n\n".join(render(i) for i in items)
+
+
 def customers_to_markdown(customers: list[dict], *, title: str = "QuickBooks Customers") -> str:
-    if not customers:
-        return f"# {title}\n\nNo customers found."
-    header = f"# {title} ({len(customers)} found)"
-    return header + "\n\n" + "\n\n".join(_customer_to_md(c) for c in customers)
+    return _list_md(customers, title, "No customers found.", _customer_to_md)
 
 
 def invoices_to_markdown(invoices: list[dict], *, title: str = "QuickBooks Invoices") -> str:
-    if not invoices:
-        return f"# {title}\n\nNo invoices found."
-    header = f"# {title} ({len(invoices)} found)"
-    return header + "\n\n" + "\n\n".join(_invoice_to_md(inv) for inv in invoices)
+    return _list_md(invoices, title, "No invoices found.", _invoice_to_md)
+
+
+def payments_to_markdown(payments: list[dict], *, title: str = "QuickBooks Payments") -> str:
+    return _list_md(payments, title, "No payments found.", _payment_to_md)
 
 
 def company_to_markdown(info: dict | None) -> str:
@@ -312,22 +323,18 @@ def company_to_markdown(info: dict | None) -> str:
         return "# QuickBooks Company\n\nNo company info found."
     name = _val(info, "CompanyName") or ""
     legal = _val(info, "LegalName") or ""
-    country = _val(info, "Country") or ""
-    fiscal = _val(info, "FiscalYearStartMonth") or ""
     addr = _val(info, "CompanyAddr") or {}
-    city = addr.get("City", "") if isinstance(addr, dict) else ""
-
     lines = ["# QuickBooks Company Info"]
     if name:
         lines.append(f"- Name: {name}")
     if legal and legal != name:
         lines.append(f"- Legal name: {legal}")
-    if city:
-        lines.append(f"- City: {city}")
-    if country:
-        lines.append(f"- Country: {country}")
-    if fiscal:
-        lines.append(f"- Fiscal year starts: {fiscal}")
+    if isinstance(addr, dict) and addr.get("City"):
+        lines.append(f"- City: {addr['City']}")
+    if _val(info, "Country"):
+        lines.append(f"- Country: {_val(info, 'Country')}")
+    if _val(info, "FiscalYearStartMonth"):
+        lines.append(f"- Fiscal year starts: {_val(info, 'FiscalYearStartMonth')}")
     return "\n".join(lines)
 
 
@@ -343,61 +350,46 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    # customer subcommand
-    cust_p = sub.add_parser("customer", help="look up customers by name, email, or QB id")
+    cust_p = sub.add_parser("customer", help="find customers by name, email, or QB Id")
     cust_p.add_argument("name", nargs="?", default="", help="display name (partial match)")
-    cust_p.add_argument("--email", default="", help="filter by primary email")
-    cust_p.add_argument("--customer-id", default="", dest="customer_id", help="QB customer id")
-    cust_p.add_argument("--realm", default="", help="override QB realmId")
+    cust_p.add_argument("--email", default="", help="primary email (exact)")
+    cust_p.add_argument("--customer-id", default="", dest="customer_id", help="QB customer Id")
 
-    # invoices subcommand
-    inv_p = sub.add_parser("invoices", help="list invoices (optionally for a customer)")
-    inv_p.add_argument("--customer-id", default="", dest="customer_id", help="QB customer id")
-    inv_p.add_argument("--limit", type=int, default=20, help="max invoices to return")
-    inv_p.add_argument("--realm", default="", help="override QB realmId")
+    inv_p = sub.add_parser("invoices", help="list invoices, newest first")
+    inv_p.add_argument("--customer-id", default="", dest="customer_id", help="QB customer Id")
+    inv_p.add_argument("--open", action="store_true", dest="open_only", help="only unpaid (Balance > 0)")
+    inv_p.add_argument("--limit", type=int, default=20)
 
-    # invoice subcommand (single)
-    inv1_p = sub.add_parser("invoice", help="show a single invoice by QB invoice id")
-    inv1_p.add_argument("id", help="QB invoice id")
-    inv1_p.add_argument("--realm", default="", help="override QB realmId")
+    inv1_p = sub.add_parser("invoice", help="one invoice by QB Id or by invoice number")
+    inv1_p.add_argument("id", nargs="?", default="", help="QB invoice Id")
+    inv1_p.add_argument("--number", default="", help="invoice number as the customer sees it (DocNumber)")
 
-    # company subcommand
-    co_p = sub.add_parser("company", help="show company info")
-    co_p.add_argument("--realm", default="", help="override QB realmId")
+    pay_p = sub.add_parser("payments", help="list payments, newest first")
+    pay_p.add_argument("--customer-id", default="", dest="customer_id", help="QB customer Id")
+    pay_p.add_argument("--limit", type=int, default=20)
+
+    sub.add_parser("company", help="show the connected company")
 
     args = parser.parse_args(argv)
-    realm = (getattr(args, "realm", "") or None)
-
-    if args.cmd == "customer":
-        if not args.name and not args.email and not args.customer_id:
-            parser.error("customer requires a name argument, --email, or --customer-id")
-        customers = query_customer(
-            args.name or None,
-            email=args.email or None,
-            customer_id=args.customer_id or None,
-            realm=realm,
-        )
-        print(customers_to_markdown(customers))
-        return 0
-
-    if args.cmd == "invoices":
-        invoices = query_invoices(
-            customer_id=args.customer_id or None,
-            realm=realm,
-            limit=args.limit,
-        )
-        print(invoices_to_markdown(invoices))
-        return 0
-
-    if args.cmd == "invoice":
-        invoices = query_invoices(invoice_id=args.id, realm=realm)
-        print(invoices_to_markdown(invoices, title=f"QuickBooks Invoice {args.id}"))
-        return 0
-
-    if args.cmd == "company":
-        info = query_company_info(realm=realm)
-        print(company_to_markdown(info))
-        return 0
-
-    parser.error("unknown command")
-    return 2
+    try:
+        if args.cmd == "customer":
+            if not args.name and not args.email and not args.customer_id:
+                parser.error("customer requires a name, --email, or --customer-id")
+            print(customers_to_markdown(query_customer(
+                args.name or None, email=args.email or None, customer_id=args.customer_id or None)))
+        elif args.cmd == "invoices":
+            print(invoices_to_markdown(query_invoices(
+                customer_id=args.customer_id or None, open_only=args.open_only, limit=args.limit)))
+        elif args.cmd == "invoice":
+            if bool(args.id) == bool(args.number):
+                parser.error("invoice takes either an Id or --number")
+            invs = query_invoices(invoice_id=args.id or None, number=args.number or None, limit=5)
+            print(invoices_to_markdown(invs, title=f"QuickBooks Invoice {args.number or args.id}"))
+        elif args.cmd == "payments":
+            print(payments_to_markdown(query_payments(customer_id=args.customer_id or None, limit=args.limit)))
+        elif args.cmd == "company":
+            print(company_to_markdown(query_company_info()))
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0

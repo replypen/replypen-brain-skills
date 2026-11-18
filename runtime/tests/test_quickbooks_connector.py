@@ -6,11 +6,14 @@ Force-code triggers that required a script:
 No live creds, no network. HTTP is mocked with ``responses``. The fixture bodies mirror
 Intuit's documented QB Online API response shapes, trimmed to support-relevant fields.
 
-    cd runtime && uv run --with . --with pytest --with responses --with vcrpy --no-project pytest tests/test_quickbooks_connector.py -q
+    cd runtime && uv run --with . --with pytest --with responses --no-project pytest tests/test_quickbooks_connector.py -q
 """
 
+import io
 import os
 import sys
+from contextlib import redirect_stderr, redirect_stdout
+from urllib.parse import parse_qs, urlsplit
 import unittest
 from pathlib import Path
 
@@ -22,8 +25,10 @@ from lib import api  # noqa: E402
 import lib.connectors.quickbooks as qb  # noqa: E402
 
 REALM_ID = "123456789"
-BASE = f"https://quickbooks.api.intuit.com/v3/company/{REALM_ID}"
-QUERY_URL = f"{BASE}/query"
+# In a run the broker resolves the company base; the connector sends paths relative to it.
+BROKER = "http://rc-broker.internal/quickbooks"
+QUERY_URL = f"{BROKER}/query"
+LOCAL_BASE = f"https://sandbox-quickbooks.api.intuit.com/v3/company/{REALM_ID}"
 
 # ---------------------------------------------------------------------------
 # Documented example payloads (from Intuit QB Online API docs)
@@ -151,22 +156,40 @@ _COMPANY_INFO = {
 }
 
 
-def _env(monkeypatch_dict: dict[str, str], env: dict[str, str]) -> None:
-    """Temporarily update os.environ within a test — restored in tearDown."""
-    monkeypatch_dict.update(env)
+_PAYMENT_LIST = {
+    "QueryResponse": {
+        "Payment": [
+            {
+                "Id": "77",
+                "TxnDate": "2024-01-20",
+                "TotalAmt": 582.50,
+                "UnappliedAmt": 0,
+                "CustomerRef": {"value": "42", "name": "Geeta Kalapatapu"},
+                "Line": [{"Amount": 582.50, "LinkedTxn": [{"TxnId": "1001", "TxnType": "Invoice"}]}],
+            }
+        ],
+        "startPosition": 1,
+        "maxResults": 1,
+    }
+}
+
+_FAULT_401 = {"fault": {"error": [{"message": "message=AuthenticationFailed", "code": "100"}], "type": "AUTHENTICATION"}}
+
+_ENV_KEYS = ("RC_CONN_QUICKBOOKS", "RC_CONN_QUICKBOOKS_REALM_ID", "RC_CONN_QUICKBOOKS_API_HOST", "RC_API_BROKERED_KEYS")
+
+
+def _sql(call) -> str:
+    return parse_qs(urlsplit(call.request.url).query)["query"][0]
 
 
 class _Base(unittest.TestCase):
-    """Common setUp: inject a fake token + realmId, clear manifest registry."""
+    """Run mode: the host brokers quickbooks (credential + company base stay host-side)."""
 
     def setUp(self):
         api.MANIFESTS.clear()
         api._YAML_LOADED_KEYS.clear()
-        self._orig_env: dict[str, str | None] = {}
-        for key in ("RC_CONN_QUICKBOOKS", "RC_CONN_QUICKBOOKS_REALM_ID"):
-            self._orig_env[key] = os.environ.get(key)
-        os.environ["RC_CONN_QUICKBOOKS"] = "Bearer_test_qb_tok"
-        os.environ["RC_CONN_QUICKBOOKS_REALM_ID"] = REALM_ID
+        self._orig_env = {k: os.environ.pop(k, None) for k in _ENV_KEYS}
+        os.environ["RC_API_BROKERED_KEYS"] = "quickbooks"
 
     def tearDown(self):
         for key, val in self._orig_env.items():
@@ -177,223 +200,220 @@ class _Base(unittest.TestCase):
 
 
 class QuickbooksManifest(_Base):
-    """The YAML manifest loads correctly and maps every lib.api field."""
-
     def test_manifest_loaded_from_yaml(self):
-        m = api.load_manifests()
-        self.assertIn("quickbooks", m)
-        qbm = m["quickbooks"]
-        # base_url from the YAML manifest
-        self.assertIn("quickbooks.api.intuit.com", qbm.base_url)
+        qbm = api.load_manifests()["quickbooks"]
+        self.assertEqual(qbm.base_url, "https://{api_host}/v3/company/{realm_id}")
         self.assertEqual(qbm.auth.strategy, "bearer")
         self.assertEqual(qbm.pagination.style, "none")
-        self.assertEqual(qbm.rate_limit_remaining_header, "")
         self.assertEqual(qbm.default_headers.get("Accept"), "application/json")
 
-    def test_connector_register_wins_over_yaml(self):
-        """The connector's api.register() call must take precedence over YAML loading."""
-        import lib.connectors.quickbooks  # noqa: F401 — side-effect: registers manifest
-        api.load_manifests()  # should not overwrite the registered manifest
-        # The registered manifest's base_url is the host-only form (connector sets path per-call).
-        self.assertEqual(api.MANIFESTS["quickbooks"].key, "quickbooks")
-        self.assertEqual(api.MANIFESTS["quickbooks"].auth.strategy, "bearer")
+    def test_manifest_is_oauth_only_without_env_var_instructions(self):
+        import yaml
+
+        raw = yaml.safe_load((Path(qb.__file__).parent / "manifest.yaml").read_text())
+        self.assertEqual(raw["kinds"], ["oauth"])
+        self.assertEqual(raw["oauth"]["default_scopes"], ["com.intuit.quickbooks.accounting"])
+        self.assertNotIn("RC_CONN", raw["help_md"])
+        self.assertNotIn("realmId", raw["onboarding_md"])
 
 
-class QuickbooksCustomerQuery(_Base):
-    """Customer lookup — two-page SQL pagination stitched by the connector."""
-
+class QuickbooksBrokered(_Base):
     @responses_lib.activate
-    def test_customer_query_stitches_two_pages(self):
-        # The connector calls STARTPOSITION 1 MAXRESULTS 100 then STARTPOSITION 101... etc.
-        # We mock QUERY_URL twice: page 1 has 2 items (simulate page_size=2), page 2 has 1 item.
-        # Override page_size to 2 so we can trigger a second page.
+    def test_customer_query_stitches_two_pages_relative_to_company(self):
         responses_lib.add(responses_lib.GET, QUERY_URL, json=_CUSTOMER_PAGE_1, status=200)
         responses_lib.add(responses_lib.GET, QUERY_URL, json=_CUSTOMER_PAGE_2, status=200)
-
-        # Call with a tiny page_size to force two pages.
-        results = qb._qb_query(
-            "SELECT Id, DisplayName FROM Customer WHERE DisplayName LIKE '%a%'",
-            "Customer",
-            realm=REALM_ID,
-            page_size=2,
-            max_records=50,
-        )
-
-        self.assertEqual(len(results), 3)  # 2 from page 1 + 1 from page 2
-        self.assertEqual(results[0]["Id"], "1")
-        self.assertEqual(results[2]["Id"], "3")
-
-        # Bearer credential must ride on BOTH requests.
+        results = qb._qb_query("SELECT Id FROM Customer", "Customer", page_size=2, max_records=50)
+        self.assertEqual([r["Id"] for r in results], ["1", "2", "3"])
+        self.assertTrue(_sql(responses_lib.calls[0]).endswith("STARTPOSITION 1 MAXRESULTS 2"))
+        self.assertTrue(_sql(responses_lib.calls[1]).endswith("STARTPOSITION 3 MAXRESULTS 2"))
         for call in responses_lib.calls:
-            self.assertIn("Bearer", call.request.headers.get("Authorization", ""))
-            self.assertIn("Bearer_test_qb_tok", call.request.headers.get("Authorization", ""))
-
-        # Accept: application/json must be present (QB serves XML by default).
-        for call in responses_lib.calls:
+            q = parse_qs(urlsplit(call.request.url).query)
+            self.assertEqual(q["minorversion"], ["75"])
             self.assertEqual(call.request.headers.get("Accept"), "application/json")
+            self.assertNotIn("Authorization", call.request.headers)  # the broker attaches it
 
     @responses_lib.activate
-    def test_customer_query_stops_when_fewer_than_page_size(self):
-        """Connector stops paging when the returned batch is smaller than page_size."""
-        # Page 1 returns 1 item with page_size=2 → exhausted, no page 2.
+    def test_stops_when_fewer_than_page_size(self):
         responses_lib.add(responses_lib.GET, QUERY_URL, json=_CUSTOMER_PAGE_2, status=200)
-
-        results = qb._qb_query(
-            "SELECT Id FROM Customer",
-            "Customer",
-            realm=REALM_ID,
-            page_size=2,
-            max_records=50,
-        )
-
-        self.assertEqual(len(results), 1)
-        self.assertEqual(len(responses_lib.calls), 1)  # only one HTTP call
+        self.assertEqual(len(qb._qb_query("SELECT Id FROM Customer", "Customer", page_size=2)), 1)
+        self.assertEqual(len(responses_lib.calls), 1)
 
     @responses_lib.activate
-    def test_customer_query_by_display_name(self):
+    def test_customer_by_email_uses_server_filter(self):
+        responses_lib.add(responses_lib.GET, QUERY_URL, json=_CUSTOMER_PAGE_2, status=200)
+        found = qb.query_customer(email="cool@cars.com")
+        self.assertEqual([c["Id"] for c in found], ["3"])
+        sql = _sql(responses_lib.calls[0])
+        self.assertTrue(sql.startswith("SELECT * FROM Customer WHERE PrimaryEmailAddr = 'cool@cars.com'"))
+        self.assertEqual(len(responses_lib.calls), 1)
+
+    @responses_lib.activate
+    def test_customer_by_email_falls_back_to_local_match_when_filter_refused(self):
+        responses_lib.add(responses_lib.GET, QUERY_URL, json={"Fault": {"Error": [{"code": "4000"}]}}, status=400)
         responses_lib.add(responses_lib.GET, QUERY_URL, json=_CUSTOMER_PAGE_1, status=200)
-        results = qb.query_customer("Lauterbach", realm=REALM_ID)
-        self.assertGreater(len(results), 0)
-        # SQL must embed the LIKE clause (checked via the query param sent to the mock).
-        req_url = responses_lib.calls[0].request.url
-        self.assertIn("LIKE", req_url)
-        self.assertIn("Lauterbach", req_url)
+        found = qb.query_customer(email="AMY@lauterbach.com")
+        self.assertEqual([c["Id"] for c in found], ["1"])  # case-insensitive local match
+        self.assertTrue(_sql(responses_lib.calls[1]).startswith("SELECT * FROM Customer STARTPOSITION 1"))
+
+    @responses_lib.activate
+    def test_customer_name_and_email_quotes_and_filters(self):
+        responses_lib.add(responses_lib.GET, QUERY_URL, json=_CUSTOMER_PAGE_1, status=200)
+        found = qb.query_customer("O'Brien", email="bill@lucchini.com")
+        self.assertEqual([c["Id"] for c in found], ["2"])
+        self.assertIn("DisplayName LIKE '%O\\'Brien%'", _sql(responses_lib.calls[0]))
+
+    def test_stale_local_vars_never_beat_the_broker(self):
+        os.environ["RC_CONN_QUICKBOOKS_REALM_ID"] = "not-a-number"
+        os.environ["RC_CONN_QUICKBOOKS_API_HOST"] = "evil.example.com"
+        with responses_lib.RequestsMock() as rsps:
+            rsps.add(responses_lib.GET, f"{BROKER}/invoice/1001", json=_INVOICE_SINGLE, status=200)
+            self.assertEqual(qb.query_invoices(invoice_id="1001")[0]["Id"], "1001")
 
     @responses_lib.activate
     def test_customer_direct_read_by_id(self):
-        """customer_id triggers the direct GET /customer/{id} endpoint (no SQL)."""
-        responses_lib.add(
-            responses_lib.GET,
-            f"{BASE}/customer/42",
-            json=_CUSTOMER_SINGLE,
-            status=200,
-        )
-        results = qb.query_customer(customer_id="42", realm=REALM_ID)
-        self.assertEqual(len(results), 1)
+        responses_lib.add(responses_lib.GET, f"{BROKER}/customer/42", json=_CUSTOMER_SINGLE, status=200)
+        results = qb.query_customer(customer_id="42")
         self.assertEqual(results[0]["Id"], "42")
-        # Must NOT have called the query endpoint.
-        for call in responses_lib.calls:
-            self.assertNotIn("/query", call.request.url)
 
+    def test_bad_id_fails_loudly_without_a_call(self):
+        with self.assertRaisesRegex(RuntimeError, "invalid QuickBooks customer id"):
+            qb.query_customer(customer_id="42 OR 1=1")
+        with self.assertRaisesRegex(RuntimeError, "invalid QuickBooks invoice id"):
+            qb.query_invoices(invoice_id="../companyinfo")
 
-class QuickbooksInvoiceQuery(_Base):
-    """Invoice lookup — direct read and filtered query."""
+    @responses_lib.activate
+    def test_invoice_by_number(self):
+        responses_lib.add(responses_lib.GET, QUERY_URL, json=_INVOICE_LIST, status=200)
+        invs = qb.query_invoices(number="1037")
+        self.assertEqual(invs[0]["DocNumber"], "1037")
+        self.assertIn("DocNumber = '1037'", _sql(responses_lib.calls[0]))
+
+    @responses_lib.activate
+    def test_open_invoices_for_customer(self):
+        responses_lib.add(responses_lib.GET, QUERY_URL, json=_INVOICE_LIST, status=200)
+        qb.query_invoices(customer_id="42", open_only=True)
+        sql = _sql(responses_lib.calls[0])
+        self.assertIn("CustomerRef = '42'", sql)
+        self.assertIn("Balance > '0'", sql)
 
     @responses_lib.activate
     def test_invoice_direct_read(self):
-        responses_lib.add(
-            responses_lib.GET,
-            f"{BASE}/invoice/1001",
-            json=_INVOICE_SINGLE,
-            status=200,
-        )
-        invs = qb.query_invoices(invoice_id="1001", realm=REALM_ID)
-        self.assertEqual(len(invs), 1)
-        self.assertEqual(invs[0]["Id"], "1001")
-        # Only one call, no pagination.
-        self.assertEqual(len(responses_lib.calls), 1)
+        responses_lib.add(responses_lib.GET, f"{BROKER}/invoice/1001", json=_INVOICE_SINGLE, status=200)
+        self.assertEqual(qb.query_invoices(invoice_id="1001")[0]["Id"], "1001")
 
     @responses_lib.activate
-    def test_invoice_list_by_customer(self):
-        responses_lib.add(responses_lib.GET, QUERY_URL, json=_INVOICE_LIST, status=200)
-        invs = qb.query_invoices(customer_id="42", realm=REALM_ID)
-        self.assertEqual(len(invs), 1)
-        self.assertEqual(invs[0]["DocNumber"], "1037")
-        # SQL must filter by CustomerRef.
-        req_url = responses_lib.calls[0].request.url
-        self.assertIn("CustomerRef", req_url)
-
-
-class QuickbooksCompanyInfo(_Base):
-    """Company info read."""
+    def test_payments_show_linked_invoice(self):
+        responses_lib.add(responses_lib.GET, QUERY_URL, json=_PAYMENT_LIST, status=200)
+        md = qb.payments_to_markdown(qb.query_payments(customer_id="42"))
+        self.assertIn("582.50", md)
+        self.assertIn("Applied to invoice Ids: 1001", md)
 
     @responses_lib.activate
-    def test_company_info(self):
+    def test_company_info_via_query_needs_no_realm(self):
         responses_lib.add(
-            responses_lib.GET,
-            f"{BASE}/companyinfo/{REALM_ID}",
-            json=_COMPANY_INFO,
-            status=200,
+            responses_lib.GET, QUERY_URL,
+            json={"QueryResponse": {"CompanyInfo": [_COMPANY_INFO["CompanyInfo"]]}}, status=200,
         )
-        info = qb.query_company_info(realm=REALM_ID)
-        self.assertIsNotNone(info)
+        info = qb.query_company_info()
         self.assertEqual(info["CompanyName"], "Sandbox Company_US_1")
-        # Bearer credential present.
-        self.assertIn("Bearer_test_qb_tok", responses_lib.calls[0].request.headers.get("Authorization", ""))
+        self.assertIn("FROM CompanyInfo", _sql(responses_lib.calls[0]))
+
+    @responses_lib.activate
+    def test_401_becomes_reconnect_hint(self):
+        responses_lib.add(responses_lib.GET, QUERY_URL, json=_FAULT_401, status=401)
+        with self.assertRaisesRegex(RuntimeError, "reconnect QuickBooks"):
+            qb.query_invoices(number="1037")
+
+    @responses_lib.activate
+    def test_429_retried_then_surfaces_rate_limit(self):
+        for _ in range(10):
+            responses_lib.add(responses_lib.GET, QUERY_URL, json={}, status=429, headers={"Retry-After": "0"})
+        orig = api._sleep
+        api._sleep = lambda *_a, **_k: None
+        try:
+            with self.assertRaisesRegex(RuntimeError, "rate limit"):
+                qb.query_invoices(number="1037")
+        finally:
+            api._sleep = orig
+        self.assertGreater(len(responses_lib.calls), 1)  # lib.api retried before giving up
 
 
-class QuickbooksMarkdownRendering(_Base):
-    """Markdown rendering helpers produce correct output."""
+class QuickbooksNotConnected(unittest.TestCase):
+    def setUp(self):
+        self._orig_env = {k: os.environ.pop(k, None) for k in _ENV_KEYS}
+        os.environ["RC_CONN_QUICKBOOKS"] = "tok"
 
-    def test_customers_to_markdown(self):
-        custs = _CUSTOMER_PAGE_1["QueryResponse"]["Customer"]
-        md = qb.customers_to_markdown(custs)
+    def tearDown(self):
+        for key, val in self._orig_env.items():
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
+
+    def test_env_token_without_broker_or_realm_says_connect(self):
+        os.environ.pop("RC_CONN_QUICKBOOKS", None)  # the connect hint comes before any token lookup
+        with self.assertRaisesRegex(RuntimeError, "not connected in this run"):
+            qb.query_company_info()
+
+    @responses_lib.activate
+    def test_local_smoke_fallback_uses_realm_and_sandbox_host(self):
+        os.environ["RC_CONN_QUICKBOOKS_REALM_ID"] = REALM_ID
+        os.environ["RC_CONN_QUICKBOOKS_API_HOST"] = "sandbox-quickbooks.api.intuit.com"
+        responses_lib.add(responses_lib.GET, f"{LOCAL_BASE}/invoice/1001", json=_INVOICE_SINGLE, status=200)
+        qb.query_invoices(invoice_id="1001")
+        self.assertIn("Bearer tok", responses_lib.calls[0].request.headers["Authorization"])
+
+    def test_local_fallback_refuses_foreign_host(self):
+        os.environ["RC_CONN_QUICKBOOKS_REALM_ID"] = REALM_ID
+        os.environ["RC_CONN_QUICKBOOKS_API_HOST"] = "evil.example.com"
+        with self.assertRaisesRegex(RuntimeError, "API_HOST must be one of"):
+            qb.query_company_info()
+
+
+class QuickbooksMarkdown(unittest.TestCase):
+    def test_customers(self):
+        md = qb.customers_to_markdown(_CUSTOMER_PAGE_1["QueryResponse"]["Customer"])
         self.assertIn("Amy Lauterbach", md)
         self.assertIn("Amy@Lauterbach.com", md)
         self.assertIn("239.00", md)
+        self.assertIn("No customers found", qb.customers_to_markdown([]))
 
-    def test_empty_customers(self):
-        md = qb.customers_to_markdown([])
-        self.assertIn("No customers found", md)
+    def test_invoices_paid_vs_open(self):
+        inv = dict(_INVOICE_SINGLE["Invoice"])
+        self.assertIn("open balance 582.50", qb.invoices_to_markdown([inv]))
+        inv["Balance"] = 0
+        self.assertIn("**paid**", qb.invoices_to_markdown([inv]))
 
-    def test_invoices_to_markdown(self):
-        invs = _INVOICE_LIST["QueryResponse"]["Invoice"]
-        md = qb.invoices_to_markdown(invs)
-        self.assertIn("1037", md)
-        self.assertIn("582.50", md)
-        self.assertIn("Geeta Kalapatapu", md)
-
-    def test_company_to_markdown(self):
-        info = _COMPANY_INFO["CompanyInfo"]
-        md = qb.company_to_markdown(info)
+    def test_company(self):
+        md = qb.company_to_markdown(_COMPANY_INFO["CompanyInfo"])
         self.assertIn("Sandbox Company_US_1", md)
         self.assertIn("Mountain View", md)
 
-    def test_pick_selects_fields(self):
-        """api.pick works on QB response dicts for field pre-selection."""
-        cust = _CUSTOMER_SINGLE["Customer"]
-        picked = api.pick(cust, "Id,DisplayName,Balance")
-        self.assertEqual(picked["Id"], "42")
-        self.assertEqual(picked["Balance"], 629.10)
-
 
 class QuickbooksCLI(_Base):
-    """CLI entry point drives the connector for each subcommand."""
+    def _run(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = qb.main(argv)
+        return rc, out.getvalue(), err.getvalue()
 
     @responses_lib.activate
-    def test_cli_customer_by_name(self):
-        responses_lib.add(responses_lib.GET, QUERY_URL, json=_CUSTOMER_PAGE_1, status=200)
-        rc = qb.main(["customer", "Lauterbach", "--realm", REALM_ID])
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(responses_lib.calls), 1)
-
-    @responses_lib.activate
-    def test_cli_invoices_for_customer(self):
+    def test_cli_invoice_number(self):
         responses_lib.add(responses_lib.GET, QUERY_URL, json=_INVOICE_LIST, status=200)
-        rc = qb.main(["invoices", "--customer-id", "42", "--realm", REALM_ID])
+        rc, out, _ = self._run(["invoice", "--number", "1037"])
         self.assertEqual(rc, 0)
+        self.assertIn("Invoice 1037", out)
 
     @responses_lib.activate
-    def test_cli_invoice_single(self):
-        responses_lib.add(
-            responses_lib.GET,
-            f"{BASE}/invoice/1001",
-            json=_INVOICE_SINGLE,
-            status=200,
-        )
-        rc = qb.main(["invoice", "1001", "--realm", REALM_ID])
-        self.assertEqual(rc, 0)
+    def test_cli_error_exit_code(self):
+        responses_lib.add(responses_lib.GET, QUERY_URL, json=_FAULT_401, status=401)
+        rc, _, err = self._run(["customer", "--email", "a@b.c"])
+        self.assertEqual(rc, 1)
+        self.assertIn("reconnect", err)
 
-    @responses_lib.activate
-    def test_cli_company(self):
-        responses_lib.add(
-            responses_lib.GET,
-            f"{BASE}/companyinfo/{REALM_ID}",
-            json=_COMPANY_INFO,
-            status=200,
-        )
-        rc = qb.main(["company", "--realm", REALM_ID])
-        self.assertEqual(rc, 0)
+    def test_cli_invoice_requires_one_key(self):
+        with self.assertRaises(SystemExit):
+            self._run(["invoice"])
 
 
 class QuickbooksTokenHygiene(unittest.TestCase):
