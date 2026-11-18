@@ -1,0 +1,101 @@
+key: teamleader
+name: Teamleader Focus
+kinds: [oauth]
+# Manifest-only: Teamleader's API is RPC-style (every read is `POST /<resource>.<action>` with a JSON
+# body), which read_endpoints.post covers. Pagination lives in the BODY (`page: {size, number}`), a
+# style lib.api does not drive, so each allowlisted POST is single-page and the agent sets page.number.
+connector_module: ""
+env_var: RC_CONN_TEAMLEADER
+egress_hosts:
+  - api.focus.teamleader.eu
+base_url: https://api.focus.teamleader.eu
+auth:
+  strategy: bearer
+pagination:
+  style: none
+rate_limit:
+  remaining_header: x-ratelimit-remaining   # 200 req/min sliding window per integration per account
+read_endpoints:
+  # Explicit list, no `*`: a wildcard would also admit readable-but-unreviewed RPCs, and every write
+  # (`*.update`, `invoices.book`, `invoices.send`, …) is a POST too. OAuth scopes have no read/write
+  # split, so this allowlist is the only thing keeping the token read-only. Left out on purpose:
+  # `quotations.*` (needs a `quotations` scope the app does not request), `users.info` (staff phone
+  # numbers and billing rates; `users.list` names account managers).
+  post: &teamleader_reads
+    - /users.me
+    - /users.list
+    - /contacts.list
+    - /contacts.info
+    - /companies.list
+    - /companies.info
+    - /invoices.list
+    - /invoices.info
+    - /creditNotes.list
+    - /creditNotes.info
+    - /deals.list
+    - /deals.info
+    - /projects-v2/projects.list
+    - /projects-v2/projects.info
+  # Teamleader still accepts deprecated GETs on these RPCs; an empty GET list would let the broker
+  # forward EVERY GET, so pin GETs to the same reviewed set.
+  get: *teamleader_reads
+oauth:
+  auth_url: https://focus.teamleader.eu/oauth2/authorize
+  token_url: https://focus.teamleader.eu/oauth2/access_token
+  # Scopes are fixed per app on Teamleader's build page (no read-only variants); keep this list equal
+  # to the app's selected scopes. Widening later forces every account to re-consent.
+  default_scopes: [contacts, companies, invoices, projects, deals, users]
+help_md: |
+  Reads Teamleader Focus contacts, companies, invoices, credit notes, deals and projects
+  (payment status, open amounts, quotes, project progress) for one connected Teamleader account.
+  Read-only here: only the listed `.list`/`.info` reads are allowed; booking, sending or updating
+  anything is refused.
+
+  Every call is a POST with a JSON body, never a GET. One page per call: pagination sits in the body
+  (`"page": {"size": 20, "number": 1}`, size up to 100); raise `number` yourself while a page
+  comes back full. Answers come back under `data`.
+
+  Find the sender first. The email filter matches only a contact's or company's **primary** email;
+  invoices usually belong to the company, not to the contact who writes, so try both:
+
+      python -m lib.api post teamleader contacts.list \
+        --json '{"filter":{"email":{"type":"primary","email":"jan@example.be"}}}' \
+        --pick data.*.id,data.*.first_name,data.*.last_name,data.*.emails
+
+      python -m lib.api post teamleader companies.list \
+        --json '{"filter":{"email":{"type":"primary","email":"info@example.be"}}}' \
+        --pick data.*.id,data.*.name
+
+  No hit: `"filter":{"term":"<name or domain>"}` searches names and other fields. A contact's
+  companies: `contacts.info` with `{"id":"<contact id>"}`.
+
+  Open invoices of a customer (`type` is `contact` or `company`), then one invoice in full:
+
+      python -m lib.api post teamleader invoices.list \
+        --json '{"filter":{"customer":{"type":"company","id":"<company id>"},"status":["outstanding"]},"page":{"size":50,"number":1}}' \
+        --pick data.*.id,data.*.invoice_number,data.*.due_on,data.*.status,data.*.total.due
+
+      python -m lib.api post teamleader invoices.info --json '{"id":"<invoice id>"}' \
+        --pick data.invoice_number,data.status,data.paid,data.paid_at,data.due_on,data.total,data.payments,data.sent
+
+  By invoice number (written `2026 / 123`, with the spaces), then check that `invoicee.customer` is
+  the sender's contact or company before sharing anything:
+
+      python -m lib.api post teamleader invoices.list \
+        --json '{"filter":{"invoice_number":"2026 / 123"}}' \
+        --pick data.*.id,data.*.invoice_number,data.*.status,data.*.due_on,data.*.invoicee.customer
+
+  Projects and quotes: `projects-v2/projects.list` with `"filter":{"customers":[{"type":"company","id":"<id>"}]}`
+  (pick `status`, `end_date`, `time_tracked`, `time_budget`), `projects-v2/projects.info`,
+  `deals.list` / `deals.info` for "where is my quote" (deal phase and status). Who is connected:
+  `users.me` with `{}`.
+
+  An unknown id fails with a 4xx error, never an empty result. For joins across several calls, write
+  a small script in /tmp that imports `lib.api`.
+onboarding_md: |
+  Ask which customer questions Teamleader should help answer, such as unpaid invoices, quotes or project progress.
+  Explore a few contacts, companies and invoices live without retaining customer rows. Record how an
+  inbound email maps to a contact or company (primary email, secondary emails, company domain), the
+  invoice numbering per department, which invoice statuses count as paid, and the project statuses
+  in use. Sending reminders, booking invoices or updating contacts are writes that need a live
+  action or stay a manual step; this connector only reads.
