@@ -59,7 +59,14 @@ only; GitHub Free cannot share org secrets with private repos) and account varia
 deploys main to `https://site-<slug>.<subdomain>.workers.dev`, registers the tenant's `role=website` mirror,
 proves it with an exact-sha mirror refresh and clones to `~/code/<org>/site-<slug>`. Rerunnable; a teammate
 can continue a site someone else started. Then the repo's `AGENTS.md` + vendored `website-dev` skill (with
-its SEO/GEO reference) drive build, look, preview, publish. Stops with the fix when:
+its SEO/GEO reference) drive build, look, preview, publish.
+
+> [!NOTE]
+> **Dev is not indexed, live is.** The workers.dev address and every branch preview are `noindex` (the template
+> derives it from `url:` in `_data/site.yml` + the branch), so you can prepare with the tenant in peace; the deploy
+> step prints `noindex (dev address)`, or a `⚠` when an older site lacks it. The domain move lifts it.
+
+Stops with the fix when:
 
 | Message | Fix |
 |---|---|
@@ -93,7 +100,8 @@ rp --project kampadmin-support --tenant <t> project site domain add www.<domain>
    on Cloudflare; a Workers Custom Domain (which would need the zone in our account) is not used.
 2. Rerun `add`: certificate, route and form bot check follow; once `https://www.<domain>` serves the site's
    current revision, ReplyPen's live address moves to it.
-3. Set `url:` in `_data/site.yml` to `https://www.<domain>` (branch + merge, or ask the chat). Later kickstart
+3. Set `url:` in `_data/site.yml` to `https://www.<domain>` (branch + merge, or ask the chat); this lifts the
+   dev noindex. Prove it: `check_page.py https://www.<domain>/` (vendored `website-dev`) shows `live pagina is indexeerbaar`. Later kickstart
    reruns need `--live-url https://www.<domain>`. Undo: `project site domain rm www.<domain>`.
 
 ## Deploy pipeline
