@@ -60,6 +60,9 @@ uv run "$SKILL/scripts/brain_test.py" --mode docker --live
 
 Docker mode needs Docker/colima and pulls `ghcr.io/replypen/workspace:<tag>`. It covers image,
 deps, read-only mounts, and container isolation; it does not prove production egress allowlists.
+The package is private: `docker login ghcr.io` with a classic token carrying `read:packages`, and ask
+PJ (replypen org admin) to add your GitHub user as **Read** in the package's settings (Manage access);
+org membership or repo access alone returns `403` on pull.
 
 ## 4. Verify Production Behavior
 
