@@ -51,6 +51,9 @@ They do **not** have:
 If a workflow is not exposed through public `rp`/API, produce a ReplyPen support request. Do not leak
 private mechanics into shipped docs or skills.
 
+**English only**: every doc, skill and comment here, also a guide meant for a tenant or end customer;
+the agent translates it to the reader's language when it sends it.
+
 Exception: `brain-fleet-report` queue persistence is a laptop operator job. Its DB adapter imports
 the operator checkout’s existing support connection via `RC_HOST_CHECKOUT`; external developers
 without that access can test with `--dsn`, but cannot publish production queues.

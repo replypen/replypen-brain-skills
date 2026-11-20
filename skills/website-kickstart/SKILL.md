@@ -89,7 +89,7 @@ rp --project kampadmin-support --tenant <t> project site domain add www.<domain>
 ```
 1. The tenant (or whoever has its DNS login) adds `www CNAME sites.kampsites.be` (DNS only, not proxied, if
    that DNS is on Cloudflare) and forwards the bare domain to `https://www.<domain>` at its registrar.
-   Send them [tenant-domain-guide.md](tenant-domain-guide.md) (Dutch, one screen). Their DNS never has to be
+   Send them [tenant-domain-guide.md](tenant-domain-guide.md) (one screen, translate when sending). Their DNS never has to be
    on Cloudflare; a Workers Custom Domain (which would need the zone in our account) is not used.
 2. Rerun `add`: certificate, route and form bot check follow; once `https://www.<domain>` serves the site's
    current revision, ReplyPen's live address moves to it.

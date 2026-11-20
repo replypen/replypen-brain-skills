@@ -1,26 +1,26 @@
-# Je eigen domein koppelen aan je nieuwe website
+# Connecting your own domain to your new website
 
-Te sturen naar de klant (of wie zijn DNS beheert) zodra de site klaar is. Vervang `<domein>` en `<doel>`
-(KampAdmin: `sites.kampsites.be`; de juiste waarde staat in de uitvoer van `rp … project site domain add`).
+Send to the tenant (or whoever manages its DNS) once the site is ready, translated to their language.
+Replace `<domain>` and `<target>` (KampAdmin: `sites.kampsites.be`; `rp … project site domain add` prints it).
 
-**Je domein blijft waar het is.** Geen verhuis, geen nieuwe beheerder, je e-mail blijft werken.
+**Your domain stays where it is.** No transfer, no new provider, your email keeps working.
 
-Bij je huidige domeinbeheerder (GoDaddy, Combell, one.com, Cloudflare, …), DNS-instellingen:
+At your current DNS provider (GoDaddy, Combell, one.com, Cloudflare, …), DNS settings:
 
-1. **`www`**: zet één CNAME-record `www` → `<doel>`. Staat er al een `www`-record (bv. naar Webflow of
-   Wix), vervang dat. Zit je DNS bij Cloudflare: zet de oranje wolk uit (*DNS only*).
-2. **Zonder www** (`<domein>`): stel *doorsturen / forwarding* in naar `https://www.<domein>` (301,
-   permanent). Kan je beheerder dat niet, laat het dan staan en zeg het ons.
-3. **Niet aanraken**: MX-, SPF-, DKIM- en andere TXT-records (je e-mail).
+1. **`www`**: one CNAME record `www` → `<target>`. If a `www` record already exists (e.g. to Webflow or
+   Wix), replace it. DNS on Cloudflare? Turn the orange cloud off (*DNS only*).
+2. **Without www** (`<domain>`): set up *forwarding* to `https://www.<domain>` (301, permanent). If your
+   provider can't, leave it and tell us.
+3. **Don't touch**: MX, SPF, DKIM and other TXT records (your email).
 
-Laat ons weten wanneer het gedaan is. Binnen enkele minuten tot een uur is `https://www.<domein>` live met
-een geldig certificaat; je oude website staat dan niet meer online.
+Tell us when it's done. Within minutes to an hour `https://www.<domain>` is live with a valid
+certificate; your old website is then no longer online.
 
-<details><summary>Voor wie de site bouwt</summary>
+<details><summary>For whoever builds the site</summary>
 
-- Eerst `rp --project <p> --tenant <t> project site domain add www.<domein>` (maakt de hostname klaar),
-  dan deze gids sturen, dan `add` herhalen tot `live: true`; daarna `url:` in `_data/site.yml`.
-- De kale naam rechtstreeks op ons zetten kan niet: dat vraagt Cloudflare Enterprise (apex proxying).
-- Tot het certificaat er is (HTTP-validatie, start pas na de CNAME) kan `www` kort een certificaatfout
-  geven: wissel buiten piekuren.
+- First `rp --project <p> --tenant <t> project site domain add www.<domain>` (prepares the hostname),
+  then send this guide, then rerun `add` until `live: true`; then `url:` in `_data/site.yml`.
+- The bare domain can't point at us directly: that needs Cloudflare Enterprise (apex proxying).
+- Until the certificate is issued (HTTP validation, starts only after the CNAME) `www` can briefly show a
+  certificate error: switch outside peak hours.
 </details>
