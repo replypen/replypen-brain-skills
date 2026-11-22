@@ -762,7 +762,8 @@ class ReadMethodPolicy(unittest.TestCase):
         self.assertEqual(
             mani.allowed_post_paths,
             ("/internal/booking/slots", "/internal/booking/book", "/internal/booking/refresh-patient",
-             "/internal/booking/reschedule-link", "/internal/booking/series-context"),
+             "/internal/booking/reschedule-link", "/internal/booking/series-context",
+             "/internal/booking/waitlist-registration"),
         )
 
         with mock.patch.dict(
