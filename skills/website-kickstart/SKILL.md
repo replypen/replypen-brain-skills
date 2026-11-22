@@ -29,6 +29,12 @@ Scope is explicit: `--tenant` = a tenant's site (mirror on the tenant, form → 
 project`, so an inherited tenant can't capture it), form → `/forms/<project>`, landing in the project's
 tenant-less mailbox. Never invent a tenant just to host a site.
 
+> [!IMPORTANT]
+> **One site per tenant, also for design proposals.** Several looks for a customer to choose from are
+> sub-paths of that tenant's `site-<slug>`, never extra Workers or repos. Not public yet → `/` is an
+> in-your-face chooser linking `/voorstellen/<style>/`; site already public → the same under an unlinked path.
+> The chosen style becomes the site, the rest is deleted. Example: `dentai-org/site-molaar` (its `AGENTS.md`).
+
 Repo + Worker = `site-<slug>`; live `https://site-<slug>.rootcause-sites.workers.dev`, previews
 `https://<branch>-site-<slug>.rootcause-sites.workers.dev`. Output: `✓/✗ step — detail` per step, then a
 summary (repo, URLs, deploy run, screenshots in `--out`, default `~/Downloads`) and a chat sentence to try. ~3 min.
