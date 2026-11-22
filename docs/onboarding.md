@@ -60,9 +60,9 @@ uv run "$SKILL/scripts/brain_test.py" --mode docker --live
 
 Docker mode needs Docker/colima and pulls `ghcr.io/replypen/workspace:<tag>`. It covers image,
 deps, read-only mounts, and container isolation; it does not prove production egress allowlists.
-The package is private and inherits access from `replypen/replypen`: `docker login ghcr.io` with a
-classic token carrying `read:packages`; a GitHub user with access to that repo can pull. No repo access
-→ `403` on pull: ask PJ to add you as a collaborator there.
+The package is public (it holds only this repo's `docker/` + `runtime/`): it pulls without
+`docker login` or any ReplyPen repo access. A pull that is still denied usually means an expired
+`ghcr.io` login: `docker logout ghcr.io` and retry.
 
 ## 4. Verify Production Behavior
 
