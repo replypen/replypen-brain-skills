@@ -39,6 +39,9 @@ from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import made_by  # noqa: E402  (KampAdmin's fixed credit line on kampadmin* sites)
+
 
 def _cli() -> str:
     """The ReplyPen CLI on PATH: `rp`, else `rc` (its pre-rebrand name, same binary)."""
@@ -546,6 +549,8 @@ class Kickstart:
             raise StepFailed(f"_data/site.yml no longer parses after filling: {err}") from err
         if site.get("name") != self.a.name:
             raise StepFailed(f"_data/site.yml name reads back as {site.get('name')!r}, not {self.a.name!r}")
+        if made_by.applies_to(self.a.project):
+            made_by.apply(root)
         self.run(["git", "-C", str(root), "add", "-A"])
         self.run(["git", "-C", str(root), "commit", "--quiet", "-m",
                   f"Kickstart {self.a.name}: worker {self.worker}, form {self.form_scope}"])

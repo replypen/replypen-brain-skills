@@ -30,6 +30,9 @@ TEMPLATE_FILES = {
     "_data/site.yml": 'name: "__SITE_NAME__"\ncontact_form_action: "https://app.replypen.com/forms/__PROJECT__/__TENANT__"\n'
                       'turnstile_sitekey: "0x4AAAAtest"\n',
     ".github/workflows/deploy.yml": "name: Website deploy\n",
+    "_layouts/default.html": '<html>\n<head>\n  <title>x</title>\n</head>\n<body>\n  {% include "footer.html" %}\n</body>\n</html>\n',
+    "build.sh": "#!/usr/bin/env bash\nset -euo pipefail\npnpm exec eleventy\n",
+    "AGENTS.md": "# Public website\n",
 }
 PERSONALISED = ("wrangler.jsonc", "package.json", "_data/site.yml")
 TOKENS = {"CF_SITES_USER_TOKEN": "cf", "CF_SITES_DEPLOY_TOKEN": "deploy-token-xyz",
@@ -263,7 +266,8 @@ class World:
             if "push" in cmd:
                 name = root.joinpath(".origin").read_text()
                 repo = self.repos[name]
-                repo["files"] |= {rel: (root / rel).read_text() for rel in PERSONALISED}
+                repo["files"] |= {str(f.relative_to(root)): f.read_text() for f in root.rglob("*")
+                                  if f.is_file() and f.name != ".origin"}
                 repo["sha"] = "b" + repo["sha"][1:]
                 self.writes.append(("cmd", "git push", None))
                 self.start_run(name)  # the push itself starts the deploy workflow
@@ -305,11 +309,11 @@ class KickstartTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
-    def kick(self, *extra, env=TOKENS, tenant="test"):
+    def kick(self, *extra, env=TOKENS, tenant="test", project="dentai"):
         org = extra[0] if extra and not extra[0].startswith("-") else "dentai-org"
         extra = extra[1:] if extra and not extra[0].startswith("-") else extra
         scope = ["--tenant", tenant] if tenant else ["--project-scope"]
-        args = ks.parse_args([org, "test", "--project", "dentai", *scope, "--name", "Praktijk Test",
+        args = ks.parse_args([org, "test", "--project", project, *scope, "--name", "Praktijk Test",
                               "--out", self.tmp.name, "--state-dir", self.tmp.name + "/state", *extra])
         k = ks.Kickstart(args, http=self.world, run=self.world.run, sleep=lambda s: None, env=env)
         out = io.StringIO()
@@ -358,6 +362,24 @@ class KickstartTest(unittest.TestCase):
         self.assertIn(f"/replypen-revision.json = {repo['sha'][:8]}", out)
         self.assertIn("deploy run  https://github.com/dentai-org/site-test/actions/runs/", out)
         self.assertIn("Pas op de website", out)
+
+    def test_kampadmin_sites_get_the_fixed_credit_line_and_others_do_not(self):
+        code, out, _ = self.kick("kampadmin", project="kampadmin-support")
+        self.assertEqual(code, 0, out)
+        files = self.world.repos["kampadmin/site-test"]["files"]
+        self.assertIn(ks.made_by.HTML, files["_includes/made-by.html"])
+        self.assertEqual(files["assets/made-by.css"], ks.made_by.CSS)
+        self.assertIn('{% include "made-by.html" %}', files["_layouts/default.html"])
+        self.assertIn(ks.made_by.LINK + "\n</head>", files["_layouts/default.html"])
+        self.assertIn(ks.made_by.MARKER, files["build.sh"])
+        self.assertIn("## KampAdmin-regel", files["AGENTS.md"])
+
+        self.world, self.tmp = World(), tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        code, out, _ = self.kick()  # dentai: another ReplyPen project, no KampAdmin credit
+        self.assertEqual(code, 0, out)
+        self.assertFalse(any("made-by" in rel or "made-by" in text
+                             for rel, text in self.world.repos["dentai-org/site-test"]["files"].items()))
 
     # ---- self-service: a colleague's own gh + rp logins, no operator token on the machine ----
 
