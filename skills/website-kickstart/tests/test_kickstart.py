@@ -54,6 +54,7 @@ class World:
         self.runs = []  # workflow runs; each one's deploy job is check-run id == run id
         self.deploy_outcomes = []
         self.push_delay = self.dispatch_delay = 0
+        self.initial_run, self.initial_run_delay = True, 2  # the generated repo's own first run, still building
         self.rc_repos = []
         self.org_vars, self.org_secrets = {}, set()  # org-level Actions settings shared with every repo
         self.org_admin_reads = True  # False: a plain org member (403 on the org's installations)
@@ -162,6 +163,8 @@ class World:
             self.repos[f"{body['owner']}/{body['name']}"] = {
                 "id": 1000 + self.n, "files": dict(TEMPLATE_FILES), "sha": sha[:40],
                 "secrets": {}, "vars": {}}
+            if self.initial_run:  # GitHub pushes an "Initial commit", which starts deploy.yml
+                self.start_run(f"{body['owner']}/{body['name']}", delay=self.initial_run_delay)
             return js({}, 201)
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/contents/(.+)", path):
             text = self.repos[m.group(1)]["files"].get(m.group(2))
@@ -330,11 +333,12 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.names(writes), [
             "POST /repos/replypen/site-template/generate",
+            "POST /repos/dentai-org/site-test/actions/runs/1/cancel",  # the initial commit's run
+            "cmd gh secret set",  # armed before the push, so the push deploys
+            "cmd gh variable set",
             "cmd git push",
             "PUT /user/installations/168123503/repositories/1000",
-            "cmd gh secret set",
-            "cmd gh variable set",
-            # no dispatch: the push-triggered run picked up the secret before its deploy job
+            # no dispatch: the push-triggered run deployed
             "cmd rp repo add",
             "cmd rp dev mirror",
             "POST /browser-rendering/screenshot",
@@ -386,6 +390,7 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.names(writes), [
             "POST /repos/replypen/site-template/generate",
+            "POST /repos/kampadmin/site-test/actions/runs/1/cancel",
             "cmd gh secret set",  # the member's own customer-scoped token, on stdin
             "cmd gh variable set",
             "cmd git push",  # no App edit: the org owner selected All repositories once
@@ -425,7 +430,8 @@ class KickstartTest(unittest.TestCase):
         _, (code, out, writes) = self.self_service(env={})
         self.assertEqual(code, 1)
         self.assertIn("KA_SITES_DEPLOY_TOKEN is not set", out)
-        self.assertEqual(self.names(writes), ["POST /repos/replypen/site-template/generate"])
+        self.assertEqual(self.names(writes), ["POST /repos/replypen/site-template/generate",
+                                              "POST /repos/kampadmin/site-test/actions/runs/1/cancel"])
         ks.HOSTING.clear()
         _, (code, out, _) = self.self_service()
         self.assertEqual(code, 1)
@@ -497,7 +503,8 @@ class KickstartTest(unittest.TestCase):
         self.assertNotIn("cmd rp repo add", self.names(writes))
 
     def test_push_run_without_secret_is_replaced_by_a_dispatched_run(self):
-        self.world.deploy_outcomes = ["failure"]  # the push run lost the race with the secret
+        self.world.initial_run = False
+        self.world.deploy_outcomes = ["failure"]  # the push run failed (e.g. a flaky upload)
         code, out, writes = self.kick()
         self.assertEqual(code, 0, out)
         self.assertIn("cmd gh workflow run", self.names(writes))
@@ -507,6 +514,7 @@ class KickstartTest(unittest.TestCase):
         """No check yet → dispatch; the push run's failed check lands while the dispatched run still builds.
         The waiter follows the dispatched run, so it ends green instead of reporting the stale failure."""
         self.world.push_delay, self.world.dispatch_delay = 2, 3
+        self.world.initial_run = False
         self.world.deploy_outcomes = ["failure"]  # the push run completes first, and fails
         code, out, writes = self.kick()
         self.assertEqual(code, 0, out)
@@ -518,6 +526,7 @@ class KickstartTest(unittest.TestCase):
 
     def test_in_progress_push_check_is_awaited_not_redispatched(self):
         self.world.push_delay = 1  # first look: no check; ReplyPen polls it via check-runs/<id> once visible
+        self.world.initial_run = False
         self.world.deploy_outcomes = []
         orig = self.world.github
         def first_look_sees_it_running(method, path, query, body):
@@ -547,8 +556,8 @@ class KickstartTest(unittest.TestCase):
         env = {k: v for k, v in TOKENS.items() if k != "CF_SITES_DEPLOY_TOKEN"}
         code, out, writes = self.kick(env=env)
         self.assertEqual(code, 1)
-        self.assertIn("✗ deploy — CF_SITES_DEPLOY_TOKEN is not set", out)
-        self.assertNotIn("cmd gh secret set", self.names(writes))
+        self.assertIn("✗ preflight — CF_SITES_DEPLOY_TOKEN is not set", out)
+        self.assertEqual(writes, [])  # it is needed before the first push, so nothing is created
 
     def test_no_sitekey_no_bot_check(self):
         """A template without a filled sitekey shows no widget, so the mirror must not demand a token."""
@@ -615,7 +624,7 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("lacks checks, statuses: read", out)
         self.assertIn("/settings/installations/168123503/permissions/update", out)
-        self.assertNotIn("cmd gh secret set", self.names(writes))
+        self.assertNotIn("cmd rp repo add", self.names(writes))
 
     def test_scope_is_explicit(self):
         for argv in ([], ["--tenant", "t", "--project-scope"]):
@@ -640,10 +649,50 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(writes, [])
         self.assertIn("(dry-run) would POST /repos/replypen/site-template/generate", out)
+        self.assertIn("(dry-run) would cancel the deploy run(s) on the generated initial commit", out)
+        self.assertLess(out.index("gh secret set"), out.index("push main (that push deploys)"))
         self.assertIn("(dry-run) would $ gh secret set CLOUDFLARE_API_TOKEN --repo dentai-org/site-test "
                       "< $CF_SITES_DEPLOY_TOKEN", out)
         self.assertIn("(dry-run) would $ rp --project dentai --tenant test project repo add name=site", out)
         self.assertIn("result  dry-run", out)
+
+    def test_initial_commit_run_is_cancelled_before_arming_and_the_push_deploys(self):
+        """A failed run mails the repo's creator; a cancelled one does not. Cancelled before the secret is
+        set, or its deploy job would deploy the unfilled template."""
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        names = self.names(writes)
+        cancel = names.index("POST /repos/dentai-org/site-test/actions/runs/1/cancel")
+        self.assertLess(cancel, names.index("cmd gh secret set"))
+        self.assertLess(names.index("cmd gh variable set"), names.index("cmd git push"))
+        self.assertEqual([(r["event"], r["conclusion"]) for r in self.world.runs],
+                         [("push", "cancelled"), ("push", "success")])
+        self.assertIn("cancelled 1 initial-commit run(s)", out)
+
+    def test_self_service_with_an_org_level_account_variable_still_cancels_the_initial_run(self):
+        """An org-level CLOUDFLARE_ACCOUNT_ID defeats the template's skip guard: only the cancel helps."""
+        self.org_setup()
+        self.world.org_vars = {ks.ACCOUNT_VAR: self.KA_ACC, ks.SUBDOMAIN_VAR: "kampadmin-sites"}
+        _, (code, out, writes) = self.self_service()
+        self.assertEqual(code, 0, out)
+        names = self.names(writes)
+        self.assertLess(names.index("POST /repos/kampadmin/site-test/actions/runs/1/cancel"),
+                        names.index("cmd gh secret set"))
+        self.assertNotIn("failure", [r["conclusion"] for r in self.world.runs])
+
+    def test_initial_run_that_never_shows_up_does_not_block(self):
+        self.world.initial_run = False
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertFalse([n for n in self.names(writes) if n.endswith("/cancel")])
+        self.assertEqual([r["conclusion"] for r in self.world.runs], ["success"])
+
+    def test_initial_run_finished_before_the_cancel_is_left_alone(self):
+        self.world.initial_run_delay = 0  # completes on the first look (the template guard skipped deploy)
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertFalse([n for n in self.names(writes) if n.endswith("/cancel")])
+        self.assertNotIn("initial-commit", out)
 
     def test_dry_run_with_credentials_reads_but_never_writes(self):
         self.kick()

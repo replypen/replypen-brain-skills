@@ -330,6 +330,8 @@ class Kickstart:
             # No Cloudflare token here: the repo name in the org is the claim (GitHub refuses a second one);
             # the Worker is probed on workers.dev once the org's hosting settings are read (step repo).
             return f"self-service (your own gh + {_cli()} logins); {self.full_name} is the claim"
+        if not self.deploy_token and not self.a.dry_run:  # arm_deploy needs it before the first push
+            raise StepFailed("CF_SITES_DEPLOY_TOKEN is not set (mise-env replypen/replypen.env)")
         if other := self.record_conflict():
             raise StepFailed(f"this machine created Worker {self.worker} for {other}, not {self.full_name} "
                              f"({self.state_path}); pick another slug/--worker-name, tear {other} down first, "
@@ -357,8 +359,14 @@ class Kickstart:
                     {"owner": self.a.org, "name": self.repo_name, "private": True,
                      "description": f"Website {self.a.name} (Eleventy → GitHub Actions → Cloudflare Workers)"})
             if self.a.dry_run:
+                self.plan(f"cancel the deploy run(s) on the generated initial commit (bounded, "
+                          f"{STOP_POLLS * POLL_SECONDS}s)")
+                if self.self_service:
+                    self.plan(f"read the org's hosting settings, set {DEPLOY_SECRET} + {ACCOUNT_VAR} on the repo")
+                else:
+                    self.arm_deploy()
                 self.plan(f"clone, fill placeholders (__WORKER_NAME__={self.worker}, "
-                          f"__SITE_NAME__={self.a.name}, form → {self.form_scope}), push main")
+                          f"__SITE_NAME__={self.a.name}, form → {self.form_scope}), push main (that push deploys)")
                 return f"would create {self.full_name} from {TEMPLATE}"
             for _ in range(6):
                 repo = self.get_repo()
@@ -377,6 +385,8 @@ class Kickstart:
             raise StepFailed(f"{self.full_name} has no wrangler.jsonc on main")
         if self.file_text(WORKFLOW) is None:
             raise StepFailed(f"{self.full_name} has no {WORKFLOW}: copy it from {TEMPLATE} onto main")
+        first_run = self.quiet_first_run() if created else ""
+        armed = self.self_service
         if self.self_service:
             self.load_org_settings()
         if self.a.adopt:
@@ -389,8 +399,10 @@ class Kickstart:
                 note += " (no coding-agent skill: install website-dev, see docs/website-context.md)"
             detail = f"adopted {self.full_name}{note}"
         elif "__WORKER_NAME__" in wrangler or "__TENANT__" in (self.file_text("_data/site.yml") or ""):
+            # Armed before the push, so that push deploys and its run cannot fail for want of a secret.
+            armed = armed or self.arm_deploy()
             if self.a.dry_run:
-                self.plan("clone, fill placeholders, push main")
+                self.plan("clone, fill placeholders, push main (that push deploys)")
                 detail = f"{self.full_name} exists, placeholders still to fill"
             else:
                 if self.self_service:  # every first fill, also a rerun after a refused one: it pushes → deploys
@@ -409,10 +421,54 @@ class Kickstart:
         else:
             raise StepFailed(f"{self.full_name} exists and is not a kickstart from this machine; "
                              "pass --adopt to take it over")
+        if not armed:  # adopted or resumed: (re)set every run, so a rotated token converges on rerun
+            self.arm_deploy()
         self.save_state(repo_id=repo["id"])  # the repo is proven ours: claim the Worker before the deploy
         head = self.gh("GET", f"/repos/{self.full_name}/commits/main")
         self.s["head_sha"] = head["sha"] if head else None
-        return detail + (f" @ {self.s['head_sha'][:8]}" if self.s["head_sha"] else "")
+        return detail + (f" @ {self.s['head_sha'][:8]}" if self.s["head_sha"] else "") + first_run
+
+    def arm_deploy(self):
+        """Operator: the deploy job's secret + account variable on the repo (self-service: load_org_settings).
+        The token travels on stdin only: never argv, never a log line."""
+        if not self.deploy_token and not self.a.dry_run:
+            raise StepFailed("CF_SITES_DEPLOY_TOKEN is not set (mise-env replypen/replypen.env)")
+        repo = ["--repo", self.full_name]
+        self.act(["gh", "secret", "set", DEPLOY_SECRET, *repo], stdin=self.deploy_token,
+                 shown=f"gh secret set {DEPLOY_SECRET} --repo {self.full_name} < $CF_SITES_DEPLOY_TOKEN")
+        self.act(["gh", "variable", "set", ACCOUNT_VAR, "--body", self.a.account, *repo])
+        return True
+
+    def quiet_first_run(self):
+        """Generating the repo pushes an "Initial commit" that starts deploy.yml before anything is armed.
+        GitHub mails the creator about a failed run, not a cancelled one, so cancel it; and do so before
+        arming, or its deploy job could pick up the secret and deploy the unfilled template. The template's
+        deploy job also skips itself while the repo has no account variable (an org-level one defeats that).
+        Bounded: a run that does not show up within DISPATCH_POLLS is left to that guard."""
+        head = self.gh("GET", f"/repos/{self.full_name}/commits/main")
+        if not head:
+            return ""
+        sha, base, cancelled = head["sha"], f"/repos/{self.full_name}/actions", set()
+        for attempt in range(STOP_POLLS):
+            runs = self.workflow_runs(f"&head_sha={sha}")
+            active = [r for r in runs if r.get("status") != "completed"]
+            if not active and (runs or attempt >= DISPATCH_POLLS):
+                break
+            for run in active:
+                if run["id"] not in cancelled:
+                    self.cancel_run(base, run["id"])
+                    cancelled.add(run["id"])
+            self.sleep(POLL_SECONDS)
+        else:
+            return f"; initial-commit run(s) still active after {STOP_POLLS * POLL_SECONDS}s"
+        return f"; cancelled {len(cancelled)} initial-commit run(s)" if cancelled else ""
+
+    def cancel_run(self, base, run_id):
+        try:
+            self.gh("POST", f"{base}/runs/{run_id}/cancel", ok=(202,))
+        except StepFailed as err:
+            if err.status != 409:  # 409: it completed meanwhile
+                raise
 
     def load_org_settings(self):
         """Self-service: the org's hosting account (ReplyPen-managed, one per customer) comes from hosting.json
@@ -549,7 +605,7 @@ class Kickstart:
         self.run(["git", "-C", str(root), "add", "-A"])
         self.run(["git", "-C", str(root), "commit", "--quiet", "-m",
                   f"Kickstart {self.a.name}: worker {self.worker}, form {self.form_scope}"])
-        # This push already starts a deploy run; it fails until step_deploy sets the secret, which is fine.
+        # This push starts the first real deploy: step_repo armed the repo before it.
         self.run(["git", "-C", str(root), "push", "--quiet", "origin", "HEAD:main"])
 
     # ---- 2. ReplyPen App access -----------------------------------------------------------------
@@ -620,15 +676,9 @@ class Kickstart:
     def step_deploy(self):
         """Arm the workflow's deploy job, then see main deployed: check-run `Website deploy` success on
         the head sha, the live page, and the revision marker naming that sha. The first deploy creates
-        the Worker, so there is no separate create step (and no Cloudflare token on this laptop's build)."""
+        the Worker, so there is no separate create step (and no Cloudflare token on this laptop's build).
+        step_repo armed it before the push, so that push's run normally deployed already; this is the safety net."""
         repo = ["--repo", self.full_name]
-        if not self.self_service:  # self-service: the org-level secret + variable (load_org_settings)
-            if not self.deploy_token and not self.a.dry_run:
-                raise StepFailed("CF_SITES_DEPLOY_TOKEN is not set (mise-env replypen/replypen.env)")
-            # The token travels on stdin only: never argv, never a log line.
-            self.act(["gh", "secret", "set", DEPLOY_SECRET, *repo], stdin=self.deploy_token,
-                     shown=f"gh secret set {DEPLOY_SECRET} --repo {self.full_name} < $CF_SITES_DEPLOY_TOKEN")
-            self.act(["gh", "variable", "set", ACCOUNT_VAR, "--body", self.a.account, *repo])
         sha = self.s.get("head_sha")
         if self.a.dry_run and not sha:
             self.plan(f"gh workflow run deploy.yml --ref main, wait for that run, "
@@ -921,11 +971,7 @@ class Kickstart:
                                                             else "no active runs")
             for run in active:
                 if run["id"] not in cancelled:
-                    try:
-                        self.gh("POST", f"{base}/runs/{run['id']}/cancel", ok=(202,))
-                    except StepFailed as err:
-                        if err.status != 409:  # 409: it completed meanwhile
-                            raise
+                    self.cancel_run(base, run["id"])
                     cancelled.add(run["id"])
             if self.a.dry_run:
                 return f"disable {Path(WORKFLOW).name}, cancel {len(active)} active run(s)"
