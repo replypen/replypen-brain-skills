@@ -6,6 +6,7 @@ import importlib.util
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "made_by.py"
@@ -68,6 +69,18 @@ class MadeByCheckTest(unittest.TestCase):
             self.assertEqual(mb.apply(root), [])
             layout = (root / "_layouts/default.html").read_text()
             self.assertIn("  {% include footer.html %}\n  {% include made-by.html %}\n", layout)
+
+            # A changed source re-applied refreshes the build.sh reference too, keeping the commands around it.
+            (root / "build.sh").write_text((root / "build.sh").read_text() + "pnpm exec pagefind --site _site\n")
+            new_css = mb.CSS.replace("#f3f4f6", "#eeeeee")
+            new_check = mb.CHECK.replace(mb.CSS.rstrip(), new_css.rstrip())  # before CSS is patched
+            with unittest.mock.patch.object(mb, "CSS", new_css), unittest.mock.patch.object(mb, "CHECK", new_check):
+                self.assertEqual(sorted(mb.apply(root)), ["assets/made-by.css", "build.sh"])
+                build = (root / "build.sh").read_text()
+                self.assertEqual(build.count(mb.MARKER + " "), 1)
+                self.assertIn("#eeeeee", build)
+                self.assertTrue(build.startswith("pnpm exec eleventy\n"))
+                self.assertTrue(build.endswith("pnpm exec pagefind --site _site\n"))
 
 
 if __name__ == "__main__":

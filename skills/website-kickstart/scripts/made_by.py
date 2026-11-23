@@ -31,6 +31,7 @@ INCLUDE = ("{%- comment -%} KampAdmin-regel: vast onderdeel van elke KampAdmin-s
            "(build.sh controleert hem). {%- endcomment -%}\n" + HTML + "\n")
 LINK = '<link rel="stylesheet" href="/assets/made-by.css">'
 MARKER = "# KampAdmin-regel"
+END_MARKER = "# einde KampAdmin-regel"  # apply() replaces everything from MARKER to here, so a re-apply refreshes it
 CHECK = f"""
 {MARKER} "Gemaakt met ♥ door KampAdmin via Tippi" (_includes/made-by.html + assets/made-by.css) staat
 # ongewijzigd op elke pagina, anders faalt de build en gaat er niets live. Bron: website-kickstart/scripts/made_by.py
@@ -60,6 +61,7 @@ MADE_BY_CSS
   fi
   echo "KampAdmin-regel: ok op $made_by_pages pagina's"
 fi
+{END_MARKER}
 """
 AGENTS = """
 ## KampAdmin-regel (vast, niet wijzigen)
@@ -106,7 +108,12 @@ def apply(root: Path) -> list[str]:
         write(layout_rel, new)
 
     build = (root / "build.sh").read_text()
-    if MARKER not in build:
+    block = re.compile(r"\n" + re.escape(MARKER) + r" .*?^" + re.escape(END_MARKER) + r"\n", re.S | re.M)
+    if block.search(build):
+        write("build.sh", block.sub(lambda _: CHECK, build, count=1))
+    elif MARKER in build:
+        raise SystemExit("build.sh: KampAdmin-regel check without its end marker; remove that block, then re-apply")
+    else:
         write("build.sh", build.rstrip("\n") + "\n" + CHECK)
 
     agents = (root / "AGENTS.md").read_text()
