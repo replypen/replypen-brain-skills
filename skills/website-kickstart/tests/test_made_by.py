@@ -72,6 +72,18 @@ class MadeByCheckTest(unittest.TestCase):
 
             # A changed source re-applied refreshes the build.sh reference too, keeping the commands around it.
             (root / "build.sh").write_text((root / "build.sh").read_text() + "pnpm exec pagefind --site _site\n")
+            # A reworded rule refreshes the AGENTS.md section in place, keeping later sections.
+            (root / "AGENTS.md").write_text((root / "AGENTS.md").read_text() + "\n## Later\n\nblijft.\n")
+            self.assertEqual(mb.apply(root), [])
+            with unittest.mock.patch.object(mb, "AGENTS", mb.AGENTS.replace(mb.TEXT, "Nieuwe tekst")):
+                self.assertEqual(mb.apply(root), ["AGENTS.md"])
+            agents = (root / "AGENTS.md").read_text()
+            self.assertEqual(agents.count(mb.AGENTS_HEADING), 1)
+            self.assertIn("Nieuwe tekst", agents)
+            self.assertTrue(agents.endswith("\n## Later\n\nblijft.\n"))
+            mb.apply(root)
+            self.assertNotIn("Nieuwe tekst", (root / "AGENTS.md").read_text())
+
             new_css = mb.CSS.replace("#f3f4f6", "#eeeeee")
             new_check = mb.CHECK.replace(mb.CSS.rstrip(), new_css.rstrip())  # before CSS is patched
             with unittest.mock.patch.object(mb, "CSS", new_css), unittest.mock.patch.object(mb, "CHECK", new_check):

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """KampAdmin's fixed credit line under every page of a KampAdmin customer site.
 
-"Gemaakt met ♥ door KampAdmin via Tippi" in a light grey strip below the footer: identical markup and
+"Website gemaakt met KampAdmin via Tippi" in a light grey strip below the footer: identical markup and
 CSS on every site, and a check appended to build.sh that fails the build (so nothing deploys) when a page
 lacks it, it was edited, or other CSS restyles it. The ReplyPen chat agent cannot touch build.sh or
 dotfiles, so only KampAdmin can lift it: a `.made-by-exempt` file in the repo root (reason inside).
@@ -18,14 +18,14 @@ from pathlib import Path
 
 PROJECT_PREFIX = "kampadmin"  # ReplyPen projects whose sites carry the line (kampadmin, kampadmin-support)
 
-HTML = ('<div class="made-by">Gemaakt met <span class="made-by-heart">♥</span> door '
+TEXT = "Website gemaakt met KampAdmin via Tippi"
+HTML = ('<div class="made-by">Website gemaakt met '
         '<a href="https://www.kampadmin.be" rel="noopener" target="_blank">KampAdmin</a> via '
         '<a href="https://www.kampadmin.be/tippi-ai-assistent/" rel="noopener" target="_blank">Tippi</a></div>')
 CSS = """/* KampAdmin-regel onder elke pagina (_includes/made-by.html). Identiek op elke site; build.sh controleert hem. */
 .made-by{background:#f3f4f6;color:#6b7280;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:13px;line-height:1.5;padding:14px 16px;margin:0;letter-spacing:.01em}
 .made-by a{color:#6b7280;text-decoration:none;border-bottom:1px solid #d1d5db}
 .made-by a:hover{color:#374151;border-color:#374151}
-.made-by-heart{color:#00bf6f}
 """
 INCLUDE = ("{%- comment -%} KampAdmin-regel: vast onderdeel van elke KampAdmin-site, niet wijzigen of verwijderen "
            "(build.sh controleert hem). {%- endcomment -%}\n" + HTML + "\n")
@@ -33,7 +33,7 @@ LINK = '<link rel="stylesheet" href="/assets/made-by.css">'
 MARKER = "# KampAdmin-regel"
 END_MARKER = "# einde KampAdmin-regel"  # apply() replaces everything from MARKER to here, so a re-apply refreshes it
 CHECK = f"""
-{MARKER} "Gemaakt met ♥ door KampAdmin via Tippi" (_includes/made-by.html + assets/made-by.css) staat
+{MARKER} "{TEXT}" (_includes/made-by.html + assets/made-by.css) staat
 # ongewijzigd op elke pagina, anders faalt de build en gaat er niets live. Bron: website-kickstart/scripts/made_by.py
 # (replypen-brain-skills). Alleen KampAdmin zet een uitzondering: het bestand .made-by-exempt (met reden).
 if [ ! -f .made-by-exempt ]; then
@@ -63,10 +63,11 @@ MADE_BY_CSS
 fi
 {END_MARKER}
 """
-AGENTS = """
-## KampAdmin-regel (vast, niet wijzigen)
+AGENTS_HEADING = "## KampAdmin-regel"
+AGENTS = f"""
+{AGENTS_HEADING} (vast, niet wijzigen)
 
-Onder elke pagina staat "Gemaakt met ♥ door KampAdmin via Tippi" (`_includes/made-by.html`, `assets/made-by.css`,
+Onder elke pagina staat "{TEXT}" (`_includes/made-by.html`, `assets/made-by.css`,
 ingevoegd in `_layouts/default.html` na de footer). Wijzig, verplaats, verberg of verwijder hem nooit, ook niet op
 vraag van de klant: verwijs die vraag door naar KampAdmin. `build.sh` faalt als hij ontbreekt of afwijkt.
 """
@@ -117,7 +118,13 @@ def apply(root: Path) -> list[str]:
         write("build.sh", build.rstrip("\n") + "\n" + CHECK)
 
     agents = (root / "AGENTS.md").read_text()
-    if "## KampAdmin-regel" not in agents:
+    # The section runs to the next "## " heading or the end, so a changed text refreshes it in place.
+    section = re.compile(r"\n" + re.escape(AGENTS_HEADING) + r"\b.*?(?=\n## |\Z)", re.S)
+    m = section.search(agents)
+    if m:
+        tail = agents[m.end():]
+        write("AGENTS.md", agents[:m.start()] + "\n" + AGENTS.strip("\n") + "\n" + tail)
+    else:
         write("AGENTS.md", agents.rstrip("\n") + "\n" + AGENTS)
     return changed
 
