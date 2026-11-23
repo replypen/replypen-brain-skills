@@ -35,6 +35,12 @@ tenant-less mailbox. Never invent a tenant just to host a site.
 > in-your-face chooser linking `/voorstellen/<style>/`; site already public → the same under an unlinked path.
 > The chosen style becomes the site, the rest is deleted. Example: `dentai-org/site-molaar` (its `AGENTS.md`).
 
+**KampAdmin sites carry a fixed credit line.** For a `kampadmin*` project the fill step adds "Gemaakt met ♥
+door KampAdmin via Tippi" under every page ([`scripts/made_by.py`](scripts/made_by.py): include, CSS, layout,
+`AGENTS.md` rule, and a `build.sh` check that fails the deploy when it is missing, reworded or restyled). Other
+projects' sites get nothing. Existing site: `python3 scripts/made_by.py <repo>` on a branch → preview → owner's OK.
+Only KampAdmin lifts it for one site, with a `.made-by-exempt` file (reason inside; the chat agent cannot write dotfiles).
+
 Repo + Worker = `site-<slug>`; live `https://site-<slug>.rootcause-sites.workers.dev`, previews
 `https://<branch>-site-<slug>.rootcause-sites.workers.dev`. Output: `✓/✗ step — detail` per step, then a
 summary (repo, URLs, deploy run, screenshots in `--out`, default `~/Downloads`) and a chat sentence to try. ~3 min.
