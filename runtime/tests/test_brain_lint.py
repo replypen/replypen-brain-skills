@@ -170,7 +170,7 @@ def test_manifest_enum_vocabulary_is_loaded_from_contract() -> None:
         "policy.runtime": ("python", "bash", "ruby"),
         "preflight.runtime": ("python", "bash", "ruby"),
         "risk": ("low", "medium", "high"),
-        "runtime": ("ruby", "python"),
+        "runtime": ("ruby", "python", "host"),
     }
 
 
