@@ -57,6 +57,7 @@ class World:
         self.runs = []  # workflow runs; each one's deploy job is check-run id == run id
         self.deploy_outcomes = []
         self.push_delay = self.dispatch_delay = 0
+        self.template_delay = 3  # the generate commit's run: still building when the kickstart looks
         self.rc_repos = []
         self.org_vars, self.org_secrets = {}, set()  # org-level Actions settings shared with every repo
         self.org_admin_reads = True  # False: a plain org member (403 on the org's installations)
@@ -87,6 +88,11 @@ class World:
                "html_url": f"https://github.com/{repo}/actions/runs/{self.n}"}
         self.runs.append(run)
         return run
+
+    @property
+    def site_runs(self):
+        """Runs on the kickstart's own commits, without the generate commit's run."""
+        return [r for r in self.runs if not r.get("template")]
 
     def advance_runs(self):
         for run in self.runs:
@@ -165,6 +171,7 @@ class World:
             self.repos[f"{body['owner']}/{body['name']}"] = {
                 "id": 1000 + self.n, "files": dict(TEMPLATE_FILES), "sha": sha[:40],
                 "secrets": {}, "vars": {}}
+            self.start_run(f"{body['owner']}/{body['name']}", delay=self.template_delay)["template"] = True
             return js({}, 201)
         if m := re.fullmatch(r"/repos/([^/]+/[^/]+)/contents/(.+)", path):
             text = self.repos[m.group(1)]["files"].get(m.group(2))
@@ -334,6 +341,7 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.names(writes), [
             "POST /repos/replypen/site-template/generate",
+            "POST /repos/dentai-org/site-test/actions/runs/1/cancel",  # the template commit's doomed run
             "cmd git push",
             "PUT /user/installations/168123503/repositories/1000",
             "cmd gh secret set",
@@ -408,6 +416,7 @@ class KickstartTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.names(writes), [
             "POST /repos/replypen/site-template/generate",
+            "POST /repos/kampadmin/site-test/actions/runs/1/cancel",
             "cmd gh secret set",  # the member's own customer-scoped token, on stdin
             "cmd gh variable set",
             "cmd git push",  # no App edit: the org owner selected All repositories once
@@ -447,7 +456,8 @@ class KickstartTest(unittest.TestCase):
         _, (code, out, writes) = self.self_service(env={})
         self.assertEqual(code, 1)
         self.assertIn("KA_SITES_DEPLOY_TOKEN is not set", out)
-        self.assertEqual(self.names(writes), ["POST /repos/replypen/site-template/generate"])
+        self.assertEqual(self.names(writes), ["POST /repos/replypen/site-template/generate",
+                                              "POST /repos/kampadmin/site-test/actions/runs/1/cancel"])
         ks.HOSTING.clear()
         _, (code, out, _) = self.self_service()
         self.assertEqual(code, 1)
@@ -518,12 +528,24 @@ class KickstartTest(unittest.TestCase):
         self.assertIn("filled for another scope", out)
         self.assertNotIn("cmd rp repo add", self.names(writes))
 
+    def test_template_commit_run_is_cancelled_so_no_failure_mail(self):
+        code, out, _ = self.kick()
+        self.assertEqual(code, 0, out)
+        template = next(r for r in self.world.runs if r.get("template"))
+        self.assertEqual(template["conclusion"], "cancelled")  # GitHub mails failed runs, not cancelled ones
+
+    def test_template_commit_run_already_finished_is_left_alone(self):
+        self.world.template_delay = 0  # it completed before the kickstart looked
+        code, out, writes = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertFalse([w for w in self.names(writes) if w.endswith("/cancel")])
+
     def test_push_run_without_secret_is_replaced_by_a_dispatched_run(self):
         self.world.deploy_outcomes = ["failure"]  # the push run lost the race with the secret
         code, out, writes = self.kick()
         self.assertEqual(code, 0, out)
         self.assertIn("cmd gh workflow run", self.names(writes))
-        self.assertEqual([r["conclusion"] for r in self.world.runs], ["failure", "success"])
+        self.assertEqual([r["conclusion"] for r in self.world.runs], ["cancelled", "failure", "success"])
 
     def test_stale_push_failure_landing_after_the_dispatch_does_not_abort_the_wait(self):
         """No check yet → dispatch; the push run's failed check lands while the dispatched run still builds.
@@ -533,7 +555,7 @@ class KickstartTest(unittest.TestCase):
         code, out, writes = self.kick()
         self.assertEqual(code, 0, out)
         self.assertEqual(self.names(writes).count("cmd gh workflow run"), 1)
-        push, dispatched = self.world.runs
+        push, dispatched = self.world.site_runs
         self.assertEqual((push["event"], push["conclusion"]), ("push", "failure"))
         self.assertEqual((dispatched["event"], dispatched["conclusion"]), ("workflow_dispatch", "success"))
         self.assertIn(f"deploy run  {dispatched['html_url']}", out)
@@ -543,9 +565,9 @@ class KickstartTest(unittest.TestCase):
         self.world.deploy_outcomes = []
         orig = self.world.github
         def first_look_sees_it_running(method, path, query, body):
-            if path.endswith("/check-runs") and self.world.runs and self.world.runs[0]["ticks"]:
-                self.world.runs[0]["ticks"] = 0  # build done, deploy job running
-                return 200, json.dumps({"check_runs": [{"id": 1, "status": "in_progress", "conclusion": None,
+            if path.endswith("/check-runs") and self.world.site_runs and self.world.site_runs[0]["ticks"]:
+                self.world.site_runs[0]["ticks"] = 0  # build done, deploy job running
+                return 200, json.dumps({"check_runs": [{"id": self.world.site_runs[0]["id"], "status": "in_progress", "conclusion": None,
                                                         "html_url": "x"}]}).encode()
             return orig(method, path, query, body)
         self.world.github = first_look_sees_it_running

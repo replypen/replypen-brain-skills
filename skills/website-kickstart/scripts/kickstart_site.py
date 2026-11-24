@@ -380,6 +380,8 @@ class Kickstart:
             raise StepFailed(f"{self.full_name} has no wrangler.jsonc on main")
         if self.file_text(WORKFLOW) is None:
             raise StepFailed(f"{self.full_name} has no {WORKFLOW}: copy it from {TEMPLATE} onto main")
+        if created:
+            self.cancel_template_runs()
         if self.self_service:
             self.load_org_settings()
         if self.a.adopt:
@@ -416,6 +418,20 @@ class Kickstart:
         head = self.gh("GET", f"/repos/{self.full_name}/commits/main")
         self.s["head_sha"] = head["sha"] if head else None
         return detail + (f" @ {self.s['head_sha'][:8]}" if self.s["head_sha"] else "")
+
+    def cancel_template_runs(self):
+        """Cancel the deploy run that generating the repo starts on the template's own commit. Until the
+        template's deploy.yml skips an unpersonalised repo by itself, that run deploys the placeholder
+        `__WORKER_NAME__`, fails, and GitHub mails the failure to whoever kickstarted; a cancelled run
+        mails nobody. Best effort: the run builds for ~50 s, this lands within seconds of the generate."""
+        for run in self.workflow_runs():
+            if run.get("status") == "completed":
+                continue
+            try:
+                self.gh("POST", f"/repos/{self.full_name}/actions/runs/{run['id']}/cancel", ok=(202,))
+            except StepFailed as err:
+                if err.status != 409:  # 409: it completed meanwhile
+                    raise
 
     def load_org_settings(self):
         """Self-service: the org's hosting account (ReplyPen-managed, one per customer) comes from hosting.json
@@ -554,7 +570,7 @@ class Kickstart:
         self.run(["git", "-C", str(root), "add", "-A"])
         self.run(["git", "-C", str(root), "commit", "--quiet", "-m",
                   f"Kickstart {self.a.name}: worker {self.worker}, form {self.form_scope}"])
-        # This push already starts a deploy run; it fails until step_deploy sets the secret, which is fine.
+        # This push starts a deploy run; its deploy job (after a ~40 s build) normally finds the secret set.
         self.run(["git", "-C", str(root), "push", "--quiet", "origin", "HEAD:main"])
 
     # ---- 2. ReplyPen App access -----------------------------------------------------------------
