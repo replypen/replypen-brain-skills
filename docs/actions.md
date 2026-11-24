@@ -201,7 +201,52 @@ identity, target or effect of the action unclear: keep those rows `default`.
   rewrites it to the same file descriptor shape consumed with `p.file("<name>")`. Generated-file params
   are hosted-only and cannot have `preflight.py`.
 
+- `selection` for a host-captured set of record uuids (up to 50.000); needs `resource:`. See
+  [Selections](#selections-acting-on-many-records).
+
 Use `format`, `pattern`, and `enum` on scalar params; use `accept` as a MIME allowlist for file params.
+
+### Selections: acting on many records
+
+The agent cannot reliably copy more than about a thousand ids into a `string[]`. A `selection` param
+takes a handle instead: the agent calls the `capture_selection` tool with one SELECT, the host runs it
+once through the run's own tenant-scoped read path, stores the ids and returns
+`{selection_id, count, sha256, samples}`. The agent passes `selection_id`; the approval card shows the
+count, capture time, five example ids and the source query.
+
+Which input to offer:
+
+| The records come from… | Use |
+|---|---|
+| a query, whatever the size | `selection` |
+| a handful of ids the user named ("these two leaders") | `string[]` (`record_ids`) |
+| a filter the customer app's own list can express | still prefer the brain's live filtered list link (the admin acts there); `selection` is for what no filter reaches or a fixed snapshot |
+
+Offer both on one action when both cases occur (`record_ids` and `selection`, each `required: false`;
+the script requires exactly one). Write the `description` so the agent knows: "ids from a query →
+capture_selection + selection; ids the user named → record_ids".
+
+```yaml
+params:
+  - { name: record_ids, type: "string[]", required: false, format: uuid }
+  - { name: selection, label: Selectie, type: selection, resource: participants, required: false }
+```
+
+What each side receives:
+
+- **preflight.py**: `{"selection_id", "resource", "count", "sha256", "ids_file"}`; read the ids with
+  `open(p["selection"]["ids_file"]).read().split()` (one lowercase uuid per line, sorted). Count, check
+  tenant and rights, and label examples in `summary`. `$PREFLIGHT_PARAMS_FILE` always holds the same
+  JSON as `$PREFLIGHT_PARAMS` (the env copy is skipped near Linux's 128 KiB limit).
+- **script.rb / script.py (and policy.py)**: the param is the plain id list (`string[]` on the Embassy
+  wire), hydrated by the host at confirm after it re-checked the snapshot's sha256 and binding. Treat
+  it like `record_ids`: re-check tenant and rights per id and skip what fails; the set may only shrink.
+  The host's `sha256` is hex sha256 of the sorted ids joined by `\n` (no trailing newline).
+- A selection is single-use (one confirmed action run), bound to the run that captured it, and expires
+  with its card. One selection param per action; the query must select exactly one uuid column (NULLs
+  refuse) and stay under 8 KiB. Console preflight/dry-run cannot test it: test through a real chat or mail run.
+- The host never sends the query to the customer app. Never add a param that carries SQL, a WHERE
+  fragment or a serialized filter to a customer app: it is not tenant-safe there.
 
 ## Autonomy (`human` | `policy` | `auto`)
 
