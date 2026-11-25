@@ -1,5 +1,6 @@
 key: teamleader
 name: Teamleader Focus
+aliases: [Teamleader]
 kinds: [oauth]
 # Manifest-only: Teamleader's API is RPC-style (every read is `POST /<resource>.<action>` with a JSON
 # body), which read_endpoints.post covers. Pagination lives in the BODY (`page: {size, number}`), a

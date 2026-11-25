@@ -1,5 +1,6 @@
 key: exactonline
 name: Exact Online
+aliases: [Exact]
 kinds: [oauth]
 # The script adds OData-safe filters and the account -> invoices/receivables support join; lib.api
 # still owns Exact's d.__next pagination, OAuth bearer attachment, retries, and error normalization.

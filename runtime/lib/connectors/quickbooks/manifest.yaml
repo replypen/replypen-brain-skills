@@ -1,5 +1,6 @@
 key: quickbooks
 name: QuickBooks Online
+aliases: [QuickBooks]
 kinds: [oauth]
 credential_exposure: broker
 # Script connector: lib.connectors.quickbooks exists because force-code triggers fire:

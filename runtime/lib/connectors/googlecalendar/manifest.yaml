@@ -1,5 +1,6 @@
 key: googlecalendar
 name: Google Calendar
+aliases: [gcal, Google Agenda]
 kinds: [token, oauth]
 # Manifest-only integration: NO connector_module. Calendar reads (events/calendars/calendarList)
 # trip no force-code trigger — cursor pagination, bearer auth, and `--pick` handle everything the

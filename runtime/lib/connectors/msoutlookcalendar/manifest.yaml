@@ -1,5 +1,6 @@
 key: msoutlookcalendar
 name: Microsoft Outlook Calendar
+aliases: [Outlook Calendar, Outlook Agenda]
 kinds: [token, oauth]
 # Manifest-only integration, driven via `python -m lib.api get msoutlookcalendar`. Microsoft Graph
 # paginates with @odata.nextLink: an absolute next-page URL in the JSON body. lib.api's `body_url`

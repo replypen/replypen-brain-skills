@@ -1,5 +1,6 @@
 key: monday
 name: monday.com
+aliases: [Monday]
 kinds: [token, oauth]
 credential_exposure: env
 credential_exposure_reason: provider-enforced read-only credential

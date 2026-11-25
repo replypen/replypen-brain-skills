@@ -1,5 +1,6 @@
 key: google_analytics
 name: Google Analytics & Search Console
+aliases: [Google Analytics, Search Console, GA4]
 kinds: [token]
 credential_exposure: env
 credential_exposure_reason: multi-field credential

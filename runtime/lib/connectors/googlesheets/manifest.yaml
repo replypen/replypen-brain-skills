@@ -1,5 +1,6 @@
 key: googlesheets
 name: Google Sheets
+aliases: [Google Spreadsheets]
 kinds: [oauth, token]
 # Manifest-only integration: NO connector_module. All useful Sheets reads (cell values, sheet
 # metadata, multiple ranges) are single-page GETs with no join or field pre-selection trigger —

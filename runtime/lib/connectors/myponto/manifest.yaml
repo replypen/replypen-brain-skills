@@ -1,5 +1,6 @@
 key: myponto
 name: myPonto
+aliases: [Ponto]
 kinds: [oauth]
 credential_exposure: broker
 # Manifest-only integration: Ponto Connect account/transaction reads are standard JSON:API GETs with
