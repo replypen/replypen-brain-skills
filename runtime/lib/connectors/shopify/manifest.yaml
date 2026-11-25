@@ -45,29 +45,38 @@ oauth:
     - read_products
     - read_inventory
 help_md: |
-  Reads Shopify orders, customers, products, and inventory via the Admin GraphQL API for support
-  diagnosis. Uses a per-shop offline access token (or OAuth) — read-only by declared scopes.
+  Reads Shopify orders (status, tracking, refunds, returns), customers, products, and inventory via
+  the Admin GraphQL API for support diagnosis. Read-only by declared scopes; the access token stays
+  host-side and is used through the API broker.
 
-  The connector script (not the generic lib.api CLI) must be used because Shopify's Admin API is
-  GraphQL (POST), not REST:
+  Shopify's Admin API is GraphQL (POST), so use the connector script, not the generic lib.api CLI:
 
-      python -m lib.connectors.shopify orders   --shop mystore  --limit 10
-      python -m lib.connectors.shopify customer --shop mystore  --ref cus@example.com
-      python -m lib.connectors.shopify product  --shop mystore  --id gid://shopify/Product/123456
+      python -m lib.connectors.shopify --shop mystore order --name "#1001"
+      python -m lib.connectors.shopify --shop mystore orders --query "email:cus@example.com" --limit 10
+      python -m lib.connectors.shopify --shop mystore customer --ref cus@example.com
+      python -m lib.connectors.shopify --shop mystore product --id gid://shopify/Product/123456
 
-  The Admin API access token is held host-side and used through the API broker.
-  The --shop argument is the Shopify subdomain (e.g. "mystore" → mystore.myshopify.com).
+  --shop is the store's myshopify subdomain (e.g. "mystore" for mystore.myshopify.com), not its
+  branded domain. --query takes Shopify's order search syntax (name, email, financial_status,
+  created_at, ...); `orders --limit N` pages 25 at a time up to N (default 50).
 
-  Pagination: `orders --limit N` auto-pages up to N orders (default 50, max 250 per page) using
-  GraphQL cursor pagination (pageInfo.endCursor / hasNextPage).
+  Refunds: `orders` shows only the refunded total; `order --name` lists each refund record with
+  its refund transactions, one line each: amount, where it went (the customer's payment method, store
+  credit, a manual gateway, or a test), status and date. A refund record alone does not prove money
+  moved, and its total can leave out pending attempts: answer from the transaction lines. SUCCESS to
+  the payment method means processed; banks usually take several business days to show it.
+  PENDING or AWAITING_RESPONSE means the provider is still working on it; FAILURE or ERROR means that
+  attempt did not go through. Amounts are in the buyer's currency (the shop currency follows when it
+  differs). Compare the order email with the sender before quoting anything.
 
-  Scopes required: read_orders, read_customers, read_products (read_inventory optional).
-  For orders older than 60 days, the app also needs read_all_orders (requires Shopify approval).
+  Orders older than 60 days are only visible if the store granted read_all_orders; an empty result
+  for an older order number means "not visible", not "does not exist".
 onboarding_md: |
   Ask which order questions customers email about (where is my order, did it ship, tracking,
   refund or return status). Explore representative order and customer shapes without retaining
   rows; capture how a sender email maps to a customer and its orders, the order-name format
-  (e.g. #1001), the order gid, and the fulfillment and financial status enums that matter. Orders
-  older than 60 days need the read_all_orders scope (Shopify approval), so note if older lookups
+  (e.g. #1001), the order gid, the fulfillment and financial status enums that matter, and how the
+  shop records refunds (partial vs full, which gateways, how long a PENDING refund usually takes). Orders
+  older than 60 days need the read_all_orders scope, so note if older lookups
   fail. Refunding, cancelling, editing, or fulfilling an order is a write and must reference a live
   action or remain an explicit manual step.

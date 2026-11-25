@@ -5,8 +5,10 @@ This connector wraps GraphQL POSTs, handles cursor pagination (pageInfo.endCurso
 embedded in query variables, not in HTTP headers/params), and pre-selects the support-relevant
 fields from the heavily nested edges/nodes response shape before returning them to the agent.
 
-Three entry points answer real support questions:
-  orders   — recent orders: status, financial state, totals, customer email, fulfillment
+Four entry points answer real support questions:
+  orders   — recent orders: status, financial state, totals, customer email, fulfillment/tracking,
+             refunded total and return status
+  order    — one order by name, plus each refund's amount, date, money status and items
   customer — lookup by email or GID: name, email, orders count, phone, tags
   product  — lookup by GID: title, handle, status, variants (price, inventory), tags
 
@@ -14,9 +16,10 @@ Auth: X-Shopify-Access-Token header (raw token, no "Bearer" prefix) or brokered 
 HTTP/retry/method policy rides lib.api so broker mode and env mode share one path.
 
 CLI:
-    python -m lib.connectors.shopify orders   --shop SLUG [--limit N] [--query FILTER]
-    python -m lib.connectors.shopify customer --shop SLUG --ref EMAIL_OR_GID
-    python -m lib.connectors.shopify product  --shop SLUG --id PRODUCT_GID
+    python -m lib.connectors.shopify --shop SLUG orders [--limit N] [--query FILTER]
+    python -m lib.connectors.shopify --shop SLUG order --name '#1001'      (with refund detail)
+    python -m lib.connectors.shopify --shop SLUG customer --ref EMAIL_OR_GID
+    python -m lib.connectors.shopify --shop SLUG product --id PRODUCT_GID
 """
 
 from __future__ import annotations
@@ -61,14 +64,15 @@ def _post(shop: str, query: str, variables: dict | None = None) -> dict:
 # Orders
 # ---------------------------------------------------------------------------
 
-_ORDERS_QUERY = """
-query Orders($first: Int!, $after: String, $query: String) {
-  orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT, reverse: true) {
-    edges {
-      cursor
-      node {
+# Shopify rejects any query whose *requested* cost exceeds 1000 points before running it; a connection
+# costs roughly `first` x its node cost. Refund detail (nested refund line items + transactions) costs
+# ~400 points per order, so it lives only in the one-order query; the list query carries the cheap totals.
+_MONEY = "{ shopMoney { amount currencyCode } presentmentMoney { amount currencyCode } }"
+
+_ORDER_FIELDS = """
         id
         name
+        email
         createdAt
         updatedAt
         displayFinancialStatus
@@ -89,7 +93,37 @@ query Orders($first: Int!, $after: String, $query: String) {
           updatedAt
           trackingInfo { company number url }
         }
-      }
+        returnStatus
+        totalRefundedSet """ + _MONEY + """
+"""
+
+_REFUND_FIELDS = """
+        refunds(first: 5) {
+          createdAt
+          processedAt
+          note
+          totalRefundedSet """ + _MONEY + """
+          refundLineItems(first: 10) {
+            nodes { quantity subtotalSet """ + _MONEY + """ lineItem { title } }
+            pageInfo { hasNextPage }
+          }
+          transactions(first: 5) {
+            nodes {
+              kind status processedAt gateway formattedGateway manualPaymentGateway test
+              amountSet """ + _MONEY + """
+            }
+            pageInfo { hasNextPage }
+          }
+        }
+"""
+_REFUNDS_CAP = 5
+
+_ORDERS_QUERY = """
+query Orders($first: Int!, $after: String, $query: String) {
+  orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT, reverse: true) {
+    edges {
+      cursor
+      node {""" + _ORDER_FIELDS + """      }
     }
     pageInfo {
       hasNextPage
@@ -99,15 +133,75 @@ query Orders($first: Int!, $after: String, $query: String) {
 }
 """
 
+# Name search is fuzzy (a near match can rank first), so look up a cheap page of id+name, pick the exact
+# name, then fetch the expensive refund detail for that one id.
+_ORDER_NAME_SEARCH_QUERY = """
+query OrderNameSearch($query: String!) {
+  orders(first: 10, query: $query, sortKey: CREATED_AT, reverse: true) {
+    nodes { id name }
+  }
+}
+"""
+
+_ORDER_DETAIL_QUERY = """
+query OrderDetail($id: ID!) {
+  order(id: $id) {""" + _ORDER_FIELDS + _REFUND_FIELDS + """  }
+}
+"""
+
+
+def _money(money_bag: dict | None) -> str:
+    """Customer-facing amount: the currency the buyer paid in, plus the shop currency when it differs."""
+    if not money_bag:
+        return ""
+    shop = money_bag.get("shopMoney") or {}
+    buyer = money_bag.get("presentmentMoney") or shop
+    try:
+        text = f"{buyer['amount']} {buyer['currencyCode']}"
+    except (KeyError, TypeError):
+        return ""
+    if shop.get("currencyCode") and shop["currencyCode"] != buyer.get("currencyCode"):
+        text += f" (shop currency: {shop.get('amount')} {shop['currencyCode']})"
+    return text
+
+
+def _destination(t: dict) -> str:
+    if t.get("test"):
+        return "test transaction (no real money)"
+    if (t.get("gateway") or "") == "shopify_store_credit":
+        return "store credit"
+    if t.get("manualPaymentGateway"):
+        return "manual gateway (recorded only; Shopify moved no money)"
+    return "customer's payment method"
+
+
+def _refund(r: dict) -> dict:
+    """One Refund record plus its REFUND transactions as-is: the record alone does not prove money moved,
+    and its total can differ from what the transactions settled, so no aggregate status is derived."""
+    tx_conn = r.get("transactions") or {}
+    txs = [{"amount": _money(t.get("amountSet")), "status": t.get("status") or "UNKNOWN",
+            "processed_at": t.get("processedAt"), "gateway": t.get("formattedGateway") or t.get("gateway"),
+            "destination": _destination(t)}
+           for t in tx_conn.get("nodes") or [] if t.get("kind") == "REFUND"]
+    li_conn = r.get("refundLineItems") or {}
+    items = [{"title": (li.get("lineItem") or {}).get("title"), "quantity": li.get("quantity"),
+              "subtotal": _money(li.get("subtotalSet"))}
+             for li in li_conn.get("nodes") or []]
+    return {
+        "amount": _money(r.get("totalRefundedSet")),
+        "created_at": r.get("createdAt"),
+        "processed_at": r.get("processedAt"),
+        "note": r.get("note"),
+        "line_items": items,
+        "line_items_truncated": bool((li_conn.get("pageInfo") or {}).get("hasNextPage")),
+        "transactions": txs,
+        "transactions_truncated": bool((tx_conn.get("pageInfo") or {}).get("hasNextPage")),
+    }
+
 
 def _order_node(node: dict) -> dict:
     """Pre-select support-relevant fields from a raw order node."""
-    total = ""
-    try:
-        m = node["totalPriceSet"]["shopMoney"]
-        total = f"{m['amount']} {m['currencyCode']}"
-    except (KeyError, TypeError):
-        pass
+    total = _money(node.get("totalPriceSet"))
 
     customer_email = ""
     customer_name = ""
@@ -135,6 +229,7 @@ def _order_node(node: dict) -> dict:
             tracking.append({"company": t.get("company"), "number": t.get("number"), "url": t.get("url"),
                              "status": f.get("status"), "updated_at": f.get("updatedAt")})
 
+    raw_refunds = node.get("refunds") or []
     return {
         "id": node.get("id"),
         "name": node.get("name"),
@@ -142,6 +237,7 @@ def _order_node(node: dict) -> dict:
         "financial_status": node.get("displayFinancialStatus"),
         "fulfillment_status": node.get("displayFulfillmentStatus"),
         "total": total,
+        "order_email": node.get("email") or "",
         "customer_email": customer_email,
         "customer_name": customer_name,
         "shipping_city": ship.get("city"),
@@ -151,12 +247,16 @@ def _order_node(node: dict) -> dict:
         "cancelled_at": node.get("cancelledAt"),
         "cancel_reason": node.get("cancelReason"),
         "tracking": tracking,
+        "return_status": node.get("returnStatus"),
+        "total_refunded": _money(node.get("totalRefundedSet")),
+        "refunds": [_refund(r) for r in raw_refunds],
+        "refunds_truncated": len(raw_refunds) >= _REFUNDS_CAP,
     }
 
 
 def fetch_orders(shop: str, *, limit: int = 50, query_filter: str = "") -> list[dict]:
     """Fetch up to ``limit`` recent orders, auto-paging with GraphQL cursor pagination."""
-    PAGE_SIZE = min(limit, 50)
+    PAGE_SIZE = min(limit, 25)  # ~20 points per order keeps a page well under the 1000-point cap
     orders: list[dict] = []
     after: str | None = None
 
@@ -180,6 +280,27 @@ def fetch_orders(shop: str, *, limit: int = 50, query_filter: str = "") -> list[
         after = page_info.get("endCursor")
 
     return orders[:limit]
+
+
+def _search_value(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def fetch_order(shop: str, name: str) -> dict | None:
+    """One order by its exact name (#1001) with refund detail; a bare number also tries '#<number>'."""
+    name = (name or "").strip()
+    if not name:
+        raise RuntimeError("order name (e.g. #1001) is required")
+    candidates = [name] + ([f"#{name}"] if name.isdigit() else [])
+    for candidate in candidates:
+        data = _post(shop, _ORDER_NAME_SEARCH_QUERY, {"query": f"name:{_search_value(candidate)}"})
+        hits = (data.get("data") or {}).get("orders", {}).get("nodes") or []
+        exact = next((h for h in hits if (h.get("name") or "").casefold() == candidate.casefold()), None)
+        if exact:
+            detail = _post(shop, _ORDER_DETAIL_QUERY, {"id": exact["id"]})
+            node = (detail.get("data") or {}).get("order")
+            return _order_node(node) if node else None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +455,23 @@ def fetch_product(shop: str, product_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
+def _is_zero(money: str) -> bool:
+    try:
+        return float(money.split()[0]) == 0
+    except (ValueError, IndexError):
+        return False
+
+
+def order_to_markdown(order: dict | None, name: str, shop: str) -> str:
+    if not order:
+        return (f"# Shopify order not found\nNo order named `{name}` on shop `{shop}`. Orders older than "
+                "60 days are invisible unless the store granted read_all_orders.")
+    md = orders_to_markdown([order], shop).split("\n", 1)[1]
+    if not order.get("refunds"):
+        md += "\n- Refunds: none"
+    return f"# Shopify order {order.get('name')}: {shop}" + md
+
+
 def orders_to_markdown(orders: list[dict], shop: str) -> str:
     if not orders:
         return f"# Shopify orders: {shop}\nNo orders found."
@@ -344,9 +482,33 @@ def orders_to_markdown(orders: list[dict], shop: str) -> str:
         lines.append(f"- Status: {status}")
         lines.append(f"- Total: {o.get('total') or '—'}")
         lines.append(f"- Customer: {o.get('customer_email') or '—'} {o.get('customer_name') or ''}".rstrip())
+        if o.get("order_email") and o["order_email"] != o.get("customer_email"):
+            lines.append(f"- Order email: {o['order_email']}")
         lines.append(f"- Created: {o.get('created_at') or '—'}")
         for t in o.get("tracking") or []:
             lines.append(f"- Tracking: {t.get('company') or '?'} {t.get('number') or ''} {t.get('url') or ''} ({t.get('status') or '?'})".rstrip())
+        if o.get("return_status") and o["return_status"] != "NO_RETURN":
+            lines.append(f"- Return: {o['return_status']}")
+        if o.get("total_refunded") and not o.get("refunds") and not _is_zero(o["total_refunded"]):
+            lines.append(f"- Refunded so far: {o['total_refunded']} (run `order --name \"{o.get('name')}\"` for dates and status)")
+        for r in o.get("refunds") or []:
+            lines.append(f"- Refund record: {r.get('amount') or '?'} created {r.get('created_at') or '?'}")
+            for t in r.get("transactions") or []:
+                lines.append(f"  - {t.get('amount') or '?'} to {t['destination']} via {t.get('gateway') or '?'}:"
+                             f" {t['status']} at {t.get('processed_at') or '?'}")
+            if not r.get("transactions"):
+                lines.append("  - No refund transaction: nothing was paid back through a gateway"
+                             " (store credit or a manually recorded refund; check the note)")
+            if r.get("transactions_truncated"):
+                lines.append("  - (more transactions exist than shown)")
+            if r.get("line_items"):
+                more = " (more items not shown)" if r.get("line_items_truncated") else ""
+                lines.append("  - Refunded items: "
+                             + ", ".join(f"{li['title']} ×{li['quantity']}" for li in r["line_items"]) + more)
+            if r.get("note"):
+                lines.append(f"  - Note: {r['note']}")
+        if o.get("refunds_truncated"):
+            lines.append(f"- (only the first {_REFUNDS_CAP} refunds are shown; later ones may exist)")
         if o.get("cancelled_at"):
             lines.append(f"- **Cancelled**: {o['cancel_reason'] or ''} at {o['cancelled_at']}")
         items = o.get("line_items") or []
@@ -403,24 +565,37 @@ def main(argv: list[str] | None = None) -> int:
         prog="python -m lib.connectors.shopify",
         description="Shopify Admin GraphQL connector — read-only grounding for support runs.",
     )
-    parser.add_argument("--shop", required=True, help="Shopify subdomain slug (e.g. mystore)")
+    shop_help = "Shopify subdomain slug (e.g. mystore)"
+    parser.add_argument("--shop", help=shop_help)
+    # --shop is accepted after the subcommand too; SUPPRESS keeps a missing sub-level flag from
+    # overwriting a top-level one.
+    shop_opt = argparse.ArgumentParser(add_help=False)
+    shop_opt.add_argument("--shop", default=argparse.SUPPRESS, help=shop_help)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    ord_p = sub.add_parser("orders", help="list recent orders")
+    ord_p = sub.add_parser("orders", parents=[shop_opt], help="list recent orders")
     ord_p.add_argument("--limit", type=int, default=50, help="max orders to fetch (default 50)")
     ord_p.add_argument("--query", default="", dest="query_filter", help="Shopify order query filter (e.g. 'financial_status:unpaid')")
 
-    cust_p = sub.add_parser("customer", help="look up a customer by email or GID")
+    one_p = sub.add_parser("order", parents=[shop_opt], help="one order by name, with refund detail")
+    one_p.add_argument("--name", required=True, help="order name as the customer quotes it, e.g. '#1001'")
+
+    cust_p = sub.add_parser("customer", parents=[shop_opt], help="look up a customer by email or GID")
     cust_p.add_argument("--ref", required=True, help="customer email or GID (gid://shopify/Customer/…)")
 
-    prod_p = sub.add_parser("product", help="fetch a product by GID")
+    prod_p = sub.add_parser("product", parents=[shop_opt], help="fetch a product by GID")
     prod_p.add_argument("--id", dest="product_id", required=True, help="product GID (gid://shopify/Product/…)")
 
     args = parser.parse_args(argv)
+    if not args.shop:
+        parser.error("--shop is required")
 
     if args.cmd == "orders":
         orders = fetch_orders(args.shop, limit=args.limit, query_filter=args.query_filter)
         print(orders_to_markdown(orders, args.shop))
+        return 0
+    if args.cmd == "order":
+        print(order_to_markdown(fetch_order(args.shop, args.name), args.name, args.shop))
         return 0
     if args.cmd == "customer":
         customer = fetch_customer(args.shop, args.ref)

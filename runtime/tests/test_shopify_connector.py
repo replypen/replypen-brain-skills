@@ -32,6 +32,12 @@ from lib import api  # noqa: E402
 from lib.connectors import shopify as shopify_conn  # noqa: E402
 
 SHOP = "teststore"
+
+
+def shopify_conn_manifest_help() -> str:
+    import yaml
+    path = Path(shopify_conn.__file__).with_name("manifest.yaml")
+    return yaml.safe_load(path.read_text())["help_md"]
 GRAPHQL_URL = f"https://{SHOP}.myshopify.com/admin/api/2026-07/graphql.json"
 
 # ---------------------------------------------------------------------------
@@ -69,6 +75,64 @@ _ORDER_2 = {
     "cancelledAt": None,
     "cancelReason": None,
 }
+
+def _eur(amount: str) -> dict:
+    return {"shopMoney": {"amount": amount, "currencyCode": "EUR"}}
+
+
+def _tx(status: str, amount: str, at: str, *, gateway: str = "stripe", manual: bool = False,
+        test: bool = False) -> dict:
+    return {"kind": "REFUND", "status": status, "processedAt": at, "gateway": gateway,
+            "formattedGateway": "Stripe" if gateway == "stripe" else gateway,
+            "manualPaymentGateway": manual, "test": test, "amountSet": _eur(amount)}
+
+
+_REFUNDED_ORDER = {
+    "id": "gid://shopify/Order/3",
+    "name": "#1003",
+    "createdAt": "2026-11-01T10:00:00Z",
+    "updatedAt": "2026-11-24T12:00:00Z",
+    "displayFinancialStatus": "PARTIALLY_REFUNDED",
+    "displayFulfillmentStatus": "FULFILLED",
+    "totalPriceSet": _eur("80.00"),
+    "customer": {"email": "carol@example.com", "displayName": "Carol"},
+    "shippingAddress": {"city": "Ghent", "countryCode": "BE"},
+    "lineItems": {"edges": [{"node": {"title": "Widget Pro", "quantity": 2}}]},
+    "tags": [],
+    "cancelledAt": None,
+    "cancelReason": None,
+    "fulfillments": [],
+    "returnStatus": "RETURNED",
+    "totalRefundedSet": _eur("40.00"),
+    "refunds": [
+        {
+            "createdAt": "2026-11-20T08:59:00Z",
+            "processedAt": "2026-11-20T09:00:00Z",
+            "note": "damaged on arrival",
+            "totalRefundedSet": _eur("25.00"),
+            "refundLineItems": {"nodes": [
+                {"quantity": 1, "subtotalSet": _eur("25.00"), "lineItem": {"title": "Widget Pro"}},
+            ]},
+            "transactions": {"nodes": [
+                _tx("FAILURE", "25.00", "2026-11-20T09:00:00Z"),
+                _tx("SUCCESS", "25.00", "2026-11-20T09:05:00Z"),
+            ]},
+        },
+        {
+            "createdAt": "2026-11-24T12:00:00Z",
+            "processedAt": "2026-11-24T12:00:00Z",
+            "note": None,
+            "totalRefundedSet": _eur("15.00"),
+            "refundLineItems": {"nodes": []},
+            "transactions": {"nodes": [_tx("PENDING", "15.00", "2026-11-24T12:00:00Z")]},
+        },
+    ],
+}
+
+def _mock_order_lookup():
+    _mock_post({"data": {"orders": {"nodes": [{"id": "gid://shopify/Order/3", "name": "#1003"}]}}})
+    _mock_post({"data": {"order": _REFUNDED_ORDER}})
+
 
 _PAGE_1_BODY = {
     "data": {
@@ -307,6 +371,127 @@ class ShopifyOrders(unittest.TestCase):
         md = shopify_conn.orders_to_markdown([], SHOP)
         self.assertIn("No orders found", md)
 
+    @responses_lib.activate
+    def test_order_detail_lists_each_refund_transaction(self):
+        _mock_order_lookup()
+        o = shopify_conn.fetch_order(SHOP, "#1003")
+        search, detail = (json.loads(c.request.body) for c in responses_lib.calls)
+        self.assertEqual(search["variables"]["query"], 'name:"#1003"')
+        self.assertNotIn("refunds(", search["query"])
+        self.assertEqual(detail["variables"]["id"], "gid://shopify/Order/3")
+        self.assertIn("refunds(first: 5)", detail["query"])
+
+        self.assertEqual(o["total_refunded"], "40.00 EUR")
+        self.assertEqual(o["return_status"], "RETURNED")
+        retried, _pending = o["refunds"]
+        self.assertEqual([t["status"] for t in retried["transactions"]], ["FAILURE", "SUCCESS"])
+        self.assertEqual(retried["line_items"], [{"title": "Widget Pro", "quantity": 1, "subtotal": "25.00 EUR"}])
+
+        md = shopify_conn.order_to_markdown(o, "#1003", SHOP)
+        self.assertIn("# Shopify order #1003", md)
+        self.assertIn("- Refund record: 25.00 EUR created 2026-11-20T08:59:00Z", md)
+        self.assertIn("  - 25.00 EUR to customer's payment method via Stripe: FAILURE at 2026-11-20T09:00:00Z", md)
+        self.assertIn("  - 25.00 EUR to customer's payment method via Stripe: SUCCESS at 2026-11-20T09:05:00Z", md)
+        self.assertIn("  - 15.00 EUR to customer's payment method via Stripe: PENDING at 2026-11-24T12:00:00Z", md)
+        self.assertIn("Refunded items: Widget Pro ×1", md)
+        self.assertIn("- Return: RETURNED", md)
+        self.assertIn("Note: damaged on arrival", md)
+        self.assertNotIn("more transactions exist", md)
+
+    def test_store_credit_manual_and_test_are_not_payment_method(self):
+        r = shopify_conn._refund({"transactions": {"nodes": [
+            _tx("SUCCESS", "5.00", "2026-11-20T09:00:00Z", gateway="shopify_store_credit"),
+            _tx("SUCCESS", "6.00", "2026-11-20T09:00:00Z", manual=True),
+            _tx("SUCCESS", "7.00", "2026-11-20T09:00:00Z", test=True),
+        ]}})
+        self.assertEqual([t["destination"] for t in r["transactions"]],
+                         ["store credit", "manual gateway (recorded only; Shopify moved no money)",
+                          "test transaction (no real money)"])
+
+    def test_only_refund_kind_transactions_count(self):
+        r = shopify_conn._refund({"transactions": {"nodes": [
+            dict(_tx("SUCCESS", "5.00", "2026-11-20T09:00:00Z"), kind="SUGGESTED_REFUND")]}})
+        self.assertEqual(r["transactions"], [])
+        md = shopify_conn.orders_to_markdown([{"name": "#1", "refunds": [r]}], SHOP)
+        self.assertIn("No refund transaction", md)
+
+    def test_truncated_transactions_are_flagged(self):
+        r = shopify_conn._refund({"totalRefundedSet": _eur("10.00"),
+                                  "transactions": {"nodes": [_tx("FAILURE", "10.00", "2026-11-20T09:00:00Z")],
+                                                   "pageInfo": {"hasNextPage": True}}})
+        md = shopify_conn.orders_to_markdown([{"name": "#1", "refunds": [r]}], SHOP)
+        self.assertIn("more transactions exist than shown", md)
+
+    def test_buyer_currency_comes_first(self):
+        bag = {"shopMoney": {"amount": "54.00", "currencyCode": "CAD"},
+               "presentmentMoney": {"amount": "40.00", "currencyCode": "USD"}}
+        self.assertEqual(shopify_conn._money(bag), "40.00 USD (shop currency: 54.00 CAD)")
+
+    @responses_lib.activate
+    def test_exact_name_behind_a_near_match_is_found(self):
+        _mock_post({"data": {"orders": {"nodes": [{"id": "gid://shopify/Order/9", "name": "#10030"},
+                                                  {"id": "gid://shopify/Order/3", "name": "#1003"}]}}})
+        _mock_post({"data": {"order": _REFUNDED_ORDER}})
+        o = shopify_conn.fetch_order(SHOP, "#1003")
+        self.assertEqual(o["name"], "#1003")
+        self.assertEqual(json.loads(responses_lib.calls[1].request.body)["variables"]["id"], "gid://shopify/Order/3")
+
+    @responses_lib.activate
+    def test_only_near_matches_is_not_found(self):
+        _mock_post({"data": {"orders": {"nodes": [{"id": "gid://shopify/Order/9", "name": "#10030"}]}}})
+        self.assertIsNone(shopify_conn.fetch_order(SHOP, "#1003"))
+        self.assertEqual(len(responses_lib.calls), 1)
+
+    @responses_lib.activate
+    def test_order_search_value_is_escaped(self):
+        _mock_post({"data": {"orders": {"nodes": []}}})
+        shopify_conn.fetch_order(SHOP, 'A"1\\')
+        sent = json.loads(responses_lib.calls[0].request.body)
+        self.assertEqual(sent["variables"]["query"], 'name:"A\\"1\\\\"')
+
+    @responses_lib.activate
+    def test_order_bare_number_retries_with_hash(self):
+        _mock_post({"data": {"orders": {"nodes": []}}})
+        _mock_order_lookup()
+        o = shopify_conn.fetch_order(SHOP, "1003")
+        self.assertEqual(o["name"], "#1003")
+        queries = [json.loads(c.request.body)["variables"].get("query") for c in responses_lib.calls]
+        self.assertEqual(queries[:2], ['name:"1003"', 'name:"#1003"'])
+
+    @responses_lib.activate
+    def test_order_not_found_mentions_60_day_window(self):
+        _mock_post({"data": {"orders": {"nodes": []}}})
+        self.assertIsNone(shopify_conn.fetch_order(SHOP, "#9999"))
+        md = shopify_conn.order_to_markdown(None, "#9999", SHOP)
+        self.assertIn("not found", md)
+        self.assertIn("60 days", md)
+
+    @responses_lib.activate
+    def test_list_query_stays_cheap_and_points_to_order_detail(self):
+        listed = {k: v for k, v in _REFUNDED_ORDER.items() if k != "refunds"}
+        _mock_post({"data": {"orders": {"edges": [{"cursor": "c", "node": listed}],
+                                        "pageInfo": {"hasNextPage": False, "endCursor": "c"}}}})
+        orders = shopify_conn.fetch_orders(SHOP, limit=50)
+        sent = json.loads(responses_lib.calls[0].request.body)
+        self.assertNotIn("refunds(", sent["query"])
+        self.assertLessEqual(sent["variables"]["first"], 25)
+        md = shopify_conn.orders_to_markdown(orders, SHOP)
+        self.assertIn("- Refunded so far: 40.00 EUR", md)
+        self.assertIn('run `order --name "#1003"`', md)
+
+    @responses_lib.activate
+    def test_order_without_refunds_renders_no_refund_lines(self):
+        _mock_post(_PAGE_2_BODY)
+        orders = shopify_conn.fetch_orders(SHOP, limit=1)
+        md = shopify_conn.orders_to_markdown(orders, SHOP)
+        self.assertNotIn("Refund", md)
+        self.assertNotIn("Return:", md)
+
+    def test_order_email_shown_when_it_differs_from_customer(self):
+        md = shopify_conn.orders_to_markdown([{"name": "#1", "order_email": "guest@example.com",
+                                               "customer_email": "alice@example.com"}], SHOP)
+        self.assertIn("- Order email: guest@example.com", md)
+
 
 # ---------------------------------------------------------------------------
 # Customer tests
@@ -456,6 +641,39 @@ class ShopifyCLI(unittest.TestCase):
         _mock_post(_PAGE_1_BODY)
         _mock_post(_PAGE_2_BODY)
         rc = shopify_conn.main(["--shop", SHOP, "orders", "--limit", "10"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(responses_lib.calls), 2)
+
+    @responses_lib.activate
+    def test_cli_shop_after_subcommand(self):
+        _mock_order_lookup()
+        rc = shopify_conn.main(["order", "--shop", SHOP, "--name", "#1003"])
+        self.assertEqual(rc, 0)
+
+    def test_cli_requires_shop(self):
+        with self.assertRaises(SystemExit):
+            shopify_conn.main(["order", "--name", "#1003"])
+
+    @responses_lib.activate
+    def test_published_help_examples_parse(self):
+        """Every command line in help_md must run as written."""
+        import re
+        import shlex
+        help_md = shopify_conn_manifest_help()
+        cmds = re.findall(r"python -m lib\.connectors\.shopify (.+)", help_md)
+        self.assertGreaterEqual(len(cmds), 4)
+        empty = {"data": {"orders": {"edges": [], "nodes": [], "pageInfo": {"hasNextPage": False}},
+                          "customers": {"edges": []}, "product": None}}
+        for _ in cmds:
+            responses_lib.add(responses_lib.POST, "https://mystore.myshopify.com/admin/api/2026-07/graphql.json",
+                              json=empty, status=200)
+        for c in cmds:
+            self.assertEqual(shopify_conn.main(shlex.split(c)), 0, c)
+
+    @responses_lib.activate
+    def test_cli_order(self):
+        _mock_order_lookup()
+        rc = shopify_conn.main(["--shop", SHOP, "order", "--name", "#1003"])
         self.assertEqual(rc, 0)
         self.assertEqual(len(responses_lib.calls), 2)
 
