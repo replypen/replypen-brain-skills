@@ -16,7 +16,7 @@ Cross-boundary env contract (the Go host injects these for a ``kind=mcp`` connec
     endpoint  RC_CONN_<KEY>_MCP_URL   (resolved URL; absent ⇒ fall back to a static manifest
                                        ``mcp_url_template`` when it has no ``{…}`` placeholders)
 
-Brokered keys (a custom MCP server the owner approved; the key is in ``RC_API_BROKERED_KEYS``): the
+Brokered keys (a custom MCP server the owner approved; the key is in ``RC_MCP_BROKERED_KEYS``): the
 bearer never enters the container. Calls go to ``http://rc-broker.internal/<key>/`` with no
 Authorization header; the host broker adds it, answers ``tools/list`` from the tools a person approved
 and refuses everything but ``initialize``/``ping``/``tools/call`` of an approved tool. Each CLI
@@ -270,9 +270,15 @@ class Client:
 PROTOCOL_VERSION = "2025-06-18"
 
 
+MCP_BROKERED_KEYS_ENV = "RC_MCP_BROKERED_KEYS"
+
+
 def is_brokered(key: str) -> bool:
-    """True when the host brokers ``key`` (the same roster signal ``lib.api`` reads)."""
-    return api._key_in_brokered_keys_env((key or "").strip())
+    """True when the host brokers ``key``'s MCP endpoint. Its own roster, never ``RC_API_BROKERED_KEYS``:
+    a connector with a brokered REST route can still carry a direct MCP bearer (readai)."""
+    key = (key or "").strip()
+    raw = os.environ.get(MCP_BROKERED_KEYS_ENV, "")
+    return bool(key) and key in {k.strip() for k in raw.split(",") if k.strip()}
 
 
 def broker_url(key: str) -> str:

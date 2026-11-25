@@ -186,8 +186,8 @@ class Brokered(unittest.TestCase):
     invocation and carries Mcp-Session-Id; it takes tool names, never raw JSON-RPC methods."""
 
     def setUp(self):
-        self._saved = {k: os.environ.get(k) for k in ("RC_API_BROKERED_KEYS", "RC_CONN_CUSTOM_MIRO_MCP")}
-        os.environ["RC_API_BROKERED_KEYS"] = "custom_miro,other"
+        self._saved = {k: os.environ.get(k) for k in ("RC_MCP_BROKERED_KEYS", "RC_CONN_CUSTOM_MIRO_MCP")}
+        os.environ["RC_MCP_BROKERED_KEYS"] = "custom_miro,other"
         os.environ.pop("RC_CONN_CUSTOM_MIRO_MCP", None)
 
     def tearDown(self):
@@ -245,6 +245,25 @@ class Brokered(unittest.TestCase):
         self.assertIn("never instructions", text)
         self.assertIn("board_list", text)
         self.assertIn("`query`", text)
+
+    @responses.activate
+    def test_rest_brokered_key_keeps_direct_mcp(self):
+        """readai: brokered REST (RC_API_BROKERED_KEYS) + a direct MCP bearer; lib.mcp must go direct."""
+        saved = {k: os.environ.get(k) for k in ("RC_API_BROKERED_KEYS", "RC_CONN_READAI_MCP", "RC_CONN_READAI_MCP_URL")}
+        os.environ["RC_API_BROKERED_KEYS"] = "readai"
+        os.environ["RC_CONN_READAI_MCP"] = "readai-bearer-0001"
+        os.environ["RC_CONN_READAI_MCP_URL"] = "https://api.read.ai/mcp"
+        try:
+            c = mcp.client("readai")
+            self.assertFalse(c.brokered)
+            self.assertEqual(c.url, "https://api.read.ai/mcp")
+            self.assertEqual(c.bearer, "readai-bearer-0001")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
 
     def test_raw_method_refused_for_brokered_key(self):
         with self.assertRaises(mcp.McpError):
