@@ -171,7 +171,7 @@ def _destination(t: dict) -> str:
     if (t.get("gateway") or "") == "shopify_store_credit":
         return "store credit"
     if t.get("manualPaymentGateway"):
-        return "manual gateway (recorded only; Shopify moved no money)"
+        return "manual payment method (confirm refund settlement with the merchant)"
     return "customer's payment method"
 
 

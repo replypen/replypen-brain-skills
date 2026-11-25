@@ -68,6 +68,10 @@ help_md: |
   PENDING or AWAITING_RESPONSE means the provider is still working on it; FAILURE or ERROR means that
   attempt did not go through. Amounts are in the buyer's currency (the shop currency follows when it
   differs). Compare the order email with the sender before quoting anything.
+  Manual payment method: Shopify only records the refund; the merchant pays it themselves. Use the
+  transaction status. For a SUCCESS manual refund, say the store recorded a refund of the amount on the
+  date and mark for the reviewer whether, when and how the merchant paid it; never claim money was
+  sent, and never say no money was sent.
 
   Orders older than 60 days are only visible if the store granted read_all_orders; an empty result
   for an older order number means "not visible", not "does not exist".

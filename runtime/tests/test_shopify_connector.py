@@ -405,7 +405,7 @@ class ShopifyOrders(unittest.TestCase):
             _tx("SUCCESS", "7.00", "2026-11-20T09:00:00Z", test=True),
         ]}})
         self.assertEqual([t["destination"] for t in r["transactions"]],
-                         ["store credit", "manual gateway (recorded only; Shopify moved no money)",
+                         ["store credit", "manual payment method (confirm refund settlement with the merchant)",
                           "test transaction (no real money)"])
 
     def test_only_refund_kind_transactions_count(self):
