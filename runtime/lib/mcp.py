@@ -57,12 +57,21 @@ class McpError(RuntimeError):
     """One normalized exception for every MCP failure — transport non-2xx OR a JSON-RPC ``error``.
 
     Carries the JSON-RPC ``code`` (None for a pure transport error) and the server message/body so
-    the caller sees the failing detail instead of a silent empty (mirrors ``api.ApiError``)."""
+    the caller sees the failing detail instead of a silent empty (mirrors ``api.ApiError``).
 
-    def __init__(self, message: str, *, code: int | None = None, status: int | None = None, url: str = ""):
+    ``broker_code`` is set for a host-broker refusal (``MCP_TOOL_NOT_APPROVED``, ``MCP_REQUEST_REFUSED``,
+    …) and ``unavailable`` when the connection has no route this run; the CLI prints either as one line."""
+
+    def __init__(self, message: str, *, code: int | None = None, status: int | None = None, url: str = "",
+                 broker_code: str = "", unavailable: bool = False):
         self.code = code
         self.status = status
         self.url = url
+        self.broker_code = broker_code
+        self.unavailable = unavailable
+        if broker_code or unavailable:
+            super().__init__(f"HTTP {status} {broker_code}: {message}" if broker_code else message)
+            return
         where = f" for {url}" if url else ""
         bits = []
         if status is not None:
@@ -98,6 +107,9 @@ def resolve_endpoint(key: str) -> str:
     env_url = os.environ.get(_url_env(key), "").strip()
     if env_url:
         return env_url
+    if (key or "").strip().startswith(_CUSTOM_KEY_PREFIX):
+        # A custom server is always brokered: not on the roster means the host gave this run no route.
+        raise McpError(_unavailable(key), unavailable=True)
     tmpl = _manifest_mcp_url_template(key)
     if tmpl and "{" not in tmpl and "}" not in tmpl:
         return tmpl
@@ -169,7 +181,18 @@ class Client:
         )
         self._remember_session(resp)
         if not (200 <= resp.status_code < 300):
-            raise McpError(_truncate(_body_text(resp)), status=resp.status_code, url=self.url)
+            raise self._http_error(resp)
+
+    def _http_error(self, resp) -> McpError:
+        """A non-2xx as McpError; a broker refusal or a missing broker route keeps its plain message."""
+        body = _body_text(resp)
+        if self.brokered:
+            code, message = api._broker_error(body)
+            if code:
+                return McpError(message, status=resp.status_code, url=self.url, broker_code=code)
+            if resp.status_code == 404:
+                return McpError(_unavailable(self.key), status=404, url=self.url, unavailable=True)
+        return McpError(_truncate(body), status=resp.status_code, url=self.url)
 
     def _headers(self) -> dict:
         headers = {
@@ -222,7 +245,7 @@ class Client:
                 reason = f"retry_status_{resp.status_code}"
                 attempt += 1
                 continue
-            raise McpError(_truncate(_body_text(resp)), status=resp.status_code, url=self.url)
+            raise self._http_error(resp)
 
     def _sleep_before_retry(self, resp, attempt: int) -> None:
         delay = None
@@ -271,6 +294,12 @@ PROTOCOL_VERSION = "2025-06-18"
 
 
 MCP_BROKERED_KEYS_ENV = "RC_MCP_BROKERED_KEYS"
+_CUSTOM_KEY_PREFIX = "custom_"
+
+
+def _unavailable(key: str) -> str:
+    return (f"{key} is not available in this run: the connection is disconnected or not approved. "
+            "Ask the owner to check it under Settings > Integrations.")
 
 
 def is_brokered(key: str) -> bool:
@@ -441,6 +470,16 @@ def _main(argv: list[str] | None = None) -> int:
     c.add_argument("--args", default="", help="brokered keys: JSON object of the tool's arguments")
 
     args = p.parse_args(argv)
+    try:
+        return _run(p, args)
+    except McpError as e:
+        if not (e.broker_code or e.unavailable):
+            raise
+        p.exit(1, f"{e}\n")  # a broker refusal is an answer for the user, not a traceback
+        return 1
+
+
+def _run(p, args) -> int:
     if args.cmd == "tools":
         print(_tools_to_markdown(args.key, tools(args.key), untrusted=is_brokered(args.key)))
         return 0

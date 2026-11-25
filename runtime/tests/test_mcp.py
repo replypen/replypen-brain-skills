@@ -270,3 +270,63 @@ class Brokered(unittest.TestCase):
             mcp.call("custom_miro", "resources/read", {"uri": "x"})
         with self.assertRaises(SystemExit):
             mcp._main(["call", "custom_miro", "tools/call", "--params", '{"name":"x"}'])
+
+
+class BrokerRefusalCli(unittest.TestCase):
+    """A broker refusal or a missing route is an answer for the user: one clean line, exit 1, no
+    traceback, and never the env-var hint for a custom key."""
+
+    def setUp(self):
+        self._saved = {k: os.environ.get(k) for k in ("RC_MCP_BROKERED_KEYS", "RC_CONN_CUSTOM_GONE_MCP_URL")}
+        os.environ["RC_MCP_BROKERED_KEYS"] = "custom_miro"
+        os.environ.pop("RC_CONN_CUSTOM_GONE_MCP_URL", None)
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def _cli(self, argv):
+        import io
+        from contextlib import redirect_stderr
+
+        err = io.StringIO()
+        with redirect_stderr(err), self.assertRaises(SystemExit) as cm:
+            mcp._main(argv)
+        return cm.exception.code, err.getvalue()
+
+    @responses.activate
+    def test_tool_not_approved_prints_one_line(self):
+        import json
+
+        def handler(request):
+            body = json.loads(request.body)
+            if body["method"] == "initialize":
+                return (200, {"Content-Type": "application/json"}, json.dumps({"jsonrpc": "2.0", "id": body["id"], "result": {}}))
+            if body["method"] == "notifications/initialized":
+                return (202, {}, "")
+            return (403, {"Content-Type": "application/json"}, json.dumps({"error": {"code": "MCP_TOOL_NOT_APPROVED",
+                    "message": "this tool is not approved for ReplyPen; ask the owner to tick it under Settings > Integrations"}}))
+
+        responses.add_callback(responses.POST, BROKER, callback=handler)
+        code, err = self._cli(["call", "custom_miro", "board_create"])
+        self.assertEqual(code, 1)
+        own = [ln for ln in err.strip().splitlines() if not ln.startswith("RC_HTTP_AUDIT ")]  # host audit lines share stderr
+        self.assertEqual(len(own), 1, err)
+        self.assertIn("MCP_TOOL_NOT_APPROVED: this tool is not approved", err)
+        self.assertNotIn("Traceback", err)
+
+    @responses.activate
+    def test_missing_broker_route_says_unavailable(self):
+        responses.add(responses.POST, BROKER, status=404, body="broker route not registered\n")
+        code, err = self._cli(["tools", "custom_miro"])
+        self.assertEqual(code, 1)
+        self.assertIn("not available in this run", err)
+
+    def test_custom_key_without_route_never_suggests_env(self):
+        code, err = self._cli(["tools", "custom_gone"])
+        self.assertEqual(code, 1)
+        self.assertIn("custom_gone is not available in this run", err)
+        self.assertNotIn("RC_CONN_", err)
