@@ -826,3 +826,30 @@ def test_symlinked_doc_resolves_links_from_its_target(tmp_path: Path) -> None:
     git(root, "commit", "-qm", "link")
     found = [f.render() for f in brain_hygiene.gate(root, "HEAD~1", "HEAD", cross_file=True) if "links" in f.message]
     assert found == []
+
+
+def test_chat_inspiration_prompt_key() -> None:
+    """`{#key}` after the bold title (Go keyPrefixRE): stripped from the prompt, lowered, project-unique."""
+    text = HEADER + "## A\n- **Failed** {#Backup-Failed} \u2014 Why did it fail?\n- **Plain** \u2014 p\n"
+    cats, found = brain_hygiene.parse_chat_inspiration(text)
+    assert [f for f in found if f.severity == "ERROR"] == []
+    p = cats[0]["prompts"]
+    assert (p[0]["key"], p[0]["prompt"], p[0]["title"]) == ("backup-failed", "Why did it fail?", "Failed")
+    assert p[1]["key"] == ""
+
+
+@pytest.mark.parametrize("text, needle", [
+    (HEADER + "## A\n- **One** {#k} \u2014 a\n## B\n- **Two** {#K} \u2014 b\n", "duplicate prompt key 'k'"),
+    (HEADER + "## A\n- **One** {#abcdef123456} \u2014 a\n", "12 hex digits"),
+    (HEADER + "## A\n- **One** {#bad key} \u2014 a\n", "malformed prompt key"),
+])
+def test_chat_inspiration_prompt_key_errors(text: str, needle: str) -> None:
+    errors, _ = ci(text)
+    assert any(needle in m for m in errors), errors
+
+
+def test_chat_inspiration_prompt_key_unique_across_split_set() -> None:
+    _, found = brain_hygiene.parse_chat_inspiration_set([
+        ("chat_inspiration/10-a.md", HEADER + "## A\n- **One** {#k} \u2014 a\n"),
+        ("chat_inspiration/20-b.md", HEADER + "## B\n- **Two** {#k} \u2014 b\n")])
+    assert any("duplicate prompt key" in f.message and f.path == "chat_inspiration/20-b.md" for f in found)

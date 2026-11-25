@@ -136,6 +136,10 @@ CI_READABLE_PROMPT_RUNES = 160  # card readability, not a host cap
 CI_PLACEHOLDER_RE = re.compile(r"\[[^\[\]\n]{1,40}\]")
 CI_ID_SUFFIX_RE = re.compile(r"\s*\{#([A-Za-z0-9_-]{1,64})\}\s*\Z", re.ASCII)
 CI_BOLD_RE = re.compile(r"^\*\*(.+?)\*\*\s*(.*)$", re.DOTALL)
+# Optional prompt key between the bold title and the separator (Go keyPrefixRE): a host page's
+# `ReplyPen('ask', {key})` handle; never 12 hex digits (that is the card id's shape).
+CI_KEY_PREFIX_RE = re.compile(r"\{#([A-Za-z0-9_-]{1,64})\}\s*", re.ASCII)
+CI_CARD_ID_RE = re.compile(r"[0-9a-f]{12}", re.ASCII)
 CI_SEPARATORS = ("\u2014", "\u2013", "-", ":")
 CI_MAX_NOTE_RUNES, CI_MAX_NOTES, CI_MAX_SKILLS = 300, 8, 6  # per note line; effective per prompt
 # Own inline notes per prompt (or category preamble), `skills:` excluded. p90 across all brains on
@@ -487,7 +491,7 @@ def parse_chat_inspiration_set(files: list[tuple[str, str]], root: Path | None =
     """Parse a brain's gallery set [(rel path, text)] exactly as the host's `ParseFiles` does and judge
     what it would silently drop: one library, a later file's `##` with a known id continues that
     category. Returns (categories, findings); a category is {id, label, emoji, line, path, prompts,
-    notes, skills} (its own), a prompt {title, prompt, placeholders, line, path, bold, notes, skills}
+    notes, skills} (its own), a prompt {title, key, prompt, placeholders, line, path, bold, notes, skills}
     (effective: category first, capped). `root` enables the bare-skill-name existence check.
     ERROR findings block; NOTICE ones advise."""
     findings: list[bs.Finding] = []
@@ -502,6 +506,7 @@ def parse_chat_inspiration_set(files: list[tuple[str, str]], root: Path | None =
     by_id: dict[str, dict] = {}
     seen_prompts: dict[str, int] = {}
     seen_ids: dict[str, int] = {}
+    seen_keys: dict[str, str] = {}
     any_skills_key = False
 
     def note(owner: dict, content: str, lineno: int) -> None:
@@ -602,11 +607,25 @@ def parse_chat_inspiration_set(files: list[tuple[str, str]], root: Path | None =
                     add(f"category {cur['id']!r} exceeds the {CI_MAX_PROMPTS}-prompt cap, bullet dropped",
                         "split the category", lineno)
                     continue
-                title, bold = "", False
+                title, bold, pkey = "", False, ""
                 if m := CI_BOLD_RE.match(body_text):
                     title = m.group(1).strip().removesuffix(":").strip()
                     bold = bool(title)
                     body = m.group(2).strip()
+                    if k := CI_KEY_PREFIX_RE.match(body):
+                        body, pkey = body[k.end():], k.group(1).lower()
+                        if CI_CARD_ID_RE.fullmatch(pkey):
+                            add(f"prompt key {pkey!r} is 12 hex digits, the shape of a card id; the host drops it",
+                                "use a word key like `{#backup-failed}`", lineno)
+                            pkey = ""
+                        elif pkey in seen_keys:
+                            add(f"duplicate prompt key {pkey!r} (first at {seen_keys[pkey]}); a host-page ask with "
+                                "it gets no notes (the host resolves fail-open)", "give one prompt another key", lineno)
+                        else:
+                            seen_keys[pkey] = f"{path}:{lineno}"
+                    elif body.startswith("{#"):
+                        add("malformed prompt key after the title; the card shows it as prompt text",
+                            "write `{#key}` with 1-64 of a-z 0-9 _ -", lineno)
                     for sep in CI_SEPARATORS:
                         if body.startswith(sep):
                             body = body[len(sep):].strip()
@@ -649,7 +668,7 @@ def parse_chat_inspiration_set(files: list[tuple[str, str]], root: Path | None =
                 else:
                     seen_prompts[key] = f"{path}:{lineno}"
                 placeholders = list(dict.fromkeys(CI_PLACEHOLDER_RE.findall(body)))
-                target = {"title": title, "prompt": body, "placeholders": placeholders,
+                target = {"title": title, "key": pkey, "prompt": body, "placeholders": placeholders,
                           "line": lineno, "path": path, "bold": bold, "_notes": [], "_skills": []}
                 cur["prompts"].append(target)
             elif cur is None or not trimmed or trimmed.startswith("#"):

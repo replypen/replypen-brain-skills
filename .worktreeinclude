@@ -1,0 +1,8 @@
+# Local operator files an agent should copy into new managed worktrees.
+# Keep this allowlist tight: no caches, build output, logs, or generated artifacts.
+
+# Brain Dev kit discovery paths (ignored symlinks into ~/.replypen-brain-skills).
+.agents/skills
+.agents/docs
+.claude/skills
+.claude/docs
