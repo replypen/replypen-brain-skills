@@ -34,6 +34,10 @@ Env-token auth is the credential VALUE injected as ``RC_CONN_<KEY>`` plus a mani
 client-credentials). Brokered connectors route through ``http://rc-broker.internal/<key>/...`` and
 attach no credential client-side. An API key always goes in a HEADER, never the query string.
 
+Host-provided manifests: ``RC_EXTRA_MANIFESTS`` (a JSON list of manifest dicts, one per owner-approved custom
+REST connector) adds ``custom_<slug>`` keys after the baked catalog. They are always brokered with an empty
+``base_url`` (the broker owns the vendor URL and key) and GET-only; a baked or registered key always wins.
+
 ``requests`` is imported lazily so ``from lib import api`` loads even where it isn't installed (the
 manifest helpers and CLI ``--help`` work on a bare host).
 """
@@ -1263,6 +1267,7 @@ _YAML_LOADED_KEYS: set[str] = set()
 def register(manifest: Manifest) -> Manifest:
     MANIFESTS[manifest.key] = manifest
     _YAML_LOADED_KEYS.discard(manifest.key)  # an explicit registration is no longer YAML-owned
+    _EXTRA_LOADED_KEYS.discard(manifest.key)  # ...nor host-provided, so RC_EXTRA_MANIFESTS can't replace it
     return manifest
 
 
@@ -1284,12 +1289,70 @@ def load_manifests(*, force: bool = False) -> dict[str, Manifest]:
     connectors_dir = Path(__file__).resolve().parent / "connectors"
     for manifest_path in sorted(connectors_dir.glob("*/manifest.yaml")):
         key_hint = manifest_path.parent.name
-        if not force and key_hint in MANIFESTS:
+        if not force and key_hint in MANIFESTS and key_hint not in _EXTRA_LOADED_KEYS:
             continue  # already loaded, or an explicit register() owns this key — leave it
         mani = _parse_manifest_file(manifest_path)
         MANIFESTS[mani.key] = mani
         _YAML_LOADED_KEYS.add(mani.key)
+        _EXTRA_LOADED_KEYS.discard(mani.key)
+    _load_extra_manifests()
     return MANIFESTS
+
+
+# Host-provided manifests (one per active custom REST connector the owner approved). Contract:
+# a JSON list of manifest dicts; every key starts with `custom_`; baked/registered keys always win;
+# each is forced brokered with an empty base_url (the host broker owns the vendor base URL and the
+# credential); GET-only (write/session/read-POST fields are dropped). A bad entry is skipped with a
+# stderr note so it can never take baked connectors down.
+_EXTRA_MANIFESTS_ENV = "RC_EXTRA_MANIFESTS"
+_EXTRA_KEY_RE = re.compile(r"^custom_[a-z0-9][a-z0-9_]*$")
+_EXTRA_FIELDS = ("key", "auth", "pagination", "rate_limit", "default_headers")
+_EXTRA_LOADED_KEYS: set[str] = set()
+_EXTRA_WARNED: set[str] = set()
+
+
+def _extra_warn(msg: str) -> None:
+    if msg in _EXTRA_WARNED:
+        return  # load_manifests runs several times per process; say each problem once
+    _EXTRA_WARNED.add(msg)
+    import sys
+
+    print(f"lib.api: {_EXTRA_MANIFESTS_ENV}: {msg}", file=sys.stderr)
+
+
+def _load_extra_manifests() -> None:
+    raw = os.environ.get(_EXTRA_MANIFESTS_ENV, "").strip()
+    if not raw:
+        return
+    try:
+        entries = json.loads(raw)
+    except ValueError as e:
+        _extra_warn(f"ignored, not valid JSON ({e})")
+        return
+    if not isinstance(entries, list):
+        _extra_warn("ignored, expected a JSON list of manifests")
+        return
+    for i, entry in enumerate(entries):
+        try:
+            mani = _extra_manifest_from_dict(entry)
+        except (KeyError, TypeError, ValueError) as e:
+            _extra_warn(f"entry {i} skipped: {e}")
+            continue
+        if mani.key in MANIFESTS and mani.key not in _EXTRA_LOADED_KEYS:
+            _extra_warn(f"entry {mani.key!r} skipped: a baked connector owns that key")
+            continue
+        MANIFESTS[mani.key] = mani
+        _EXTRA_LOADED_KEYS.add(mani.key)
+
+
+def _extra_manifest_from_dict(raw: Any) -> Manifest:
+    if not isinstance(raw, dict):
+        raise ValueError("not a JSON object")
+    key = raw.get("key")
+    if not isinstance(key, str) or not _EXTRA_KEY_RE.match(key):
+        raise ValueError(f"key {key!r} must match custom_<slug> (lowercase a-z, 0-9, _)")
+    mani = _manifest_from_dict({k: raw[k] for k in _EXTRA_FIELDS if k in raw})
+    return replace(mani, base_url="", brokered=True)
 
 
 class ManifestError(RuntimeError):

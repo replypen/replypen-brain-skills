@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]><html class="ie ie6" lang="nl-BE"><![endif]-->
+<!--[if IE 7]><html class="ie ie7" lang="nl-BE"><![endif]-->
+<!--[if IE 8]><html class="ie ie8" lang="nl-BE"><![endif]-->
+<!--[if IE 9]><html class="ie9" lang="nl-BE"><![endif]-->
+<!--[if (gte IE 10)|!(IE)]><!--><html lang="nl-BE"><!--<![endif]-->
+
+<head>
+    
+    <base href="https://eenvoudigfactureren.be/" />
+    <title> API : EenvoudigFactureren</title>
+    <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+	<meta name="google-site-verification" content="oOC9dyUt2Gt8KXP0rQHAtoBHxN9IcqDb9HLEfIhlyok" />
+    
+    <link href="https://fonts.googleapis.com/css?family=Roboto:400,300,700" rel="stylesheet" type="text/css">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:400,300,700" rel="stylesheet" type="text/css">
+    <link href='https://fonts.googleapis.com/css?family=Source+Sans+Pro%3A300%2C400%2C700%2C300italic%2C400italic%2C700italic&#038;subset=latin%2Clatin-ext&#038;ver=4.3.1' type='text/css' media='all' rel='stylesheet' />
+	<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>(function(html){html.className = html.className.replace(/\bno-js\b/,'js')})(document.documentElement);</script>
+<meta name='robots' content='index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1' />
+	<style>img:is([sizes="auto" i], [sizes^="auto," i]) { contain-intrinsic-size: 3000px 1500px }</style>
+	
+<!-- Google Tag Manager for WordPress by gtm4wp.com -->
+<script data-cfasync="false" data-pagespeed-no-defer>
+	var gtm4wp_datalayer_name = "dataLayer";
+	var dataLayer = dataLayer || [];
+</script>
+<!-- End Google Tag Manager for WordPress by gtm4wp.com -->
+	<!-- This site is optimized with the Yoast SEO plugin v27.1.1 - https://yoast.com/product/yoast-seo-wordpress/ -->
+	<title>API</title>
+	<link rel="canonical" href="https://eenvoudigfactureren.be/info/help/api/" />
+	<meta property="og:locale" content="nl_BE" />
+	<meta property="og:type" content="article" />
+	<meta property="og:title" content="API" />
+	<meta property="og:description" content="EenvoudigFactureren API U kunt uw klant- en factuurgegevens op EenvoudigFactureren ook uitwisselen met externe applicaties. Dit maakt het mogelijk om bijvoorbeeld vanuit uw online webshop een nieuwe factuur op EenvoudigFactureren aan te maken zonder dat u zich op de website hoeft te begeven. Hiertoe werd een API opgezet die u kunt bereiken op https://eenvoudigfactureren.be/api . &hellip; Lees verder &quot;API&quot;" />
+	<meta property="og:url" content="https://eenvoudigfactureren.be/info/help/api/" />
+	<meta property="og:site_name" content="EenvoudigFactureren" />
+	<meta property="article:modified_time" content="2022-02-10T12:50:06+00:00" />
+	<meta property="og:image" content="https://eenvoudigfactureren.be/info/wp-content/uploads/2021/09/Logo-EenvoudigFactureren.png" />
+	<meta property="og:image:width" content="500" />
+	<meta property="og:image:height" content="222" />
+	<meta property="og:image:type" content="image/png" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:label1" content="Geschatte leestijd" />
+	<meta name="twitter:data1" content="17 minuten" />
+	<script type="application/ld+json" class="yoast-schema-graph">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://eenvoudigfactureren.be/info/help/api/","url":"https://eenvoudigfactureren.be/info/help/api/","name":"API","isPartOf":{"@id":"https://eenvoudigfactureren.be/info/#website"},"datePublished":"2016-01-17T01:30:22+00:00","dateModified":"2022-02-10T12:50:06+00:00","breadcrumb":{"@id":"https://eenvoudigfactureren.be/info/help/api/#breadcrumb"},"inLanguage":"nl-BE","potentialAction":[{"@type":"ReadAction","target":["https://eenvoudigfactureren.be/info/help/api/"]}]},{"@type":"BreadcrumbList","@id":"https://eenvoudigfactureren.be/info/help/api/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://eenvoudigfactureren.be/info/"},{"@type":"ListItem","position":2,"name":"Help","item":"https://eenvoudigfactureren.be/info/help/"},{"@type":"ListItem","position":3,"name":"API"}]},{"@type":"WebSite","@id":"https://eenvoudigfactureren.be/info/#website","url":"https://eenvoudigfactureren.be/info/","name":"EenvoudigFactureren","description":"Online facturatie","potentialAction":[{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://eenvoudigfactureren.be/info/?s={search_term_string}"},"query-input":{"@type":"PropertyValueSpecification","valueRequired":true,"valueName":"search_term_string"}}],"inLanguage":"nl-BE"}]}</script>
+	<!-- / Yoast SEO plugin. -->
+
+
+<link rel='dns-prefetch' href='//use.fontawesome.com' />
+<link rel="alternate" type="application/rss+xml" title="EenvoudigFactureren &raquo; feed" href="https://eenvoudigfactureren.be/info/feed/" />
+<link rel="alternate" type="application/rss+xml" title="EenvoudigFactureren &raquo; reactiesfeed" href="https://eenvoudigfactureren.be/info/comments/feed/" />
+    <script>
+        function cmplzCallClarity(method, params) {
+            if (typeof window.clarity === 'function') {
+                try {
+                    window.clarity(method, params);
+                } catch (e) {
+                    console.warn('Clarity API error:', e);
+                }
+            }
+        }
+
+        function cmplzGetConsentFromEvent(e) {
+            var d = e && e.detail && e.detail.categories ? e.detail.categories : [];
+            var categories = Array.isArray(d) ? d : [];
+
+            return {
+                analyticsAllowed: categories.indexOf('statistics') !== -1,
+                adsAllowed: categories.indexOf('marketing') !== -1
+            };
+        }
+
+        function cmplzSendClarityConsent(analyticsAllowed, adsAllowed) {
+            var status = function (b) { return b ? "granted" : "denied"; };
+            cmplzCallClarity('consentv2', {
+                analytics_Storage: status(!!analyticsAllowed),
+                ad_Storage: status(!!adsAllowed)
+            });
+        }
+
+        function cmplzEraseClarityCookies() {
+            cmplzCallClarity('consent', false);
+        }
+
+        document.addEventListener('cmplz_fire_categories', function (e) {
+            var consent = cmplzGetConsentFromEvent(e);
+            cmplzSendClarityConsent(consent.analyticsAllowed, consent.adsAllowed);
+        });
+
+        document.addEventListener('cmplz_revoke', function (e) {
+            var consent = cmplzGetConsentFromEvent(e);
+            cmplzSendClarityConsent(consent.analyticsAllowed, consent.adsAllowed);
+            if (!consent.analyticsAllowed && !consent.adsAllowed) {
+                cmplzEraseClarityCookies();
+            }
+        });
+
+    </script>
+    <script>
+window._wpemojiSettings = {"baseUrl":"https:\/\/s.w.org\/images\/core\/emoji\/16.0.1\/72x72\/","ext":".png","svgUrl":"https:\/\/s.w.org\/images\/core\/emoji\/16.0.1\/svg\/","svgExt":".svg","source":{"concatemoji":"https:\/\/eenvoudigfactureren.be\/info\/wp-includes\/js\/wp-emoji-release.min.js?ver=6.8.13"}};
+/*! This file is auto-generated */
+!function(s,n){var o,i,e;function c(e){try{var t={supportTests:e,timestamp:(new Date).valueOf()};sessionStorage.setItem(o,JSON.stringify(t))}catch(e){}}function p(e,t,n){e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(t,0,0);var t=new Uint32Array(e.getImageData(0,0,e.canvas.width,e.canvas.height).data),a=(e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(n,0,0),new Uint32Array(e.getImageData(0,0,e.canvas.width,e.canvas.height).data));return t.every(function(e,t){return e===a[t]})}function u(e,t){e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(t,0,0);for(var n=e.getImageData(16,16,1,1),a=0;a<n.data.length;a++)if(0!==n.data[a])return!1;return!0}function f(e,t,n,a){switch(t){case"flag":return n(e,"\ud83c\udff3\ufe0f\u200d\u26a7\ufe0f","\ud83c\udff3\ufe0f\u200b\u26a7\ufe0f")?!1:!n(e,"\ud83c\udde8\ud83c\uddf6","\ud83c\udde8\u200b\ud83c\uddf6")&&!n(e,"\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f","\ud83c\udff4\u200b\udb40\udc67\u200b\udb40\udc62\u200b\udb40\udc65\u200b\udb40\udc6e\u200b\udb40\udc67\u200b\udb40\udc7f");case"emoji":return!a(e,"\ud83e\udedf")}return!1}function g(e,t,n,a){var r="undefined"!=typeof WorkerGlobalScope&&self instanceof WorkerGlobalScope?new OffscreenCanvas(300,150):s.createElement("canvas"),o=r.getContext("2d",{willReadFrequently:!0}),i=(o.textBaseline="top",o.font="600 32px Arial",{});return e.forEach(function(e){i[e]=t(o,e,n,a)}),i}function t(e){var t=s.createElement("script");t.src=e,t.defer=!0,s.head.appendChild(t)}"undefined"!=typeof Promise&&(o="wpEmojiSettingsSupports",i=["flag","emoji"],n.supports={everything:!0,everythingExceptFlag:!0},e=new Promise(function(e){s.addEventListener("DOMContentLoaded",e,{once:!0})}),new Promise(function(t){var n=function(){try{var e=JSON.parse(sessionStorage.getItem(o));if("object"==typeof e&&"number"==typeof e.timestamp&&(new Date).valueOf()<e.timestamp+604800&&"object"==typeof e.supportTests)return e.supportTests}catch(e){}return null}();if(!n){if("undefined"!=typeof Worker&&"undefined"!=typeof OffscreenCanvas&&"undefined"!=typeof URL&&URL.createObjectURL&&"undefined"!=typeof Blob)try{var e="postMessage("+g.toString()+"("+[JSON.stringify(i),f.toString(),p.toString(),u.toString()].join(",")+"));",a=new Blob([e],{type:"text/javascript"}),r=new Worker(URL.createObjectURL(a),{name:"wpTestEmojiSupports"});return void(r.onmessage=function(e){c(n=e.data),r.terminate(),t(n)})}catch(e){}c(n=g(i,f,p,u))}t(n)}).then(function(e){for(var t in e)n.supports[t]=e[t],n.supports.everything=n.supports.everything&&n.supports[t],"flag"!==t&&(n.supports.everythingExceptFlag=n.supports.everythingExceptFlag&&n.supports[t]);n.supports.everythingExceptFlag=n.supports.everythingExceptFlag&&!n.supports.flag,n.DOMReady=!1,n.readyCallback=function(){n.DOMReady=!0}}).then(function(){return e}).then(function(){var e;n.supports.everything||(n.readyCallback(),(e=n.source||{}).concatemoji?t(e.concatemoji):e.wpemoji&&e.twemoji&&(t(e.twemoji),t(e.wpemoji)))}))}((window,document),window._wpemojiSettings);
+</script>
+<style id='wp-emoji-styles-inline-css'>
+
+	img.wp-smiley, img.emoji {
+		display: inline !important;
+		border: none !important;
+		box-shadow: none !important;
+		height: 1em !important;
+		width: 1em !important;
+		margin: 0 0.07em !important;
+		vertical-align: -0.1em !important;
+		background: none !important;
+		padding: 0 !important;
+	}
+</style>
+<link rel='stylesheet' id='wp-block-library-css' href='https://eenvoudigfactureren.be/info/wp-includes/css/dist/block-library/style.min.css?ver=6.8.13' media='all' />
+<style id='wp-block-library-theme-inline-css'>
+.wp-block-audio :where(figcaption){color:#555;font-size:13px;text-align:center}.is-dark-theme .wp-block-audio :where(figcaption){color:#ffffffa6}.wp-block-audio{margin:0 0 1em}.wp-block-code{border:1px solid #ccc;border-radius:4px;font-family:Menlo,Consolas,monaco,monospace;padding:.8em 1em}.wp-block-embed :where(figcaption){color:#555;font-size:13px;text-align:center}.is-dark-theme .wp-block-embed :where(figcaption){color:#ffffffa6}.wp-block-embed{margin:0 0 1em}.blocks-gallery-caption{color:#555;font-size:13px;text-align:center}.is-dark-theme .blocks-gallery-caption{color:#ffffffa6}:root :where(.wp-block-image figcaption){color:#555;font-size:13px;text-align:center}.is-dark-theme :root :where(.wp-block-image figcaption){color:#ffffffa6}.wp-block-image{margin:0 0 1em}.wp-block-pullquote{border-bottom:4px solid;border-top:4px solid;color:currentColor;margin-bottom:1.75em}.wp-block-pullquote cite,.wp-block-pullquote footer,.wp-block-pullquote__citation{color:currentColor;font-size:.8125em;font-style:normal;text-transform:uppercase}.wp-block-quote{border-left:.25em solid;margin:0 0 1.75em;padding-left:1em}.wp-block-quote cite,.wp-block-quote footer{color:currentColor;font-size:.8125em;font-style:normal;position:relative}.wp-block-quote:where(.has-text-align-right){border-left:none;border-right:.25em solid;padding-left:0;padding-right:1em}.wp-block-quote:where(.has-text-align-center){border:none;padding-left:0}.wp-block-quote.is-large,.wp-block-quote.is-style-large,.wp-block-quote:where(.is-style-plain){border:none}.wp-block-search .wp-block-search__label{font-weight:700}.wp-block-search__button{border:1px solid #ccc;padding:.375em .625em}:where(.wp-block-group.has-background){padding:1.25em 2.375em}.wp-block-separator.has-css-opacity{opacity:.4}.wp-block-separator{border:none;border-bottom:2px solid;margin-left:auto;margin-right:auto}.wp-block-separator.has-alpha-channel-opacity{opacity:1}.wp-block-separator:not(.is-style-wide):not(.is-style-dots){width:100px}.wp-block-separator.has-background:not(.is-style-dots){border-bottom:none;height:1px}.wp-block-separator.has-background:not(.is-style-wide):not(.is-style-dots){height:2px}.wp-block-table{margin:0 0 1em}.wp-block-table td,.wp-block-table th{word-break:normal}.wp-block-table :where(figcaption){color:#555;font-size:13px;text-align:center}.is-dark-theme .wp-block-table :where(figcaption){color:#ffffffa6}.wp-block-video :where(figcaption){color:#555;font-size:13px;text-align:center}.is-dark-theme .wp-block-video :where(figcaption){color:#ffffffa6}.wp-block-video{margin:0 0 1em}:root :where(.wp-block-template-part.has-background){margin-bottom:0;margin-top:0;padding:1.25em 2.375em}
+</style>
+<style id='classic-theme-styles-inline-css'>
+/*! This file is auto-generated */
+.wp-block-button__link{color:#fff;background-color:#32373c;border-radius:9999px;box-shadow:none;text-decoration:none;padding:calc(.667em + 2px) calc(1.333em + 2px);font-size:1.125em}.wp-block-file__button{background:#32373c;color:#fff;text-decoration:none}
+</style>
+<style id='font-awesome-svg-styles-default-inline-css'>
+.svg-inline--fa {
+  display: inline-block;
+  height: 1em;
+  overflow: visible;
+  vertical-align: -.125em;
+}
+</style>
+<link rel='stylesheet' id='font-awesome-svg-styles-css' href='https://eenvoudigfactureren.be/info/wp-content/uploads/font-awesome/v6.2.0/css/svg-with-js.css' media='all' />
+<style id='font-awesome-svg-styles-inline-css'>
+   .wp-block-font-awesome-icon svg::before,
+   .wp-rich-text-font-awesome-icon svg::before {content: unset;}
+</style>
+<style id='global-styles-inline-css'>
+:root{--wp--preset--aspect-ratio--square: 1;--wp--preset--aspect-ratio--4-3: 4/3;--wp--preset--aspect-ratio--3-4: 3/4;--wp--preset--aspect-ratio--3-2: 3/2;--wp--preset--aspect-ratio--2-3: 2/3;--wp--preset--aspect-ratio--16-9: 16/9;--wp--preset--aspect-ratio--9-16: 9/16;--wp--preset--color--black: #000000;--wp--preset--color--cyan-bluish-gray: #abb8c3;--wp--preset--color--white: #fff;--wp--preset--color--pale-pink: #f78da7;--wp--preset--color--vivid-red: #cf2e2e;--wp--preset--color--luminous-vivid-orange: #ff6900;--wp--preset--color--luminous-vivid-amber: #fcb900;--wp--preset--color--light-green-cyan: #7bdcb5;--wp--preset--color--vivid-green-cyan: #00d084;--wp--preset--color--pale-cyan-blue: #8ed1fc;--wp--preset--color--vivid-cyan-blue: #0693e3;--wp--preset--color--vivid-purple: #9b51e0;--wp--preset--color--dark-gray: #1a1a1a;--wp--preset--color--medium-gray: #686868;--wp--preset--color--light-gray: #e5e5e5;--wp--preset--color--blue-gray: #4d545c;--wp--preset--color--bright-blue: #007acc;--wp--preset--color--light-blue: #9adffd;--wp--preset--color--dark-brown: #402b30;--wp--preset--color--medium-brown: #774e24;--wp--preset--color--dark-red: #640c1f;--wp--preset--color--bright-red: #ff675f;--wp--preset--color--yellow: #ffef8e;--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple: linear-gradient(135deg,rgba(6,147,227,1) 0%,rgb(155,81,224) 100%);--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan: linear-gradient(135deg,rgb(122,220,180) 0%,rgb(0,208,130) 100%);--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange: linear-gradient(135deg,rgba(252,185,0,1) 0%,rgba(255,105,0,1) 100%);--wp--preset--gradient--luminous-vivid-orange-to-vivid-red: linear-gradient(135deg,rgba(255,105,0,1) 0%,rgb(207,46,46) 100%);--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray: linear-gradient(135deg,rgb(238,238,238) 0%,rgb(169,184,195) 100%);--wp--preset--gradient--cool-to-warm-spectrum: linear-gradient(135deg,rgb(74,234,220) 0%,rgb(151,120,209) 20%,rgb(207,42,186) 40%,rgb(238,44,130) 60%,rgb(251,105,98) 80%,rgb(254,248,76) 100%);--wp--preset--gradient--blush-light-purple: linear-gradient(135deg,rgb(255,206,236) 0%,rgb(152,150,240) 100%);--wp--preset--gradient--blush-bordeaux: linear-gradient(135deg,rgb(254,205,165) 0%,rgb(254,45,45) 50%,rgb(107,0,62) 100%);--wp--preset--gradient--luminous-dusk: linear-gradient(135deg,rgb(255,203,112) 0%,rgb(199,81,192) 50%,rgb(65,88,208) 100%);--wp--preset--gradient--pale-ocean: linear-gradient(135deg,rgb(255,245,203) 0%,rgb(182,227,212) 50%,rgb(51,167,181) 100%);--wp--preset--gradient--electric-grass: linear-gradient(135deg,rgb(202,248,128) 0%,rgb(113,206,126) 100%);--wp--preset--gradient--midnight: linear-gradient(135deg,rgb(2,3,129) 0%,rgb(40,116,252) 100%);--wp--preset--font-size--small: 13px;--wp--preset--font-size--medium: 20px;--wp--preset--font-size--large: 36px;--wp--preset--font-size--x-large: 42px;--wp--preset--spacing--20: 0.44rem;--wp--preset--spacing--30: 0.67rem;--wp--preset--spacing--40: 1rem;--wp--preset--spacing--50: 1.5rem;--wp--preset--spacing--60: 2.25rem;--wp--preset--spacing--70: 3.38rem;--wp--preset--spacing--80: 5.06rem;--wp--preset--shadow--natural: 6px 6px 9px rgba(0, 0, 0, 0.2);--wp--preset--shadow--deep: 12px 12px 50px rgba(0, 0, 0, 0.4);--wp--preset--shadow--sharp: 6px 6px 0px rgba(0, 0, 0, 0.2);--wp--preset--shadow--outlined: 6px 6px 0px -3px rgba(255, 255, 255, 1), 6px 6px rgba(0, 0, 0, 1);--wp--preset--shadow--crisp: 6px 6px 0px rgba(0, 0, 0, 1);}:where(.is-layout-flex){gap: 0.5em;}:where(.is-layout-grid){gap: 0.5em;}body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}:where(.wp-block-columns.is-layout-flex){gap: 2em;}:where(.wp-block-columns.is-layout-grid){gap: 2em;}:where(.wp-block-post-template.is-layout-flex){gap: 1.25em;}:where(.wp-block-post-template.is-layout-grid){gap: 1.25em;}.has-black-color{color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-color{color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-color{color: var(--wp--preset--color--white) !important;}.has-pale-pink-color{color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-color{color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-color{color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-color{color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-color{color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-color{color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-color{color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-color{color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-color{color: var(--wp--preset--color--vivid-purple) !important;}.has-black-background-color{background-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-background-color{background-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-background-color{background-color: var(--wp--preset--color--white) !important;}.has-pale-pink-background-color{background-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-background-color{background-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-background-color{background-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-background-color{background-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-background-color{background-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-background-color{background-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-background-color{background-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-background-color{background-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-background-color{background-color: var(--wp--preset--color--vivid-purple) !important;}.has-black-border-color{border-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-border-color{border-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-border-color{border-color: var(--wp--preset--color--white) !important;}.has-pale-pink-border-color{border-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-border-color{border-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-border-color{border-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-border-color{border-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-border-color{border-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-border-color{border-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-border-color{border-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-border-color{border-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-border-color{border-color: var(--wp--preset--color--vivid-purple) !important;}.has-vivid-cyan-blue-to-vivid-purple-gradient-background{background: var(--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple) !important;}.has-light-green-cyan-to-vivid-green-cyan-gradient-background{background: var(--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan) !important;}.has-luminous-vivid-amber-to-luminous-vivid-orange-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange) !important;}.has-luminous-vivid-orange-to-vivid-red-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-orange-to-vivid-red) !important;}.has-very-light-gray-to-cyan-bluish-gray-gradient-background{background: var(--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray) !important;}.has-cool-to-warm-spectrum-gradient-background{background: var(--wp--preset--gradient--cool-to-warm-spectrum) !important;}.has-blush-light-purple-gradient-background{background: var(--wp--preset--gradient--blush-light-purple) !important;}.has-blush-bordeaux-gradient-background{background: var(--wp--preset--gradient--blush-bordeaux) !important;}.has-luminous-dusk-gradient-background{background: var(--wp--preset--gradient--luminous-dusk) !important;}.has-pale-ocean-gradient-background{background: var(--wp--preset--gradient--pale-ocean) !important;}.has-electric-grass-gradient-background{background: var(--wp--preset--gradient--electric-grass) !important;}.has-midnight-gradient-background{background: var(--wp--preset--gradient--midnight) !important;}.has-small-font-size{font-size: var(--wp--preset--font-size--small) !important;}.has-medium-font-size{font-size: var(--wp--preset--font-size--medium) !important;}.has-large-font-size{font-size: var(--wp--preset--font-size--large) !important;}.has-x-large-font-size{font-size: var(--wp--preset--font-size--x-large) !important;}
+:where(.wp-block-post-template.is-layout-flex){gap: 1.25em;}:where(.wp-block-post-template.is-layout-grid){gap: 1.25em;}
+:where(.wp-block-columns.is-layout-flex){gap: 2em;}:where(.wp-block-columns.is-layout-grid){gap: 2em;}
+:root :where(.wp-block-pullquote){font-size: 1.5em;line-height: 1.6;}
+</style>
+<link rel='stylesheet' id='contact-form-7-css' href='https://eenvoudigfactureren.be/info/wp-content/plugins/contact-form-7/includes/css/styles.css?ver=6.1.1' media='all' />
+<link rel='stylesheet' id='cmplz-general-css' href='https://eenvoudigfactureren.be/info/wp-content/plugins/complianz-gdpr/assets/css/cookieblocker.min.css?ver=1780477270' media='all' />
+<link rel='stylesheet' id='bootstrap-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/bootstrap.min.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='font-awesome-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/fontawesome.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='fancybox-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/jquery.fancybox.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='flexslider-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/flexslider.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='soonsite-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/style.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='custom-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/custom.css?ver=1.0' media='all' />
+<link rel='stylesheet' id='core-color-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/colors/yellow.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-animate-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/animate.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-responsive-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/responsive.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-coral-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/coral.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-flaticon-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/flaticon.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-greenery-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/greenery.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-magnific-popup-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/magnific-popup.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-owl-carousel-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/owl.carousel.min.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-owl-theme-default-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/owl.theme.default.min.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='landpick-spinner-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/landpick/spinner.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='Lufga-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/font-lufga.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='Comfortaa-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/css/font-comfortaa.css?ver=6.8.13' media='all' />
+<link rel='stylesheet' id='twentysixteen-fonts-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/fonts/merriweather-plus-montserrat-plus-inconsolata.css?ver=20230328' media='all' />
+<link rel='stylesheet' id='genericons-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/genericons/genericons.css?ver=20201208' media='all' />
+<link rel='stylesheet' id='twentysixteen-style-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/style.css?ver=20250715' media='all' />
+<link rel='stylesheet' id='twentysixteen-block-style-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/css/blocks.css?ver=20240817' media='all' />
+<!--[if lt IE 10]>
+<link rel='stylesheet' id='twentysixteen-ie-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/css/ie.css?ver=20170530' media='all' />
+<![endif]-->
+<!--[if lt IE 9]>
+<link rel='stylesheet' id='twentysixteen-ie8-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/css/ie8.css?ver=20170530' media='all' />
+<![endif]-->
+<!--[if lt IE 8]>
+<link rel='stylesheet' id='twentysixteen-ie7-css' href='https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/css/ie7.css?ver=20170530' media='all' />
+<![endif]-->
+<link rel='stylesheet' id='font-awesome-official-css' href='https://use.fontawesome.com/releases/v6.2.0/css/all.css' media='all' integrity="sha384-SOnAn/m2fVJCwnbEYgD4xzrPtvsXdElhOVvR8ND1YjB5nhGNwwf7nBQlhfAwHAZC" crossorigin="anonymous" />
+<link rel='stylesheet' id='font-awesome-official-v4shim-css' href='https://use.fontawesome.com/releases/v6.2.0/css/v4-shims.css' media='all' integrity="sha384-MAgG0MNwzSXBbmOw4KK9yjMrRaUNSCk3WoZPkzVC1rmhXzerY4gqk/BLNYtdOFCO" crossorigin="anonymous" />
+<!--[if lt IE 9]>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/js/respond.min.js?ver=6.8.13" id="soonsite-respond-js"></script>
+<![endif]-->
+<!--[if lt IE 9]>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/js/html5.js?ver=3.7.3" id="twentysixteen-html5-js"></script>
+<![endif]-->
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/jquery-3.3.1.min.js?ver=3.3.1" id="jquery-core-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-includes/js/jquery/jquery-migrate.min.js?ver=3.4.1" id="jquery-migrate-js"></script>
+<script id="twentysixteen-script-js-extra">
+var screenReaderText = {"expand":"Open submenu","collapse":"Voeg submenu samen"};
+</script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/twentysixteen/js/functions.js?ver=20230629" id="twentysixteen-script-js" defer data-wp-strategy="defer"></script>
+<link rel="https://api.w.org/" href="https://eenvoudigfactureren.be/info/wp-json/" /><link rel="alternate" title="JSON" type="application/json" href="https://eenvoudigfactureren.be/info/wp-json/wp/v2/pages/41" /><link rel="EditURI" type="application/rsd+xml" title="RSD" href="https://eenvoudigfactureren.be/info/xmlrpc.php?rsd" />
+<meta name="generator" content="WordPress 6.8.13" />
+<link rel='shortlink' href='https://eenvoudigfactureren.be/info/?p=41' />
+<link rel="alternate" title="oEmbed (JSON)" type="application/json+oembed" href="https://eenvoudigfactureren.be/info/wp-json/oembed/1.0/embed?url=https%3A%2F%2Feenvoudigfactureren.be%2Finfo%2Fhelp%2Fapi%2F" />
+<link rel="alternate" title="oEmbed (XML)" type="text/xml+oembed" href="https://eenvoudigfactureren.be/info/wp-json/oembed/1.0/embed?url=https%3A%2F%2Feenvoudigfactureren.be%2Finfo%2Fhelp%2Fapi%2F&#038;format=xml" />
+<meta name="cdp-version" content="1.5.0" />		<script type="text/javascript">
+			(function(c, l, a, r, i, t, y) {
+				c[a] = c[a] || function() {
+					(c[a].q = c[a].q || []).push(arguments)
+				};
+				t = l.createElement(r);
+				t.async = 1;
+				t.src = "https://www.clarity.ms/tag/" + i + "?ref=wordpress";
+				y = l.getElementsByTagName(r)[0];
+				y.parentNode.insertBefore(t, y);
+			})(window, document, "clarity", "script", "ta7zdm07ag");
+		</script>
+	<meta name="ti-site-data" content="eyJyIjoiMTowITc6MCEzMDowIiwibyI6Imh0dHBzOlwvXC9lZW52b3VkaWdmYWN0dXJlcmVuLmJlXC9pbmZvXC93cC1hZG1pblwvYWRtaW4tYWpheC5waHA/YWN0aW9uPXRpX29ubGluZV91c2Vyc19nb29nbGUmYW1wO3A9JTJGaW5mbyUyRmhlbHAlMkZhcGklMkYmYW1wO193cG5vbmNlPTk0N2UxZmRmM2EifQ==" />			<style>.cmplz-hidden {
+					display: none !important;
+				}</style>
+<!-- Google Tag Manager for WordPress by gtm4wp.com -->
+<!-- GTM Container placement set to off -->
+<script data-cfasync="false" data-pagespeed-no-defer>
+	var dataLayer_content = {"pagePostType":"page","pagePostType2":"single-page","pagePostAuthor":"wim.verstuyf"};
+	dataLayer.push( dataLayer_content );
+</script>
+<script data-cfasync="false" data-pagespeed-no-defer>
+	console.warn && console.warn("[GTM4WP] Google Tag Manager container code placement set to OFF !!!");
+	console.warn && console.warn("[GTM4WP] Data layer codes are active but GTM container must be loaded using custom coding !!!");
+</script>
+<!-- End Google Tag Manager for WordPress by gtm4wp.com --><link rel="icon" href="https://eenvoudigfactureren.be/info/wp-content/uploads/2021/09/cropped-favicon-512-32x32.png" sizes="32x32" />
+<link rel="icon" href="https://eenvoudigfactureren.be/info/wp-content/uploads/2021/09/cropped-favicon-512-192x192.png" sizes="192x192" />
+<link rel="apple-touch-icon" href="https://eenvoudigfactureren.be/info/wp-content/uploads/2021/09/cropped-favicon-512-180x180.png" />
+<meta name="msapplication-TileImage" content="https://eenvoudigfactureren.be/info/wp-content/uploads/2021/09/cropped-favicon-512-270x270.png" />
+		<style id="wp-custom-css">
+			.grecaptcha-badge {
+	display: none !important;
+}
+
+.ti-header .ti-stars .ti-rating {
+	color: #000 !important;
+}
+
+.ti-widget.ti-goog .ti-rating-text, .ti-widget.ti-goog .ti-rating-text span, .ti-widget.ti-goog .ti-rating-text span strong {
+	color: white !important;
+}
+
+.ti-widget .ti-controls .ti-next {
+	right: -30px !important;
+}
+
+.ti-widget .ti-controls .ti-prev {
+	left: -30px !important;
+}
+
+.blocks-item-round {
+    width: 18rem;
+    height: 18rem;
+    border-radius: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+		background: #fff;
+		padding: 4rem;
+}
+
+.card-info {
+	background: #266D6F;
+	border-radius: 15px;
+	height: 100%;
+	padding: 1rem;
+	color: white;
+}
+
+/* --- FIRST TIER (13%) --- */
+#price-ancher div:first-child div {
+	position: relative;
+	overflow: hidden; 
+	background: linear-gradient(to top, #266D6F 12%, transparent 12%);
+	border: 2px solid #266D6F;
+	border-radius: 15px;
+	height: 100%;
+	padding: 2rem;
+	z-index: 1; 
+}
+
+#price-ancher div:first-child div::after {
+	content: "";
+	position: absolute;
+	bottom: 18%; 
+	left: 0;
+	width: 100%;
+	height: 30px; 
+	transform: translateY(50%); 
+	background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 20' preserveAspectRatio='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0,10 Q25,0 50,10 T100,10 L100,20 L0,20 Z' fill='%23266D6F'/%3E%3C/svg%3E");
+	background-size: 100% 100%;
+	background-repeat: no-repeat;
+	z-index: -1;
+}
+
+/* --- SECOND TIER (41%) --- */
+#price-ancher div:nth-child(2) div {
+	position: relative;
+	overflow: hidden;
+	background: linear-gradient(to top, #f7a516 35%, transparent 35%);
+	border: 2px solid #f7a516;
+	border-radius: 15px;
+	height: 100%;
+	padding: 2rem;
+	z-index: 1;
+}
+
+#price-ancher div:nth-child(2) div::after {
+	content: "";
+	position: absolute;
+	bottom: 41%; 
+	left: 0;
+	width: 100%;
+	height: 30px;
+	transform: translateY(50%); 
+	background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 20' preserveAspectRatio='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0,10 Q25,0 50,10 T100,10 L100,20 L0,20 Z' fill='%23f7a516'/%3E%3C/svg%3E");
+	background-size: 100% 100%;
+	background-repeat: no-repeat;
+	z-index: -1;
+}
+
+/* --- LAST TIER (100%) --- */
+#price-ancher div:last-child div {
+	background: darkred;
+	border: 2px solid darkred;
+	border-radius: 15px;
+	height: 100%;
+	padding: 2rem;
+	color: white;
+}
+
+/* TABLE GREEN MARK */
+td.text-center:has(span.green-mark) {
+    padding: 0;
+    height: 1px;
+}
+
+span.green-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: calc(100% + 1px); 
+    position: relative;
+    top: -1px;    
+		background-color: #266d6f33;
+}
+/* END -- TABLE GREEN MARK */
+
+/* Container die de hele cirkel vasthoudt */
+.circle-layout {
+    position: relative;
+    width: 100%;
+    max-width: 900px;
+    height: 700px;
+    margin: 40px auto;
+}
+
+/* Styling voor het icoon in het midden */
+.center-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 140px;
+    height: 140px;
+    background-color: #266D6F; /* Zorgt dat de lijntjes hieronder verdwijnen */
+    border-radius: 50%;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+/* --- DE VERBINDINGSLIJNEN --- */
+.line {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 280px; /* Radius: Dit bepaalt hoe ver de blokken uit elkaar staan */
+    height: 2px; /* Dikte van het streepje */
+    background-color: #d1d1d1; /* Kleur van het streepje */
+    transform-origin: 0 50%; /* Lijn draait vanuit het exacte middelpunt */
+    z-index: 1; /* Ligt op de achtergrond */
+	
+		width: 0;
+		animation-name: drawLineOutward;
+    animation-duration: 0.6s;
+    animation-timing-function: ease-in-out;
+    animation-fill-mode: forwards;
+}
+
+/* Rotaties voor een perfecte 5-hoek (360 / 5 = 72 graden verschil) */
+.line-1 { transform: rotate(-90deg); }
+.line-2 { transform: rotate(-18deg); }
+.line-3 { transform: rotate(54deg); }
+.line-4 { transform: rotate(126deg); }
+.line-5 { transform: rotate(198deg); }
+
+/* --- DE ZWEVENDE BLOKKEN --- */
+.circle-item {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 18rem; /* Zorgt dat alle blokjes even breed blijven */
+    z-index: 5; /* Ligt bovenop de lijnen */
+}
+
+/* De magische transformatie: 
+   1. Centreer (-50%, -50%) 
+   2. Roteer in de juiste richting
+   3. Duw naar buiten (translateX over de afstand van de radius: 280px)
+   4. Roteer weer terug zodat de tekst recht staat! */
+.item-1 { transform: translate(-50%, -50%) rotate(-90deg) translateX(280px) rotate(90deg); }
+.item-2 { transform: translate(-50%, -50%) rotate(-18deg) translateX(280px) rotate(18deg); }
+.item-3 { transform: translate(-50%, -50%) rotate(54deg) translateX(280px) rotate(-54deg); }
+.item-4 { transform: translate(-50%, -50%) rotate(126deg) translateX(280px) rotate(-126deg); }
+.item-5 { transform: translate(-50%, -50%) rotate(198deg) translateX(280px) rotate(-198deg); }
+
+@keyframes drawLineOutward {
+    0% { width: 0px; }
+    100% { width: 260px; }
+}		</style>
+		<style id="sccss">  .mc4wp-alert {
+    color: #c09853;
+    clear: both; }
+  .mc4wp-success {
+    color: #468847; }
+  .mc4wp-notice {
+    color: #3a87ad; }
+  .mc4wp-error {
+    color: #CD5C5C; }
+.fluid-width-video-wrapper,
+.cmplz-blocked-content-container {
+  max-width: 800px;
+}
+
+.wp-block-image img {
+  max-width: 100%;
+  height: auto;
+}</style>				<style type="text/css" id="c4wp-checkout-css">
+					.woocommerce-checkout .c4wp_captcha_field {
+						margin-bottom: 10px;
+						margin-top: 15px;
+						position: relative;
+						display: inline-block;
+					}
+				</style>
+							<style type="text/css" id="c4wp-v3-lp-form-css">
+				.login #login, .login #lostpasswordform {
+					min-width: 350px !important;
+				}
+				.wpforms-field-c4wp iframe {
+					width: 100% !important;
+				}
+			</style>
+			    
+    <!--[if lt IE 8]>
+    	<link rel="stylesheet" href="https://eenvoudigfactureren.be/info/wp-content/themes/soonsite/css/ie-older.css">
+    <![endif]-->
+    
+    <noscript><link rel="stylesheet" href="https://eenvoudigfactureren.be/info/wp-content/themes/soonsite/css/no-js.css"></noscript>
+    
+	<link rel="shortcut icon" href="img/favicon.png">
+	<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+	<link rel="apple-touch-icon" sizes="72x72" href="img/apple-touch-icon-72x72.png">
+	<link rel="apple-touch-icon" sizes="114x114" href="img/apple-touch-icon-114x114.png">
+	<script src="https://sdk.chathive.app"></script>
+</head>
+<body data-cmplz=1 data-image-dir="https://eenvoudigfactureren.be/info/wp-content/themes/soonsite/images/">
+
+
+<header id="header" class="inner--header">
+    <nav class="nav" id="nav">
+		<div class="nav-inner">
+			<a class="logo" href="/info">
+				<img
+					class="logo-img logo-light"
+					src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/images/logo-400.png"
+					alt="Eenvoudig Factureren"
+				>
+				<img
+					class="logo-img logo-dark"
+					src="https://eenvoudigfactureren.be/info/wp-content/uploads/2021/09/Logo-EenvoudigFactureren-Transp.png"
+					alt="Eenvoudig Factureren"
+				>
+			</a>
+			<div class="nav-links">
+				<a href="/info/#functionaliteiten">Functionaliteiten</a>
+				<div class="nav-dd">
+					<a href="/info/#voor-wie">Voor wie</a>
+					<div class="nav-dd-menu">
+						<ul>
+							<li><a href="/info/#voor-wie">Starters</a></li>
+							<li><a href="/info/#voor-wie">Overstappers</a></li>
+							<li><a href="/info/#voor-wie">Boekhouders</a></li>
+						</ul>
+					</div>
+				</div>
+				<a href="/info/#prijzen">Prijzen</a>
+				<a href="https://help.eenvoudigfactureren.be/support/home">Kennisbank</a>
+			</div>
+			<div class="nav-cta">
+				<a class="login" href="/login">Aanmelden</a>
+				<a class="btn btn-ghost" href="/login/register">Start gratis</a>
+			</div>
+		</div>
+	</nav>
+    <div class="text-center padding-bottom30 padding-top30 margin-bottom60">
+        <h1 class="welcome_text mt-5 pt-2">API</h1>
+    </div>
+<!--    <svg class="aries_waves opacity_layer" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 275">-->
+<!--        <path fill="#ffffff" fill-opacity="1" d="M0,64L60,64C120,64,240,64,360,101.3C480,139,600,213,720,229.3C840,245,960,203,1080,186.7C1200,171,1320,181,1380,186.7L1440,192L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z"></path>-->
+<!--    </svg>-->
+<!--    <svg class="aries_waves solid_wave" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 250">-->
+<!--        <path fill="#ffffff" fill-opacity="1" d="M0,64L60,64C120,64,240,64,360,101.3C480,139,600,213,720,229.3C840,245,960,203,1080,186.7C1200,171,1320,181,1380,186.7L1440,192L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z"></path>-->
+<!--    </svg>-->
+</header>
+
+<div id="primary" class="content-area">
+	<main id="main" class="site-main" role="main">
+
+		
+<article id="post-41" class="post-41 page type-page status-publish hentry no-wpautop">
+	<header class="entry-header">
+	</header>
+
+	
+	<div class="entry-content">
+		<!-- .container -->
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+			<h4>EenvoudigFactureren API</h4>
+			<p>U kunt uw klant- en factuurgegevens op EenvoudigFactureren ook uitwisselen met externe applicaties.
+			   Dit maakt het mogelijk om bijvoorbeeld vanuit uw online webshop een nieuwe factuur op EenvoudigFactureren aan te maken zonder dat u zich op de website hoeft te begeven.</p> 
+
+			<p>Hiertoe werd een API opgezet die u kunt bereiken op <a>https://eenvoudigfactureren.be/api</a> .
+				 Langs deze API kunnen andere applicaties communiceren met de website, hiervoor moeten deze externe applicaties dan wel specifiek aangepast worden.
+				 Om dit te kunnen uitvoeren hebt u specifieke technische kennis nodig.</p>
+
+			<p>Op deze pagina krijgt u een overzicht van alle technische details van de API.</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+			<h4>Authenticatie</h4>
+			<p>De API maakt gebruikt van REST met API-sleutel of e-mailadres/wachtwoord (basic authentication). Het is aan te raden om een API-sleutel te gebruiken.</p>
+			
+			<h5>API-sleutel</h5>
+			
+			<p>Per account kunnen één of meerdere API-sleutels (API key) worden aangevraagd via &#8220;Toegangsbeheer&#8221;. Een API-sleutel biedt steeds toegang tot één specifieke account.</p>
+			
+			<p>De API-sleutel wordt meegegeven tijdens de aanvraag naar de API via de header &#8220;X-API-Key&#8221;.</p>
+			
+			<h5>Basic authentication</h5>
+			
+			<p>Toegang tot de API is ook mogelijk door het e-mailadres en wachtwoord van een gebruiker mee te geven. Dit kan via de standaard basic authentication methode waarbij het e-mailadres (username) en wachtwoord (password) worden doorgegeven via de header &#8220;Authorization&#8221;. De waarde van de header begint met &#8220;Basic &#8221; gevolgd door een base64 encodering van &#8220;username:password&#8221;. </p>
+			
+			<p>Het is aan te raden om een afzonderlijke gebruiker aan uw account toe te voegen die enkel bij API-toegang wordt gebruikt. Zo heeft u geen nood aan de credentials van de normale gebruikers.</p>
+		
+			<p>Indien een gebruiker toegang heeft tot verschillende accounts kunt u de gewenste account doorgeven in de header via &#8220;X-AccountId&#8221;. Het account-nummer (AccountId) van een account kunt u opvragen via de account-pagina (zie instellingen-menu rechtsboven). Wordt er geen account-nummer opgegeven dan wordt de standaard account van de gebruiker gebruikt (in te stellen langs de gebruiker-pagina (zie instellingen-menu rechtsboven).</p>
+			
+			<h5>Nieuwe API-sleutel aanmaken</h5>
+			
+			<p>Vanuit de API kan ook een nieuwe API-sleutel worden aangemaakt voor een account. Om een nieuwe API-sleutel aan te maken kan een POST-call worden uitgevoerd naar https://eenvoudigfactureren/api/v1/apikeys door gebruik te maken van de bovenstaande basic authentication. Bij het oproepen van de call moet een name (verplicht) en rights (niet verplicht; standaard alle rechten) worden opgegeven.</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Het formaat</h4>
+		<p>Het formaat van de communicatie verloopt standaard langs XML maar ook JSON wordt ondersteund. Daarnaast kunt u ook de standaard form-encoding gebruiken bij het wijzigen van gegevens.
+		   Stuurt u bijvoorbeeld gegevens op langs JSON dan kunt u ook een antwoord in JSON terug verwachten. Stuurt u uw gegevens door in XML of form-encoding dan wordt er een antwoord in XML teruggestuurd.
+		   Wenst u hiervan afwijken en zelf te bepalen wat het teruggestuurde antwoord wordt kunt u dit meegeven als argument in de doorgegeven URL.
+			<ul>
+			<li>?format=xml: XML-formaat (standaard)</li>
+			<li>?format=json: JSON-formaat</li>
+			<li>?format=csv: CSV-formaat, kan worden geopend in Excel</li>
+			<li>?format=html: een HTML-tabel</li>
+			<li>?format=pdf: als PDF (enkel voor domeinen invoices, receipts, quotes, orders en deliveries)</li>
+			<li>?format=efff: E-fff formaat &#8211; elektronische factuur (enkel voor domein invoices)</li>
+			<li>?format=ublbe: UBL.BE formaat &#8211; elektronische factuur (enkel voor domein invoices)</li>
+			<li>?format=peppol: PEPPOL v5a formaat &#8211; elektronische factuur (enkel voor domein invoices)</li>
+			<li>?format=peppolbis3: PEPPOL BIS 3.0 formaat &#8211; elektronische factuur (enkel voor domein invoices)</li>
+			</ul>
+		</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>De 4 methodes</h4>
+		<p>De 4 standaard form-methodes worden ondersteund: GET, POST, PUT en DELETE:
+			<ul>
+			<li>GET: Ophalen van gegevens</li>
+			<li>POST: Creëren of bijwerken van gegevens waarbij niet vermelde gegevens ongewijzigd blijven</li>
+			<li>PUT: Bijwerken van gegevens waarbij de vermelde gegevens als enige nieuwe gegeven wordt beschouwd (bestaande niet vermelde gegevens worden verwijderd)</li>
+			<li>DELETE: Verwijderen van gegevens</li>
+			</ul>
+		</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Resultcodes</h4>
+		<p>Bij aanvragen naar de API wordt er steeds een resultaat teruggegeven in het gevraagde formaat. Daarnaast wordt er telkens een resultcode teruggegeven die algemeen aanduid of een actie al dan niet geslaagd is.</p>
+		<p>De resultcodes die kunnen worden teruggegeven
+			<ul>
+			<li>200: Actie geslaagd</li>
+			<li>201: Gegeven aangemaakt</li>
+			<li>400: Fout door foutieve gegevens</li>
+			<li>401: Authenticatie gebruiker niet aanvaard</li>
+			<li>403: Geen toegang</li>
+			<li>404: Gevraagde gegeven niet gevonden</li>
+			<li>500: Interne fout</li>
+			</ul>
+		</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Opbouw URL</h4>
+		<p>
+			De opbouw van de URL is steeds dezelfde en begint met &#8216;<a>https://eenvoudigfactureren.be/api</a>&#8216; gevolgd door het versienummer van de gegevens, momenteel &#8216;<a>v1</a>&#8216;.
+			Daarna komt het domein, bvb. &#8216;<a>invoices</a>&#8216;, &#8216;<a>clients</a>&#8216; of &#8216;<a>activities</a>&#8216;. Dit is reeds een volwaardige URL maar eventueel kunt u hierna de ID van het element doorgeven. Hierna kunt u terug optioneel een subdomein doorgegeven al dan niet gevolgd door een ID.  
+			Dit geeft dan bijvoorbeeld:  <a>https://eenvoudigfactureren.be/api/v1/clients/101/contacts/9283</a> (contactpersoon met ID 9283 van klant met ID 101).
+		</p>
+		<p>Enkele voorbeelden:
+			<ul>
+			<li>https://eenvoudigfactureren.be/api/v1/clients: Klantgegevens</li>
+			<li>https://eenvoudigfactureren.be/api/v1/invoices/3003: Factuur met ID 3003</li>
+			<li>https://eenvoudigfactureren.be/api/v1/quotes/4004/items: Items van offerte met ID 4004</li>
+			<li>https://eenvoudigfactureren.be/api/v1/invoices/3003/items/4005: Item met ID 4005 van factuur met ID 3003</li>
+			<li>https://eenvoudigfactureren.be/api/v1/uploads: Bestand-uploads/Attachments</li>
+			</ul>
+		</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Beperken teruggegeven velden</h4>
+		<p>Indien u een lijst met gegevens opvraagt kunt u zelf bepalen welke velden worden teruggegeven. Geeft u niets op dan worden alle velden teruggegeven.</p>
+		<p>Geef een lijst door met de gewenste velden met de parameter ?fields=. U kunt enkel velden van het hoogste niveau meegeven en dus niet van onderliggende niveau&#8217;s.</p>
+		<p>Bvb. ?fields=name,email_address</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Filteren gegevens</h4>
+		<p>Indien u een lijst met gegevens opvraagt kunt u deze lijst filteren door enkel items met specifieke gegevens op te nemen.</p>
+		<p>Geef een lijst door met de gewenste waarden langs de parameter ?filter=. U kunt enkel filteren op velden van het hoogste niveau (Dus niet van onderliggende niveau&#8217;s).
+			 Als eerste waarde geeft u de naam van het veld door met hierna een vergelijkingsteken en daarna de eigenlijke waarde. De mogelijke vergelijkingstekens zijn =, !=, <=, >=, <, >, =~ (=bevat de tekst).
+			 Alle waarden moeten URL-encoded worden doorgegeven. Meerdere filters plaats u met een komma-teken na elkaar.
+		</p>
+		<p>Bvb. ?filter=city%3DBrussel,name%3D%7ERestaurant</p>
+		<p>
+			URL-encoderingen:
+			<ul>
+				<li>Gelijk aan (=): %3D</li>
+				<li>Verschillend van (!=): %21%3D</li>
+				<li>Kleiner dan of gelijk (<=): %3C%3D</li>
+				<li>Groter dan of gelijk (>=): %3E%3D</li>
+				<li>Kleiner dan (<): %3C</li>
+				<li>Groter dan (>): %3E</li>
+				<li>bevat (=~): %3D%7E</li>
+				<li>spatie (&#8216; &#8216;): +</li>
+			</ul>
+		</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Zoeken</h4>
+		<p>U kunt ook vrij zoeken indien u een lijst met gegevens opvraagt. U kunt slechts 1 zoekterm meegeven.</p>
+		<p>Geef de zoekterm op met de parameter ?search=. De zoekterm is niet hoofdlettergevoelig en moet u URL-encoded doorgeven (om een spatie op te geven kunt u &#8216;+&#8217; gebruiken).</p>
+		<p>Bvb. ?search=Gent</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Sorteren</h4>
+		<p>Indien u een lijst met gegevens opvraagt kunt u deze lijst oplopend of aflopend sorteren op enkele velden.</p>
+		<p>Niet op alle velden kunt u sorteren. Indien u een veld opgeeft waarop niet gesorteerd kan worden wordt er een foutmelding gegeven. Voor het domein &#8216;activities&#8217; is er geen sortering mogelijk.</p>
+		<p>Geef een lijst door met de gewenste velden langs de parameter ?sort=. Meerdere velden kunt u met een &#8216;+&#8217; scheiden (URL-encoded = %2B). Om een veld aflopend te sorteren plaats u er een min-teken voor.</p>
+		<p>Bvb. ?sort=status%2B-date</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Paginering</h4>
+		<p>Indien u een lijst met gegevens opvraagt kunt u ook slechts een deel van deze lijst opvragen. Dit is handig om paginering mogelijk te maken.</p>
+		<p>Het is ten sterkste aan te raden om bij het ophalen van documenten (facturen, offertes, &#8230;) steeds maximaal 100 documenten per aanvraag op te halen.</p>
+		<p>Om gegevens over te slaan gebruikt u de parameter ?skip= en om het aantal gegevens te beperken gebruikt u parameter ?take=.</p>
+		<p>Bvb. ?skip=30&#038;take=10</p>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Formattering</h4>
+		<p>Teksten kunnen worden opgegeven in het Markdown formaat waardoor formattering wordt toegevoegd. Zie ook <a title="Formattering" href="/info/help/formattering/" target="_blank" rel="noopener noreferrer">Hoe tekst formatteren?</a>. Teksten teruggegeven langs de API bevatten de opgegeven formatterings-codes in Markdown-formaat, het is echter ook mogelijk om deze om te zetten naar de gepaste formattering in HTML.</p>
+
+		<p>Om teksten om te zetten gebruikt u de parameter ?markup=markdown.</p>
+
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Gegevens ophalen (GET)</h4>
+		<p>Gegevens kunt u ophalen langs de GET-methode. Dit is de techniek die u ook gebruikt wanneer u eenvoudigweg een URL doorgeeft in een webbrowser.</p>
+
+		<p>U kunt dus bijvoorbeeld <a>https://eenvoudigfactureren.be/api/v1/clients</a> opgeven in een webbrowser om een lijst in XML te krijgen van alle klanten.
+		Een ander voorbeeld: <a>https://eenvoudigfactureren.be/api/v1/invoices/1001/payments</a>. Wat een lijst teruggeeft met alle betalingen van factuur met ID 1001.</p>
+
+		<p>Zoals eerder vermeld kunt u het formaat aanpassen waarin de verkregen gegevens worden teruggegeven.
+		Voeg hiervoor de extensie bijvoorbeeld &#8216;?format=json&#8217; toe aan de URL. De mogelijke formaten zijn xml, json, csv en html. </p>
+
+		<p>Een voorbeeld in PHP hoe u gegevens kunt ophalen:</p>
+		
+<pre class="brush: php; title: ; notranslate" title="">$email = 'luc@mymail.com';
+$password = '123456';
+
+$p = curl_init('https://eenvoudigfactureren.be/api/v1/clients');
+curl_setopt($p, CURLOPT_USERPWD, $email . ':' . $password);
+curl_setopt($p, CURLOPT_RETURNTRANSFER, TRUE);
+$xml_string_all_clients = curl_exec($p); </pre>
+		
+<p>Indien u een verkeerde URL opgeeft omdat bijvoorbeeld de gevraagde klant niet bestaat dan krijgt u als response ook een XML (of het gevraagde formaat) terug met de reden van de fout.</p>
+
+<p>Vraagt u bijvoorbeeld de gegevens aan voor de onbestaande klant met ID 1001 met URL <a>https://eenvoudigfactureren.be/api/v1/clients/1001</a> dan krijgt u terug:
+
+<pre class="brush: xml; title: ; notranslate" title="">&lt;data&gt;
+  &lt;error&gt;client_id unknown&lt;/error&gt;
+&lt;/data&gt;
+</pre>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+
+		<h4>Gegevens creëren (POST)</h4>
+		<p>Gegevens kunt u enkel aanmaken langs de POST-methode. Gebruik hiervoor het domein en eventueel subdomein van de gegevens die u wilt aanmaken.</p>
+		<p>Wilt u bvb een nieuwe factuur aanmaken gebruik dan als URL <a>https://eenvoudigfactureren.be/api/v1/invoices</a> of <a>https://eenvoudigfactureren.be/api/v1/invoices/1001/payments</a> om een nieuwe betaling voor factuur met ID 1001 aan te maken.</p>
+		<p>De gegevens die u doorgeeft kunnen zowel in XML, JSON als in form-encoding doorgegeven worden. Bij XML en JSON kunt u alle gegevens in 1x doorgeven (bvb een factuur met items), met form-encoding moet u elk blok afzonderlijk doorgeven (bvb eerst de factuur en daarna één voor één de items).</p>
+		<p>Als resultaat krijgt u een &#8216;error&#8217; of &#8216;success&#8217; terug. Als de gegevens correct werden aangemaakt krijgt u bovendien ook nog de nieuwe ID van het aangemaakte gegeven terug alsook de URI waarmee u het volledige gegeven kunt opvragen.</p>
+
+		<p>Voorbeeld bij fout:</p>
+<pre class="brush: xml; title: ; notranslate" title="">&lt;data&gt;
+  &lt;error&gt;description is required&lt;/error&gt;
+&lt;/data&gt;
+</pre>
+
+		<p>Voorbeeld bij succes:</p>
+<pre class="brush: xml; title: ; notranslate" title="">&lt;data&gt;
+  &lt;success&gt;invoice created&lt;/success&gt;
+  &lt;invoice_id&gt;1001&lt;/invoice_id&gt;
+  &lt;uri&gt;https://eenvoudigfactureren.be/api/v1/invoices/1001&lt;/uri&gt;
+&lt;/data&gt;
+</pre>
+
+		<p>Een voorbeeld in PHP hoe u een factuur kunt aanmaken:</p>
+
+<pre class="brush: php; title: ; notranslate" title="">$email = 'luc@mymail.com';
+$password = '123456';
+
+$invoice = (object)&#x5B;
+	'client_id' =&gt; 101,
+	'number' =&gt; &quot;INV2012-001&quot;,
+	'days_due' =&gt; 10,
+	'items' =&gt; &#x5B;
+		(object)&#x5B;
+			'description' =&gt; &quot;jouw bestelling&quot;,
+			'amount' =&gt; 20.5,
+			'tax_rate' =&gt; 21,
+		],
+		(object)&#x5B;
+			'description' =&gt; &quot;levering&quot;,
+			'amount' =&gt; 4,
+			'tax_rate' =&gt; 21,
+		],
+	]
+];
+
+$p = curl_init('https://eenvoudigfactureren.be/api/v1/invoices');
+curl_setopt($p, CURLOPT_HTTPHEADER, array('Content-Type: application/json', 
+                                          'Accept: application/json'));
+curl_setopt($p, CURLOPT_USERPWD, $email . ':' . $password);
+curl_setopt($p, CURLOPT_POSTFIELDS, json_encode($invoice));
+curl_setopt($p, CURLOPT_RETURNTRANSFER, TRUE);
+$result = json_decode(curl_exec($p));
+</pre>
+		
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>Gegevens wijzigen (POST &#038; PUT)</h4>
+		<p>Het wijzigen van gegevens gebeurt op min of meer dezelfde manier als het aanmaken van een gegeven.</p>
+		<p>Echter moet u bij wijzigingen steeds de volledige URI van het gegeven dat u wilt wijzigen meegeven (dus inclusief ID).
+			Zo geeft u bijvoorbeeld <a>https://eenvoudigfactureren.be/api/v1/invoices/1001</a> door om factuur met ID 1001 te wijzigen.</p>
+		<p>De gebruikte methode (POST of PUT) heeft een grote invloed op hoe de gegevens worden gewijzigd.<p>
+		<p>De methode POST gebruikt u om slechts een gedeelte van de bestaande gegevens te wijzigen.
+			Zo kunt u bijvoorbeeld enkel de omschrijving van een factuur-item meegeven en zullen andere velden zoals het bedrag ongewijzigd blijven.</p>
+		<p>Bij gebruik van de methode PUT moet u steeds alle gegevens meegeven. Niet meegegeven gegevens zullen worden verwijderd.</p>
+		<p>Als u XML of JSON als formaat gebruikt is het belangrijk om de ID van onderliggende elementen mee te geven (zowel bij POST als bij PUT). Geeft u een onderliggend element mee zonder ID dan wordt veronderstelt dat u dit gegeven wilt aanmaken.</p>
+		<p>Gebruikt u de methode PUT en wenst u bijvoorbeeld enkele details van een factuur te wijzigen maar daarnaast ook alle betalingen van de factuur te verwijderen dan moet u in de factuur een leeg blok (XML) of lege array (JSON) voor &#8216;payments&#8217; meegeven. Geeft u geen &#8216;payments&#8217;-blok of array mee dan worden er ook geen &#8216;payments&#8217; verwijderd.
+			Dus bij het meegeven van een leeg blok of lege array worden de gegevens uit deze blok/array verwijderd. Anders worden ze ongemoeid gelaten.</p>
+
+		<p>Een voorbeeld in PHP hoe u een item van een factuur kunt wijzigen (methode PUT):</p>
+
+<pre class="brush: php; title: ; notranslate" title="">
+$email = 'luc@mymail.com';
+$password = '123456';
+
+$item = &quot;&lt;item&gt;&lt;description&gt;bestelling van 1/4/2012&lt;/description&gt;
+		 &lt;amount_with_tax&gt;25&lt;/amount_with_tax&gt;&lt;tax_rate&gt;21&lt;/tax_rate&gt;&lt;/item&gt;&quot;;
+
+$p = curl_init('https://eenvoudigfactureren.be/api/v1/invoices/1001/items/2893');
+curl_setopt($p, CURLOPT_HTTPHEADER, array('Content-Type: application/xml', 
+                                          'Accept: application/xml'));
+curl_setopt($p, CURLOPT_USERPWD, $email . ':' . $password);
+curl_setopt($p, CURLOPT_POSTFIELDS, $item);
+curl_setopt($p, CURLOPT_CUSTOMREQUEST, &quot;PUT&quot;);
+curl_setopt($p, CURLOPT_RETURNTRANSFER, TRUE);
+$result_in_xml_string = curl_exec($p);
+</pre>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+
+		<h4>Gegevens verwijderen (DELETE)</h4>
+		<p>Gegevens kunt u verwijderen met de methode DELETE. Hiervoor geeft u in de URL het domein en de ID mee.</p>
+		<p>Wenst u een onderliggend gegeven te verwijderen geef dan ook het subdomein mee met eventueel de ID (geeft u geen ID mee dan worden alle gegevens van het subdomein verwijderd).</p>
+
+		<p>Een voorbeeld in PHP hoe u alle betalingen van een factuur kunt verwijderen:</p>
+
+<pre class="brush: php; title: ; notranslate" title="">$email = 'luc@mymail.com';
+$password = '123456';
+
+$p = curl_init('https://eenvoudigfactureren.be/api/v1/invoices/1001/payments?format=json');
+curl_setopt($p, CURLOPT_USERPWD, $email . ':' . $password);
+curl_setopt($p, CURLOPT_CUSTOMREQUEST, &quot;DELETE&quot;);
+curl_setopt($p, CURLOPT_RETURNTRANSFER, TRUE);
+$result = json_decode(curl_exec($p));
+</pre>
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+
+		<h4>Verzend een document via e-mail (POST)</h4>
+		<p>U kunt, net zoals u dit op de website kunt, ook een factuur, offerte, kasticket, bestelbon of leveringsbon per e-mail versturen naar de klant langs de API.</p>
+		<p>Gebruik hiervoor de POST-methode met als URL bijvoorbeeld <a>https://eenvoudigfactureren.be/api/v1/invoices/1001?send_mail</a>.</p>
+		<p>U moet hierbij wel enkele bijkomende gegevens meegeven (in XML, JSON of form-encoding):
+			<ul>
+				<li>recipient (text): E-mailadres of contact_id van de klant waarnaartoe de e-mail wordt verzonden. Kan ook worden opgegeven: &#8216;myself&#8217; (uzelf in kopie), &#8216;main_contact&#8217; (algemeen adres van de klant), &#8216;first_contact&#8217; (algemeen adres of een ander beschikbaar e-mail adres), &#8216;all_contacts&#8217; (alle beschikbare e-mailadressen). Het is ook mogelijk om een space separated lijst van voorgaande waarden op te geven.</li>
+				<li>recipients (list): Lijst met recipient-waarden (zie voorgaande).</li>
+				<li>subject (text): Het onderwerp van de email. Indien niet opgegeven wordt het standaard onderwerp gebruikt (zie Instellingen van uw account).</li>
+				<li>message (text): De tekst-inhoud van de email. Indien niet opgegeven wordt de standaard email-inhoud gebruikt (zie Instellingen van uw account).</li>
+				<li>document_type: Type van het document. Enkel van toepassing bij verzending van factuur. Kan volgende waardes bevatten: &#8216;pdf&#8217;, &#8216;ubl&#8217;, &#8216;both&#8217; (= pdf + ubl), &#8216;duplicate&#8217; (=duplicaat factuur in pdf), &#8216;reminder&#8217; (=herinneringsdocument), &#8216;reminder_summary&#8217; (=samenvattingsdocument herinnering). Indien niet opgegeven wordt &#8216;pdf&#8217; gebruikt.</li>
+				<li>attachments (list): Optioneel een lijst met attachments (zie verder).</li>
+			</ul>
+		</p>
+		<p>U moet bij een aanvraag tenminste 1 ontvanger meegeven. Uzelf als ontvanger opgeven is reeds voldoende. Een combinatie van verschillende velden ontvangers is mogelijk.</p>
+
+		<p>Een voorbeeld in XML om uw gegevens door te geven:</p>
+
+<pre class="brush: xml; title: ; notranslate" title="">&lt;data&gt;
+  &lt;recipients&gt;
+    &lt;recipient&gt;customer1@hisdomain.com&lt;/recipient&gt;
+    &lt;recipient&gt;123548&lt;/recipient&gt;
+    &lt;recipient&gt;myself&lt;/recipient&gt;
+  &lt;/recipients&gt;
+  &lt;message&gt;Beste,
+In bijlage vindt u uw factuur terug.&lt;/message&gt;
+  &lt;attachments&gt;
+	  &lt;attachment&gt;
+		  &lt;upload_id&gt;a9c4c541-33fc-4c34-894b-fcd091d45fc9&lt;/upload_id&gt;
+		  &lt;filename&gt;Mijn Bijlage.docx&lt;/filename&gt;
+	  &lt;/attachment&gt;
+  &lt;/attachments&gt;
+&lt;/data&gt;
+</pre>
+		
+		<p>of</p>
+
+<pre class="brush: xml; title: ; notranslate" title="">
+&lt;data&gt;
+  &lt;recipient&gt;customer1@hisdomain.com 123548 myself&lt;/recipient&gt;
+  &lt;message&gt;Beste,
+In bijlage vindt u uw factuur terug.&lt;/message&gt;
+&lt;/data&gt;
+</pre>
+
+		<p>Een voorbeeld in PHP hoe u een factuur kunt versturen langs email:</p>
+
+<pre class="brush: php; title: ; notranslate" title="">
+$email = 'luc@mymail.com';
+$password = '123456';
+
+$post = array();
+$post&#x5B;'recipient'] = &quot;customer@hisdomain.com myself&quot;;
+$post&#x5B;'message'] = &quot;Beste,\\nIn bijlage vindt u uw factuur terug.&quot;;
+
+$p = curl_init('https://eenvoudigfactureren.be/api/v1/invoices/1001?send_mail');
+curl_setopt($p, CURLOPT_USERPWD, $email . ':' . $password);
+curl_setopt($p, CURLOPT_POSTFIELDS, $post);
+curl_setopt($p, CURLOPT_RETURNTRANSFER, TRUE);
+$result_in_xml_string = curl_exec($p);
+</pre>
+	
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+
+		<h4>Attachments toevoegen tijdens versturen e-mail (POST)</h4>
+		<p>Tijdens het versturen van een factuur of offerte per e-mail kunt u ook bijkomend attachments toevoegen.</p>
+		<p>Gebruik hiervoor de POST-methode met als URL <a>https://eenvoudigfactureren.be/api/v1/uploads</a>.</p>
+		<p>Verstuur het bestand als form-data met als key &#8216;file&#8217;. Het bestand mag niet groter zijn dan 5MB. U kunt meerdere bestanden in één keer toevoegen door &#8216;file[]&#8217; te gebruiken. Optioneel kunt u ook een bestandsnaam meegeven langs key &#8216;filename&#8217;.</p>
+		
+		<p>Als antwoord krijgt u een lijst terug met per opgeladen bestand:</p>
+		<ul>
+			<li>upload_id: Deze gebruikt u bij het verzenden van de e-mail (argument attachments)</li>
+			<li>filename: Doorgegeven bestandsnaam (deze wordt echter niet bijgehouden en dient u opnieuw door te geven tijdens doorsturen van de attachment per e-mail).</li>
+			<li>available_until: Geldigheidsperiode waarin het bestand beschikbaar blijft (tot 1 uur na opladen van het bestand).</li>
+		</ul>
+		
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+
+		<h4>Verzend een document via BPost (POST)</h4>
+		<p>Verzend een document (factuur, offerte, &#8230;) via BPost naar de klant. Hiervoor moet eerst de koppeling met Mail-IT-Wize worden opgezet.</p>
+		<p>Gebruik hiervoor de POST-methode met als URL bijvoorbeeld <a>https://eenvoudigfactureren.be/api/v1/invoices/1001?send_postalmail</a>.</p>
+		<p>U moet hierbij wel enkele bijkomende gegevens meegeven (in XML, JSON of form-encoding):
+			<ul>
+				<li>address_type (text): Adrestype waaruit de adresgegevens worden opgehaald. Mogelijke waarden: &#8220;billing&#8221; (=standaard facturatiegegevens), &#8220;delivery&#8221; (=verzendadres), &#8220;site&#8221; (=werfadres).</li>
+				<li>send_registered (int): &#8220;0&#8221; voor non-prior zending; &#8220;1&#8221; voor aangetekende zending.</li>
+				<li>document_type: Type van het document. Enkel van toepassing bij verzending van factuur. Kan volgende waardes bevatten: &#8216;pdf&#8217;, &#8216;duplicate&#8217; (=duplicaat factuur), &#8216;reminder&#8217; (=herinneringsdocument), &#8216;reminder_summary&#8217; (=samenvattingsdocument herinnering). Indien niet opgegeven wordt &#8216;pdf&#8217; gebruikt.</li>
+			</ul>
+		</p>
+
+		<p>Een voorbeeld in XML om uw gegevens door te geven:</p>
+
+<pre class="brush: xml; title: ; notranslate" title="">&lt;data&gt;
+  &lt;address_type&gt;billing&lt;/address_type&gt;
+  &lt;send_registered&gt;0&lt;/send_registered&gt;
+&lt;/data&gt;
+</pre>
+
+		<p>Een voorbeeld in PHP hoe een factuur via BPost kan worden verzonden:</p>
+
+<pre class="brush: php; title: ; notranslate" title="">
+$email = 'luc@mymail.com';
+$password = '123456';
+
+$post = &#x5B;'address_type' =&gt; 'billing', 'send_registered' =&gt; 0];
+
+$p = curl_init('https://eenvoudigfactureren.be/api/v1/invoices/1001?send_postalmail');
+curl_setopt($p, CURLOPT_USERPWD, $email . ':' . $password);
+curl_setopt($p, CURLOPT_POSTFIELDS, $post);
+curl_setopt($p, CURLOPT_RETURNTRANSFER, TRUE);
+$result_in_xml_string = curl_exec($p);
+</pre>
+	
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+
+<h4>Versturen in bulk</h4>
+<p>Om DDOS aanvallen tegen te gaan is het niet toegestaan om te veel bewerkingen na elkaar uit te voeren. Indien te veel API-calls na elkaar worden uitgevoerd kunt u mogelijks tijdelijk worden geblokkeerd. Voor het importeren/bewerken van een groot aantal artikelen of klanten kunt u deze daarom beter in bulk doorsturen. Hierdoor kunt u de artikelen/klanten als lijst van max. 100 items doorgeven.</p>
+<p>Om de gegevens in bulk door te geven gebruik je de optie &#8216;?bulk&#8217; als POST-method. De lijst met items geeft u door langs respectievelijk &#8220;clients&#8221; of &#8220;stockitems&#8221;.</p>
+<p>Om gegevens bij te werken i.p.v. aan te maken geeft de ID van de klant (client_id) of het artikel (stockitem_id) mee.</p>
+
+<pre class="brush: php; title: ; notranslate" title="">
+$data&#x5B;'clients'] = &#x5B;
+	(object)&#x5B;
+		&quot;name&quot; =&gt; &quot;IT Services BVBA&quot;
+	],
+	(object)&#x5B;
+	    &quot;client_id&quot; =&gt; 11111,
+		&quot;name&quot; =&gt; &quot;Demo Company&quot;
+	],
+];
+
+$p = curl_init('https://eenvoudigfactureren.be/api/v1/clients?bulk');
+curl_setopt($p, CURLOPT_HTTPHEADER, array('Content-Type: application/json', 
+                                          'Accept: application/json'));
+curl_setopt($p, CURLOPT_USERPWD, $email . ':' . $password);
+curl_setopt($p, CURLOPT_POSTFIELDS, json_encode($data));
+curl_setopt($p, CURLOPT_RETURNTRANSFER, TRUE);
+$result = json_decode(curl_exec($p));
+</pre>		
+
+Of in XML:
+<pre class="brush: xml; title: ; notranslate" title="">
+&lt;clients&gt;
+  &lt;client&gt;
+	&lt;name&gt;IT Services BVBA&lt;/name&gt;
+	...
+  &lt;/client&gt;
+  &lt;client&gt;
+	&lt;name&gt;Demo Company&lt;/name&gt;
+	...
+  &lt;/client&gt;
+&lt;/clients&gt;
+</pre>
+		
+		
+	</div>
+</div>
+
+<div class="wrap-container60 border-bottom reading-text">
+	<div class="container">
+		<h4>De gegevensstructuur</h4>
+		<p>Er zijn veschillende types gegevens (domeinen) te benaderen langs de API. Deze domeinen hebben veelal elk een aantal subdomeinen.</p>
+		<p>Een overzicht van de verschillende domeinen:</p>
+
+		<div class="row">
+			<div class="col-sm-12 reading-text text-center" style="margin-bottom: 1em;">
+				<a href="info/help/api/clients" class="btn-custom btn-large">Klanten (&#8220;clients&#8221;)</a>
+				<a href="info/help/api/invoices" class="btn-custom btn-large">Facturen en creditnota&#8217;s (&#8220;invoices&#8221;)</a>
+				<a href="info/help/api/receipts" class="btn-custom btn-large">Kasticketten (&#8220;receipts&#8221;)</a>
+			</div>
+			<div class="col-sm-12 reading-text text-center" style="margin-bottom: 1em;">
+				<a href="info/help/api/quotes" class="btn-custom btn-large">Offertes (&#8220;quotes&#8221;)</a>
+				<a href="info/help/api/orders" class="btn-custom btn-large">Bestelbonnen (&#8220;orders&#8221;)</a>
+				<a href="info/help/api/deliveries" class="btn-custom btn-large">Leveringsbonnen (&#8220;deliveries&#8221;)</a>
+			</div>
+			<div class="col-sm-12 reading-text text-center" style="margin-bottom: 1em;">
+				<a href="info/help/api/subscriptions" class="btn-custom btn-large">Abonnementen (&#8220;subscriptions&#8221;)</a>
+				<a href="info/help/api/stockitems" class="btn-custom btn-large">Artikelen (&#8220;stockitems&#8221;)</a>
+				<a href="info/help/api/layouts/" class="btn-custom btn-large">Layouts (&#8220;layouts&#8221;)</a>
+			</div>
+			<div class="col-sm-12 reading-text text-center" style="margin-bottom: 1em;">
+				<a href="info/help/api/activities" class="btn-custom btn-large">Gebeurtenissen (&#8220;activities&#8221;)</a>
+			</div>
+		</div>
+	</div>
+</div>
+
+
+	</div>
+
+	<footer class="entry-footer">
+	</footer>
+
+</article>
+
+	</main><!-- .site-main -->
+
+
+</div><!-- .content-area -->
+
+    <div
+        class="ef-newsletter-placeholder"
+        data-endpoint="https://eenvoudigfactureren.be/info/wp-admin/admin-ajax.php?action=ef_load_newsletter"
+        style="min-height: 1px;"
+    ></div>
+
+    <script>
+    (() => {
+        const placeholder = document.currentScript.previousElementSibling;
+
+        let userScrolled = false;
+        let nearby = false;
+        let loading = false;
+        let loaded = false;
+        let attempts = 0;
+        let retryAfter = 0;
+
+        async function loadNewsletter() {
+            if (
+                !userScrolled || !nearby || loading || loaded ||
+                attempts >= 3 || Date.now() < retryAfter
+            ) {
+                return;
+            }
+
+            loading = true;
+            attempts++;
+
+            try {
+                const response = await fetch(placeholder.dataset.endpoint, {
+                    credentials: 'same-origin',
+                    cache: 'no-store'
+                });
+
+                if (!response.ok) throw new Error('Laden mislukt');
+
+                const result = await response.json();
+
+                if (!result.success || !result.data?.html) {
+                    throw new Error('Geen formulier ontvangen');
+                }
+
+                placeholder.innerHTML = result.data.html;
+
+                const form = placeholder.querySelector('form.pl4wp-form');
+
+                if (!form) throw new Error('Formulier ontbreekt');
+
+                form.action = window.location.href.split('#')[0];
+
+                if (window.pl4wp?.forms?.getByElement) {
+                    window.pl4wp.forms.getByElement(form);
+                }
+
+                document.dispatchEvent(new Event('pl4wp-refresh'));
+
+                loaded = true;
+                observer.disconnect();
+
+                window.removeEventListener('wheel', onUserScroll);
+                window.removeEventListener('touchmove', onUserScroll);
+                window.removeEventListener('keydown', onKeyDown);
+            } catch (error) {
+                placeholder.replaceChildren();
+                retryAfter = Date.now() + 3000;
+            } finally {
+                loading = false;
+            }
+        }
+
+        // Alleen laden wanneer de footer bijna in beeld komt.
+        const observer = new IntersectionObserver(entries => {
+            nearby = entries[0].isIntersecting;
+            loadNewsletter();
+        }, {
+            rootMargin: '0px 0px 300px 0px'
+        });
+
+        observer.observe(placeholder);
+
+        // Een automatisch scroll-event telt niet als gebruikersactie.
+        function onUserScroll(event) {
+            if (!event.isTrusted) return;
+
+            userScrolled = true;
+            loadNewsletter();
+        }
+
+        function onKeyDown(event) {
+            if (
+                event.target instanceof Element &&
+                event.target.closest(
+                    'input, textarea, select, button, [contenteditable]'
+                )
+            ) {
+                return;
+            }
+
+            if ([
+                'ArrowDown', 'ArrowUp', 'PageDown',
+                'PageUp', 'End', 'Home', ' '
+            ].includes(event.key)) {
+                onUserScroll(event);
+            }
+        }
+
+        window.addEventListener('wheel', onUserScroll, { passive: true });
+        window.addEventListener('touchmove', onUserScroll, { passive: true });
+        window.addEventListener('keydown', onKeyDown);
+    })();
+    </script>
+    
+<!-- ================= FOOTER ================= -->
+<footer class="footer">
+    <div class="wrap">
+        <div class="footer-main">
+            <div class="footer-brand">
+                <a class="footer-logo" href="/">
+                    <img decoding="async"
+                        src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/images/logo-400.png"
+                        alt="Eenvoudig Factureren"
+                    >
+                </a>
+                <div class="footer-socials" aria-label="Social media">
+                    <a
+                        href="https://www.linkedin.com/company/eenvoudigfactureren-belgium"
+                        aria-label="LinkedIn"
+                        style="--social-color:#0A66C2"
+                    >
+                        <svg viewBox="0 0 24 24">
+                            <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.61 0 4.27 2.37 4.27 5.46v6.28zM5.32 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.1 20.45H3.53V9H7.1v11.45z"/>
+                        </svg>
+                    </a>
+                    <a
+                        href="https://www.facebook.com/EenvoudigFactureren.be"
+                        aria-label="Facebook"
+                        style="--social-color:#1877F2"
+                    >
+                        <svg viewBox="0 0 24 24">
+                            <path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.8-4.7 4.54-4.7 1.32 0 2.69.24 2.69.24v2.97h-1.52c-1.49 0-1.96.93-1.96 1.89v2.26h3.34l-.53 3.49h-2.81V24C19.61 23.1 24 18.1 24 12.07z"/>
+                        </svg>
+                    </a>
+                    <a
+                        href="https://www.instagram.com/eenvoudigfactureren"
+                        aria-label="Instagram"
+                        style="--social-color:#E4405F"
+                    >
+                        <svg viewBox="0 0 24 24">
+                            <path d="M7.8 2h8.4A5.8 5.8 0 0 1 22 7.8v8.4a5.8 5.8 0 0 1-5.8 5.8H7.8A5.8 5.8 0 0 1 2 16.2V7.8A5.8 5.8 0 0 1 7.8 2zm0 2A3.8 3.8 0 0 0 4 7.8v8.4A3.8 3.8 0 0 0 7.8 20h8.4a3.8 3.8 0 0 0 3.8-3.8V7.8A3.8 3.8 0 0 0 16.2 4H7.8zm8.7 2.1a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8zM12 7.3a4.7 4.7 0 1 1 0 9.4 4.7 4.7 0 0 1 0-9.4zm0 2a2.7 2.7 0 1 0 0 5.4 2.7 2.7 0 0 0 0-5.4z"/>
+                        </svg>
+                    </a>
+                    <a
+                        href="https://www.youtube.com/channel/UC36uFtek3LpSLC8YK2uXouA/videos"
+                        aria-label="YouTube"
+                        style="--social-color:#FF0000"
+                    >
+                        <svg viewBox="0 0 24 24">
+                            <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8zM9.6 15.5v-7l6.3 3.5-6.3 3.5z"/>
+                        </svg>
+                    </a>
+                    <a href="https://vimeo.com/eenvoudigfactureren" aria-label="Vimeo" style="--social-color:#1AB7EA">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M23.98 6.42c-.11 2.34-1.74 5.54-4.9 9.61-3.26 4.24-6.02 6.36-8.29 6.36-1.41 0-2.58-1.29-3.55-3.88L5.32 11.4C4.61 8.81 3.85 7.52 3.04 7.52c-.18 0-.81.38-1.88 1.13L0 7.2c1.22-1.07 2.43-2.15 3.62-3.22C5.27 2.56 6.51 1.81 7.33 1.74c1.94-.19 3.14 1.14 3.6 3.99.49 3.07.83 4.98 1.02 5.72.57 2.54 1.2 3.81 1.89 3.81.54 0 1.34-.85 2.41-2.54s1.64-2.98 1.72-3.87c.15-1.47-.42-2.21-1.72-2.21-.61 0-1.24.14-1.89.42 1.26-4.12 3.66-6.12 7.21-6 2.63.07 3.86 1.86 3.71 5.36z"/>
+                        </svg>
+                    </a>
+                </div>
+            </div>
+            <div class="footer-links">
+                <div class="footer-col">
+                    <h3>Platform</h3>
+                    <ul>
+                        <li><a href="/info/frontpage-3/#functionaliteiten">Functionaliteiten</a></li>
+                        <li><a href="/info/frontpage-3/#prijzen">Prijzen</a></li>
+                        <li><a href="/info/demo">Demo</a></li>
+                        <li><a href="/info/boekhouders/">Voor boekhouders</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h3>Bedrijf</h3>
+                    <ul>
+                        <li><a href="/info/about-us/">Over ons</a></li>
+                        <li><a href="https://help.eenvoudigfactureren.be/support/tickets/new">Contact</a></li>
+                        <li><a href="/info/blog">Blog</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h3>Support</h3>
+                    <ul>
+                        <li><a href="https://help.eenvoudigfactureren.be/support/home">Kennisbank</a></li>
+                        <li><a href="/info/online-academy/">Online Academy</a></li>
+                        <li>
+                            <a href="https://flow.bothive.be/eenvoudigfactureren/63456a756fbc90001a946862">Virtuele assistent</a>
+                        </li>
+                        <li><a href="https://help.eenvoudigfactureren.be/support/home">Help</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <div>&copy;EenvoudigFactureren BV – Alle rechten voorbehouden</div>
+            <div>
+                <a href="/info/help/privacy-policy/">Privacy policy</a> &amp;
+                <a href="/info/help/gebruiksvoorwaarden/">Algemene voorwaarden</a>
+            </div>
+        </div>
+    </div>
+</footer>    <!--[if lt IE 8]>
+    	<div class="browser-notice">
+            <div class="container">
+            	<div class="text">
+                    <h1>Internet Explorer Out To Date</h1>
+                    <p>Please update your Internet Explorer browser with a newer version (Internet Explorer 8 above) now!</p>
+                    <span>You can download it <a href="http://windows.microsoft.com/en-us/internet-explorer/download-ie" target="blank">here....</a></span>
+                </div>
+            </div>
+        </div>
+		<![endif]-->
+
+  <script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"\/info\/*"},{"not":{"href_matches":["\/info\/wp-*.php","\/info\/wp-admin\/*","\/info\/wp-content\/uploads\/*","\/info\/wp-content\/*","\/info\/wp-content\/plugins\/*","\/info\/wp-content\/themes\/EenvoudigFactureren\/*","\/info\/wp-content\/themes\/twentysixteen\/*","\/info\/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+
+<!-- Consent Management powered by Complianz | GDPR/CCPA Cookie Consent https://wordpress.org/plugins/complianz-gdpr -->
+<div id="cmplz-cookiebanner-container"><div class="cmplz-cookiebanner cmplz-hidden banner-1 bottom-right-minimal optin cmplz-bottom-left cmplz-categories-type-save-preferences" aria-modal="true" data-nosnippet="true" role="dialog" aria-live="polite" aria-labelledby="cmplz-header-1-optin" aria-describedby="cmplz-message-1-optin">
+	<div class="cmplz-header">
+		<div class="cmplz-logo"></div>
+		<div class="cmplz-title" id="cmplz-header-1-optin">Beheer cookie toestemming</div>
+		<div class="cmplz-close" tabindex="0" role="button" aria-label="Dialoogvenster sluiten">
+			<svg aria-hidden="true" focusable="false" data-prefix="fas" data-icon="times" class="svg-inline--fa fa-times fa-w-11" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 352 512"><path fill="currentColor" d="M242.72 256l100.07-100.07c12.28-12.28 12.28-32.19 0-44.48l-22.24-22.24c-12.28-12.28-32.19-12.28-44.48 0L176 189.28 75.93 89.21c-12.28-12.28-32.19-12.28-44.48 0L9.21 111.45c-12.28 12.28-12.28 32.19 0 44.48L109.28 256 9.21 356.07c-12.28 12.28-12.28 32.19 0 44.48l22.24 22.24c12.28 12.28 32.2 12.28 44.48 0L176 322.72l100.07 100.07c12.28 12.28 32.2 12.28 44.48 0l22.24-22.24c12.28-12.28 12.28-32.19 0-44.48L242.72 256z"></path></svg>
+		</div>
+	</div>
+
+	<div class="cmplz-divider cmplz-divider-header"></div>
+	<div class="cmplz-body">
+		<div class="cmplz-message" id="cmplz-message-1-optin">Wij gebruiken cookies om onze website te optimaliseren.</div>
+		<!-- categories start -->
+		<div class="cmplz-categories">
+			<details class="cmplz-category cmplz-functional" >
+				<summary>
+						<span class="cmplz-category-header">
+							<span class="cmplz-category-title">Functioneel</span>
+							<span class='cmplz-always-active'>
+								<span class="cmplz-banner-checkbox">
+									<input type="checkbox"
+										   id="cmplz-functional-optin"
+										   data-category="cmplz_functional"
+										   class="cmplz-consent-checkbox cmplz-functional"
+										   size="40"
+										   value="1"/>
+									<label class="cmplz-label" for="cmplz-functional-optin"><span class="screen-reader-text">Functioneel</span></label>
+								</span>
+								Altijd actief							</span>
+							<span class="cmplz-icon cmplz-open">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"  height="18" ><path d="M224 416c-8.188 0-16.38-3.125-22.62-9.375l-192-192c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L224 338.8l169.4-169.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-192 192C240.4 412.9 232.2 416 224 416z"/></svg>
+							</span>
+						</span>
+				</summary>
+				<div class="cmplz-description">
+					<span class="cmplz-description-functional">De technische opslag of toegang is strikt noodzakelijk voor het legitieme doel het gebruik mogelijk te maken van een specifieke dienst waarom de abonnee of gebruiker uitdrukkelijk heeft gevraagd, of met als enig doel de uitvoering van de transmissie van een communicatie over een elektronisch communicatienetwerk.</span>
+				</div>
+			</details>
+
+			<details class="cmplz-category cmplz-preferences" >
+				<summary>
+						<span class="cmplz-category-header">
+							<span class="cmplz-category-title">Voorkeuren</span>
+							<span class="cmplz-banner-checkbox">
+								<input type="checkbox"
+									   id="cmplz-preferences-optin"
+									   data-category="cmplz_preferences"
+									   class="cmplz-consent-checkbox cmplz-preferences"
+									   size="40"
+									   value="1"/>
+								<label class="cmplz-label" for="cmplz-preferences-optin"><span class="screen-reader-text">Voorkeuren</span></label>
+							</span>
+							<span class="cmplz-icon cmplz-open">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"  height="18" ><path d="M224 416c-8.188 0-16.38-3.125-22.62-9.375l-192-192c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L224 338.8l169.4-169.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-192 192C240.4 412.9 232.2 416 224 416z"/></svg>
+							</span>
+						</span>
+				</summary>
+				<div class="cmplz-description">
+					<span class="cmplz-description-preferences">De technische opslag of toegang is noodzakelijk voor het legitieme doel voorkeuren op te slaan die niet door de abonnee of gebruiker zijn aangevraagd.</span>
+				</div>
+			</details>
+
+			<details class="cmplz-category cmplz-statistics" >
+				<summary>
+						<span class="cmplz-category-header">
+							<span class="cmplz-category-title">Statistieken</span>
+							<span class="cmplz-banner-checkbox">
+								<input type="checkbox"
+									   id="cmplz-statistics-optin"
+									   data-category="cmplz_statistics"
+									   class="cmplz-consent-checkbox cmplz-statistics"
+									   size="40"
+									   value="1"/>
+								<label class="cmplz-label" for="cmplz-statistics-optin"><span class="screen-reader-text">Statistieken</span></label>
+							</span>
+							<span class="cmplz-icon cmplz-open">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"  height="18" ><path d="M224 416c-8.188 0-16.38-3.125-22.62-9.375l-192-192c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L224 338.8l169.4-169.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-192 192C240.4 412.9 232.2 416 224 416z"/></svg>
+							</span>
+						</span>
+				</summary>
+				<div class="cmplz-description">
+					<span class="cmplz-description-statistics">De technische opslag of toegang die uitsluitend voor statistische doeleinden wordt gebruikt.</span>
+					<span class="cmplz-description-statistics-anonymous">De technische opslag of toegang die uitsluitend wordt gebruikt voor anonieme statistische doeleinden. Zonder dagvaarding, vrijwillige naleving door uw Internet Service Provider, of aanvullende gegevens van een derde partij, kan informatie die alleen voor dit doel wordt opgeslagen of opgehaald gewoonlijk niet worden gebruikt om je te identificeren.</span>
+				</div>
+			</details>
+			<details class="cmplz-category cmplz-marketing" >
+				<summary>
+						<span class="cmplz-category-header">
+							<span class="cmplz-category-title">Marketing</span>
+							<span class="cmplz-banner-checkbox">
+								<input type="checkbox"
+									   id="cmplz-marketing-optin"
+									   data-category="cmplz_marketing"
+									   class="cmplz-consent-checkbox cmplz-marketing"
+									   size="40"
+									   value="1"/>
+								<label class="cmplz-label" for="cmplz-marketing-optin"><span class="screen-reader-text">Marketing</span></label>
+							</span>
+							<span class="cmplz-icon cmplz-open">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"  height="18" ><path d="M224 416c-8.188 0-16.38-3.125-22.62-9.375l-192-192c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L224 338.8l169.4-169.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-192 192C240.4 412.9 232.2 416 224 416z"/></svg>
+							</span>
+						</span>
+				</summary>
+				<div class="cmplz-description">
+					<span class="cmplz-description-marketing">De technische opslag of toegang is nodig om gebruikersprofielen op te stellen voor het verzenden van reclame, of om de gebruiker op een website of over verschillende websites te volgen voor soortgelijke marketingdoeleinden.</span>
+				</div>
+			</details>
+		</div><!-- categories end -->
+			</div>
+
+	<div class="cmplz-links cmplz-information">
+		<ul>
+			<li><a class="cmplz-link cmplz-manage-options cookie-statement" href="#" data-relative_url="#cmplz-manage-consent-container">Beheer opties</a></li>
+			<li><a class="cmplz-link cmplz-manage-third-parties cookie-statement" href="#" data-relative_url="#cmplz-cookies-overview">Beheer diensten</a></li>
+			<li><a class="cmplz-link cmplz-manage-vendors tcf cookie-statement" href="#" data-relative_url="#cmplz-tcf-wrapper">Beheer {vendor_count} leveranciers</a></li>
+			<li><a class="cmplz-link cmplz-external cmplz-read-more-purposes tcf" target="_blank" rel="noopener noreferrer nofollow" href="https://cookiedatabase.org/tcf/purposes/" aria-label="Lees meer over TCF doelen op Cookie Database">Lees meer over deze doeleinden</a></li>
+		</ul>
+			</div>
+
+	<div class="cmplz-divider cmplz-footer"></div>
+
+	<div class="cmplz-buttons">
+		<button class="cmplz-btn cmplz-accept">Cookies accepteren</button>
+		<button class="cmplz-btn cmplz-deny">Weigeren</button>
+		<button class="cmplz-btn cmplz-view-preferences">Bekijk voorkeuren</button>
+		<button class="cmplz-btn cmplz-save-preferences">Voorkeuren bewaren</button>
+		<a class="cmplz-btn cmplz-manage-options tcf cookie-statement" href="#" data-relative_url="#cmplz-manage-consent-container">Bekijk voorkeuren</a>
+			</div>
+
+	
+	<div class="cmplz-documents cmplz-links">
+		<ul>
+			<li><a class="cmplz-link cookie-statement" href="#" data-relative_url="">{title}</a></li>
+			<li><a class="cmplz-link privacy-statement" href="#" data-relative_url="">{title}</a></li>
+			<li><a class="cmplz-link impressum" href="#" data-relative_url="">{title}</a></li>
+		</ul>
+			</div>
+</div>
+</div>
+					<div id="cmplz-manage-consent" data-nosnippet="true"><button class="cmplz-btn cmplz-hidden cmplz-manage-consent manage-consent-1">Beheer toestemming</button>
+
+</div><script src="https://eenvoudigfactureren.be/info/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/scripts/shCore.js?ver=3.0.9b" id="syntaxhighlighter-core-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/scripts/shBrushPhp.js?ver=3.0.9b" id="syntaxhighlighter-brush-php-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/scripts/shBrushXml.js?ver=3.0.9b" id="syntaxhighlighter-brush-xml-js"></script>
+<script type='text/javascript'>
+	(function(){
+		var corecss = document.createElement('link');
+		var themecss = document.createElement('link');
+		var corecssurl = "https://eenvoudigfactureren.be/info/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/styles/shCore.css?ver=3.0.9b";
+		if ( corecss.setAttribute ) {
+				corecss.setAttribute( "rel", "stylesheet" );
+				corecss.setAttribute( "type", "text/css" );
+				corecss.setAttribute( "href", corecssurl );
+		} else {
+				corecss.rel = "stylesheet";
+				corecss.href = corecssurl;
+		}
+		document.head.appendChild( corecss );
+		var themecssurl = "https://eenvoudigfactureren.be/info/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/styles/shThemeRDark.css?ver=3.0.9b";
+		if ( themecss.setAttribute ) {
+				themecss.setAttribute( "rel", "stylesheet" );
+				themecss.setAttribute( "type", "text/css" );
+				themecss.setAttribute( "href", themecssurl );
+		} else {
+				themecss.rel = "stylesheet";
+				themecss.href = themecssurl;
+		}
+		document.head.appendChild( themecss );
+	})();
+	SyntaxHighlighter.config.strings.expandSource = '+ expand source';
+	SyntaxHighlighter.config.strings.help = '?';
+	SyntaxHighlighter.config.strings.alert = 'SyntaxHighlighter\n\n';
+	SyntaxHighlighter.config.strings.noBrush = 'Can\'t find brush for: ';
+	SyntaxHighlighter.config.strings.brushNotHtmlScript = 'Brush wasn\'t configured for html-script option: ';
+	SyntaxHighlighter.defaults['auto-links'] = false;
+	SyntaxHighlighter.defaults['gutter'] = false;
+	SyntaxHighlighter.defaults['pad-line-numbers'] = false;
+	SyntaxHighlighter.defaults['toolbar'] = false;
+	SyntaxHighlighter.all();
+
+	// Infinite scroll support
+	if ( typeof( jQuery ) !== 'undefined' ) {
+		jQuery( function( $ ) {
+			$( document.body ).on( 'post-load', function() {
+				SyntaxHighlighter.highlight();
+			} );
+		} );
+	}
+</script>
+<script src="https://eenvoudigfactureren.be/info/wp-includes/js/dist/hooks.min.js?ver=4d63a3d491d11ffd8ac6" id="wp-hooks-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-includes/js/dist/i18n.min.js?ver=5e580eb46a90c2b997e6" id="wp-i18n-js"></script>
+<script id="wp-i18n-js-after">
+wp.i18n.setLocaleData( { 'text direction\u0004ltr': [ 'ltr' ] } );
+</script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/plugins/contact-form-7/includes/swv/js/index.js?ver=6.1.1" id="swv-js"></script>
+<script id="contact-form-7-js-translations">
+( function( domain, translations ) {
+	var localeData = translations.locale_data[ domain ] || translations.locale_data.messages;
+	localeData[""].domain = domain;
+	wp.i18n.setLocaleData( localeData, domain );
+} )( "contact-form-7", {"translation-revision-date":"2025-08-12 18:52:17+0000","generator":"GlotPress\/4.0.1","domain":"messages","locale_data":{"messages":{"":{"domain":"messages","plural-forms":"nplurals=2; plural=n != 1;","lang":"nl_BE"},"This contact form is placed in the wrong place.":["Dit contactformulier staat op de verkeerde plek."],"Error:":["Fout:"]}},"comment":{"reference":"includes\/js\/index.js"}} );
+</script>
+<script id="contact-form-7-js-before">
+var wpcf7 = {
+    "api": {
+        "root": "https:\/\/eenvoudigfactureren.be\/info\/wp-json\/",
+        "namespace": "contact-form-7\/v1"
+    },
+    "cached": 1
+};
+</script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/plugins/contact-form-7/includes/js/index.js?ver=6.1.1" id="contact-form-7-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/bootstrap.min.js" id="boostrap-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/jquery.easing.min.js" id="jquery-easing-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/response.min.js" id="response-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/jquery.placeholder.min.js" id="jquery.placeholder-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/jquery.fitvids.js" id="jquery.fitvids-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/jquery.cokie.min.js" id="jquery.cokie-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/jquery.imgpreload.min.js" id="jquery.imgpreload-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/waypoints.min.js" id="waypoints-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/jquery.mousewheel-3.0.6.pack.js" id="jquery.mousewheel-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/jquery.fancybox.pack.js" id="jquery.fancybox-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/jquery.flexslider-min.js" id="jquery.flexslider-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/parallax.min.js" id="parallax-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/script.js?ver=1.0" id="soonsite-script-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/jquery.ajaxchimp.min.js" id="jquery.ajaxchimp-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/jquery.validate.min.js" id="jquery.validate-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/jquery.vide.min.js" id="jquery.vide-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/jquery.stellar.min.js" id="jquery.stellar-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/jquery.magnific-popup.min.js" id="jquery.magnific-popup-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/jquery.scrollto.js" id="jquery.scrollto-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/owl.carousel.min.js" id="landpick-owl-carousel-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/wow.js" id="landpick-wow-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/themes/EenvoudigFactureren/js/landpick/custom.js" id="landpick-custom-js"></script>
+<script src="https://www.google.com/recaptcha/api.js?render=FIXTURE_SITEKEY&amp;ver=3.0" id="google-recaptcha-js"></script>
+<script src="https://eenvoudigfactureren.be/info/wp-includes/js/dist/vendor/wp-polyfill.min.js?ver=3.15.0" id="wp-polyfill-js"></script>
+<script id="wpcf7-recaptcha-js-before">
+var wpcf7_recaptcha = {
+    "sitekey": "FIXTURE_SITEKEY",
+    "actions": {
+        "homepage": "homepage",
+        "contactform": "contactform"
+    }
+};
+</script>
+<script src="https://eenvoudigfactureren.be/info/wp-content/plugins/contact-form-7/modules/recaptcha/index.js?ver=6.1.1" id="wpcf7-recaptcha-js"></script>
+<script id="cmplz-cookiebanner-js-extra">
+var complianz = {"prefix":"cmplz_","user_banner_id":"1","set_cookies":[],"block_ajax_content":"","banner_version":"38","version":"7.4.6","store_consent":"","do_not_track_enabled":"","consenttype":"optin","region":"eu","geoip":"","dismiss_timeout":"","disable_cookiebanner":"","soft_cookiewall":"","dismiss_on_scroll":"","cookie_expiry":"365","url":"https:\/\/eenvoudigfactureren.be\/info\/wp-json\/complianz\/v1\/","locale":"lang=nl&locale=nl_BE","set_cookies_on_root":"","cookie_domain":"","current_policy_id":"32","cookie_path":"","categories":{"statistics":"statistieken","marketing":"marketing"},"tcf_active":"","placeholdertext":"Klik om {category} cookies te accepteren en deze inhoud in te schakelen","css_file":"https:\/\/eenvoudigfactureren.be\/info\/wp-content\/uploads\/complianz\/css\/banner-{banner_id}-{type}.css?v=38","page_links":{"eu":{"cookie-statement":{"title":"Cookiebeleid","url":"https:\/\/eenvoudigfactureren.be\/info\/cookie-policy\/"},"privacy-statement":{"title":"Privacy Policy","url":"https:\/\/eenvoudigfactureren.be\/info\/help\/privacy-policy\/"}}},"tm_categories":"1","forceEnableStats":"","preview":"","clean_cookies":"","aria_label":"Klik om {category} cookies te accepteren en deze inhoud in te schakelen"};
+</script>
+<script defer src="https://eenvoudigfactureren.be/info/wp-content/plugins/complianz-gdpr/cookiebanner/js/complianz.min.js?ver=1780477271" id="cmplz-cookiebanner-js"></script>
+<!-- Statistics script Complianz GDPR/CCPA -->
+						<script data-category="functional">
+							(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+		new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+	j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+	'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-WXL3N8J');
+						</script><script>
+    new WOW().init();
+    Chathive.widget.init({ apiKey: "FIXTURE_WIDGET_KEY" });
+</script>
+</body>
+</html>

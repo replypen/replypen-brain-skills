@@ -1,0 +1,63 @@
+openapi: 3.0.3
+info:
+  title: Demo Invoices
+  version: "1.0"
+servers:
+  - url: https://api.demo.test/v1
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    Skip:
+      name: skip
+      in: query
+      schema: {type: integer}
+  schemas:
+    Customer:
+      type: object
+      properties:
+        name: {type: string}
+        parent:
+          $ref: "#/components/schemas/Customer"
+    Invoice:
+      type: object
+      properties:
+        number: {type: string}
+        customer:
+          $ref: "#/components/schemas/Customer"
+paths:
+  /invoices:
+    parameters:
+      - $ref: "#/components/parameters/Skip"
+    get:
+      summary: List invoices
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invoice"
+    post:
+      operationId: createInvoice
+      responses:
+        "201": {description: created}
+  /invoices/{id}:
+    get:
+      description: |
+        Fetch one invoice.
+        Second line.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"

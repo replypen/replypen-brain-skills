@@ -1,0 +1,3 @@
+# This repo is the brain kit, not a brain: its own Python package and tests are never mounted into a
+# run, so the installed brain-hygiene hooks must not judge them as brain scripts.
+runtime/**/*.py
