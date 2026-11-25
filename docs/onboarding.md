@@ -26,7 +26,7 @@ see [secrets.md](secrets.md).
 Local gitignored install, recommended:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.17.14/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/replypen/replypen-brain-skills/v0.17.15/install.sh)
 ```
 
 This creates/updates one shared clone at `~/.replypen-brain-skills` and links shipped skills into the
