@@ -23,7 +23,7 @@ Rules for the prompts:
 - `brain` → "Add to `skills/<x>.md` under <section>: …" / "Create `knowledge/<y>.md` with …".
   Business facts and playbooks only; never generic support-engineer instructions the host prompt
   already owns.
-- `persona` → the exact key and the new text: `rp project settings behavior set persona.guidance="…"`
+- `persona` → the exact key and the new text: `rp project settings behavior set persona.tone="…"`
   (or tenant scope when the brain is a tenant checkout). Keep the existing value's intent, change
   the one phrase that failed.
 - `triage` → policy sentence or rule (`effect=`, `match_kind=`, `pattern=`).

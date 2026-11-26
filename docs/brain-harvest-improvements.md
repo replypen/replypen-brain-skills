@@ -106,7 +106,7 @@ language in which context" is a durable, high-value persona/routing fact that a 
 setting can't express.
 
 **Proposed change:** In the persona-synthesis note, prompt for a *language policy* ("reply in the
-correspondent's language; default NL; EN with <vendor-type>"), and note it may live as persona `guidance`
+correspondent's language; default NL; EN with <vendor-type>"), and note it may live in `persona.tone`
 rather than the single `language` enum.
 
 ## P2 — "Grow vs bootstrap" mode: diff against the existing brain, propose deltas only
@@ -196,16 +196,16 @@ CLI to list the full enum in `rp project triage rules add --help` and in the
 (and accidentally create rules). Minor CLI bug worth filing: `add` with an invalid sibling field still
 persisted a rule in some cases.
 
-## P2 — persona.signature can't express register-switching; guidance must carry it
+## P2 — persona.signature can't express register-switching; persona.tone must carry it
 
 **Observed:** The owner signs "Klara" casually but "Klara Bollen" formally (government/notary/liability),
 and the sign-off word changes ("Groetjes" vs "Met vriendelijke groeten"). The single `persona.signature`
 string can't encode that. I set `signature="Klara"` and pushed the conditional sign-off + register
-switch into `persona.guidance`. Worked, but it's a non-obvious modelling decision.
+switch into the tone text (`persona.tone`; `persona.guidance` no longer exists). Worked, but it's a non-obvious modelling decision.
 
 **Proposed change:** One line in the skill's persona-synthesis note: "If sign-off/formality varies by
 correspondent type, keep `persona.signature` minimal (the name) and encode the switching rule in
-`persona.guidance`; don't try to jam a formal+casual signature into the one field."
+`persona.tone`; don't try to jam a formal+casual signature into the one field."
 
 ## P3 — Keyword clustering leaves real contamination; note a cleanup/routing-audit follow-up
 

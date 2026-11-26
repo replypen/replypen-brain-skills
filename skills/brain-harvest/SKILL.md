@@ -223,15 +223,17 @@ after.
 | Hard rules | **tenant or project — no mailbox scope exists** | Same widening rule; deterministic evidence per §5. |
 | Brain facts | tenant or project brain | Match the business scope of the fact. |
 
-Persona synthesis is mandatory: derive concise `tone`, `language`, `formality`, `guidance` from the
-recent human replies; set `signature` only on repeated evidence. Record a gap rather than inventing a
+Persona synthesis is mandatory: derive a concise `tone` and `language` from the recent human replies.
+`persona.tone` is the one tone text (formality, register switches, wording rules and exceptions all go
+in it, each exception next to the rule it limits; it opens with 3-4 bullets an owner would recognise);
+set `signature` only on repeated evidence. Record a gap rather than inventing a
 value. A harvest is not complete until the harvested mailbox *resolves* those fields from the target
 tenant/project — reconcile or surface any mailbox override that shadows them.
 
 ```bash
 # tenant when tenant-bound, otherwise project
-rp project tenant settings set <slug> persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
-rp project settings behavior set persona.tone="..." persona.language="..." persona.formality="..." persona.guidance="..."
+rp project tenant settings set <slug> persona.tone="..." persona.language="..."
+rp project settings behavior set persona.tone="..." persona.language="..."
 
 rp project triage policy set "Draft customer support + billing questions; skip vendor newsletters and automated alerts."
 rp project triage rules add effect=force_process match_kind=sender_domain pattern="partner.com" reason="partner mailbox — always answered"

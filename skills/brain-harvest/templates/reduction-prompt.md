@@ -50,7 +50,7 @@ Final deltas grouped by home and topic, plus the two carry-forwards the review b
 # Reduced deltas
 
 ## Brain facts        — per topic: add|revise|retire <file>: <delta> · era · [superseded: <old era>]
-## Persona            — mandatory voice/formality/language/guidance deltas at tenant/project scope; signature only with repeated evidence
+## Persona            — mandatory `persona.tone` (voice, formality, wording) and language deltas at tenant/project scope; signature only with repeated evidence
 ## Triage             — draft|escalate rules; skip/no-draft (§5, with occurrence count)
 ## Pending recommendations — scope-blocked triage/hard-rule widenings (§6)
 

@@ -37,7 +37,7 @@ rp project corpus download <export-id> [--out <file>] [--split <dir>]
 rp project settings runtime get
 rp project settings runtime set max_run_usd=5 default_tier=pro
 rp project settings behavior get
-rp project settings behavior set persona.guidance="..."
+rp project settings behavior set persona.tone="..."
 rp project triage policy get
 rp project triage policy set "..."
 rp project triage rules ls
@@ -301,7 +301,7 @@ side effects before running either.
 
 ```bash
 rp project settings behavior get -o json
-rp project settings behavior set persona.tone="..." persona.guidance="..."
+rp project settings behavior set persona.tone="..." persona.language="..."
 rp project triage policy get -o json
 rp project triage policy set "..."
 rp project triage rules ls -o json
