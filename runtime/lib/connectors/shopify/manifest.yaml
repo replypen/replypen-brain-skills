@@ -44,6 +44,7 @@ oauth:
     - read_customers
     - read_products
     - read_inventory
+    - read_all_orders
 help_md: |
   Reads Shopify orders (status, tracking, refunds, returns), customers, products, and inventory via
   the Admin GraphQL API for support diagnosis. Read-only by declared scopes; the access token stays
