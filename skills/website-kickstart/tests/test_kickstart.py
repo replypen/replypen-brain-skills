@@ -54,6 +54,7 @@ class World:
         self.install = (168123503, set())
         self.scripts = {}  # worker name -> tag
         self.live = {}  # worker name -> (repo full_name, sha) it serves
+        self.robots_meta = ""  # what the served page's <head> carries
         self.runs = []  # workflow runs; each one's deploy job is check-run id == run id
         self.deploy_outcomes = []
         self.push_delay = self.dispatch_delay = 0
@@ -141,7 +142,7 @@ class World:
             return 200, json.dumps({"revision": sha}).encode()
         files = self.repos[self.redirects.get(repo, repo)]["files"]
         site = yaml.safe_load(files.get("_data/site.yml") or "name: Praktijk Test")  # adopted non-template site
-        return 200, f"<h1>{html.escape(site['name'])}</h1>".encode()
+        return 200, f"{self.robots_meta}<h1>{html.escape(site['name'])}</h1>".encode()
 
     def ok(self, result, status=200):
         return status, json.dumps({"success": True, "errors": [], "messages": [], "result": result}).encode()
@@ -335,6 +336,15 @@ class KickstartTest(unittest.TestCase):
     @staticmethod
     def names(writes):
         return [f"{m} {p}" for m, p, _ in writes]
+
+    def test_deploy_screens_dev_noindex(self):
+        code, out, _ = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertIn("INDEXABLE on a dev address", out)  # warns, never fails: older sites predate it
+        self.world.robots_meta = '<meta name="robots" content="noindex">'
+        code, out, _ = self.kick()
+        self.assertEqual(code, 0, out)
+        self.assertIn("noindex (dev address)", out)
 
     def test_fresh_run_provisions_everything_in_order(self):
         code, out, writes = self.kick()

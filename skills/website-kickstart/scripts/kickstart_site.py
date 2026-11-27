@@ -739,9 +739,18 @@ class Kickstart:
                 except (ValueError, AttributeError):
                     revision = None
                 if revision == sha:
-                    return f"{self.live_url} 200, shows {self.a.name!r}, {REVISION_PATH} = {sha[:8]}"
+                    return (f"{self.live_url} 200, shows {self.a.name!r}, {REVISION_PATH} = {sha[:8]}, "
+                            f"{self.index_note(text)}")
                 last = f"{self.live_url}{REVISION_PATH}: HTTP {status}, revision {revision!r}, want {sha[:8]}"
         raise StepFailed(last)
+
+    def index_note(self, text):
+        """Screens, never fails: a dev address must be noindex, the own domain must not be (older sites may predate it)."""
+        noindex = re.search(r'<meta[^>]+name="robots"[^>]+noindex', text, re.I) is not None
+        dev = urllib.parse.urlparse(self.live_url).hostname.endswith(".workers.dev")
+        if dev:
+            return "noindex (dev address)" if noindex else "⚠ INDEXABLE on a dev address: template lacks the dev noindex"
+        return "⚠ NOINDEX on the live domain: search engines skip it" if noindex else "indexable (live domain)"
 
     # ---- 4. ReplyPen mirror --------------------------------------------------------------------
 
