@@ -83,6 +83,8 @@ class StepFailed(Exception):
 
 
 SLUG = re.compile(r"[a-z0-9][a-z0-9-]*")
+# ReplyPen tenant slugs may carry underscores (KampAdmin: jungle_skills); they only reach rp, the form path and YAML.
+TENANT = re.compile(r"[a-z0-9][a-z0-9_-]*")
 # What a child process may see: tool plumbing, never the operator's tokens. Per-command extras are
 # added explicitly (gh/git: their own config/keyring; rc: RC_*); the deploy token reaches gh on stdin only.
 SAFE_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "SHELL",
@@ -1086,7 +1088,7 @@ def parse_args(argv=None):
     args = p.parse_args(argv)
     for flag in ("slug", "project", "tenant", "worker_name", "mirror_name"):
         value = getattr(args, flag)
-        if value is not None and not SLUG.fullmatch(value):
+        if value is not None and not (TENANT if flag == "tenant" else SLUG).fullmatch(value):
             p.error(f"--{flag.replace('_', '-')} must be lowercase letters, digits and dashes: {value!r}")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", args.org):
         p.error(f"invalid GitHub org {args.org!r}")
